@@ -61,25 +61,54 @@ function getPriceColor(role) {
   }
 }
 
-// --- Dynamic Google Places Fetcher ---
+// --- Dynamic Google Places Fetcher (Upgraded for 2026 API) ---
 function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   const map = useMap();
-  const placesLib = useMapsLibrary('places');
 
   useEffect(() => {
-    if (!map || !placesLib) return;
+    if (!map) return;
     const centerPoint = searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 };
     map.panTo(centerPoint);
     
-    const service = new placesLib.PlacesService(map);
-    const request = { location: centerPoint, radius: 5000, type: 'gas_station' };
-    
-    service.nearbySearch(request, (results, status) => {
-      if (status === placesLib.PlacesServiceStatus.OK && results) {
-        onStationsFound(results);
+    async function fetchNewPlaces() {
+      try {
+        // Import the new 2026 required Places library
+        const { Place } = await window.google.maps.importLibrary("places");
+        
+        const request = {
+          fields: ['id', 'displayName', 'location', 'formattedAddress'],
+          locationRestriction: {
+            center: centerPoint,
+            radius: 5000,
+          },
+          includedPrimaryTypes: ['gas_station'],
+        };
+        
+        // Execute the new search Nearby method
+        const { places } = await Place.searchNearby(request);
+        
+        if (places && places.length > 0) {
+          // Format the new data to perfectly match our existing Qozob app logic
+          const formattedPlaces = places.map(p => ({
+            place_id: p.id,
+            name: p.displayName,
+            vicinity: p.formattedAddress,
+            geometry: {
+              location: {
+                lat: () => p.location.lat(),
+                lng: () => p.location.lng()
+              }
+            }
+          }));
+          onStationsFound(formattedPlaces);
+        }
+      } catch (error) {
+        console.error("Qozob Places API Error:", error);
       }
-    });
-  }, [map, placesLib, onStationsFound, userLoc, searchCenter]);
+    }
+
+    fetchNewPlaces();
+  }, [map, onStationsFound, userLoc, searchCenter]);
   
   return null;
 }
