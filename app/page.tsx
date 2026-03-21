@@ -99,10 +99,10 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
 }
 
 // --- Custom Station Marker (Dynamic Local Logo Matcher) ---
-function StationMarker({ name, hasPrice }) {
+function StationMarker({ name, hasPrice, customLogoUrl }) {
   const lowerName = name?.toLowerCase() || "";
   
-  let matchedLogoUrl = station.custom_logo_url || null; // <--- UPDATE THIS LINE
+  let matchedLogoUrl = customLogoUrl || null; 
   let fallbackColor = "#10b981"; 
   let fallbackText = name ? name.substring(0, 2).toUpperCase() : "GS";
   
@@ -111,19 +111,13 @@ function StationMarker({ name, hasPrice }) {
     if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
     else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
     else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
-    // ... the rest of your local logo logic stays exactly the same
+    else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
+    else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
+    else if (lowerName.includes("ardova") || lowerName.includes("ap")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
+    else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
+    else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
+    else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
   }
-  
-  // Scan the station name and point to local public folder
-  if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
-  else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
-  else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
-  else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
-  else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
-  else if (lowerName.includes("ardova") || lowerName.includes("ap")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
-  else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
-  else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
-  else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
 
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
@@ -377,22 +371,6 @@ function RateStationModal({ station, onClose }) {
       </div>
     </div>
   );
-  return {
-      id: googlePlace.place_id,
-      name: googlePlace.name,
-      address: googlePlace.vicinity,
-      lat: statLat,
-      lng: statLng,
-      distance: distance,
-      price_pms: dbData ? dbData.price_pms : null,
-      queue_status: dbData ? dbData.queue_status : "Unknown",
-      verified: dbData ? dbData.verified : false,
-      last_updated: dbData ? dbData.last_updated : "Never",
-      updated_by_role: dbData ? (dbData.updated_by_role || "User") : "User",
-      pump_accuracy: dbData ? (dbData.pump_accuracy || 0) : 0, 
-      accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0,
-      custom_logo_url: dbData ? dbData.custom_logo_url : null // <--- ADD THIS LINE
-    };
 }
 
 // =========================================================================
@@ -469,7 +447,8 @@ function QozobLanding() {
       last_updated: dbData ? dbData.last_updated : "Never",
       updated_by_role: dbData ? (dbData.updated_by_role || "User") : "User",
       pump_accuracy: dbData ? (dbData.pump_accuracy || 0) : 0, 
-      accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0 
+      accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0,
+      custom_logo_url: dbData ? dbData.custom_logo_url : null
     };
   });
 
@@ -616,7 +595,11 @@ function QozobLanding() {
 
               {mergedStations.map((station) => (
                 <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
-                  <StationMarker name={station.name} hasPrice={station.price_pms !== null} />
+                  <StationMarker 
+                    name={station.name} 
+                    hasPrice={station.price_pms !== null} 
+                    customLogoUrl={station.custom_logo_url} 
+                  />
                 </AdvancedMarker>
               ))}
 
