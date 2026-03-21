@@ -579,7 +579,7 @@ function QozobLanding() {
           <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white">
             <Map 
               defaultZoom={13} 
-              center={searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 }} 
+              defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
               mapId="QOZOB_MAIN_MAP" 
               disableDefaultUI={false} 
               zoomControl={true} 
