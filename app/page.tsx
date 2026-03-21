@@ -11,12 +11,12 @@ import {
 import { createClient } from '@supabase/supabase-js';
 
 // --- Supabase Setup ---
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ---> PUT YOUR API KEY HERE <---
-const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string;
+const GOOGLE_MAPS_API_KEY = "AIzaSyBR1zxq9SGdcKUHgbLjvl1j0A50F1eG54o";
 
 // --- Helpers: Distance Calculation ---
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
@@ -61,54 +61,25 @@ function getPriceColor(role) {
   }
 }
 
-// --- Dynamic Google Places Fetcher (Upgraded for 2026 API) ---
+// --- Dynamic Google Places Fetcher ---
 function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   const map = useMap();
+  const placesLib = useMapsLibrary('places');
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || !placesLib) return;
     const centerPoint = searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 };
     map.panTo(centerPoint);
     
-    async function fetchNewPlaces() {
-      try {
-        // Import the new 2026 required Places library
-        const { Place } = await window.google.maps.importLibrary("places");
-        
-        const request = {
-          fields: ['id', 'displayName', 'location', 'formattedAddress'],
-          locationRestriction: {
-            center: centerPoint,
-            radius: 5000,
-          },
-          includedPrimaryTypes: ['gas_station'],
-        };
-        
-        // Execute the new search Nearby method
-        const { places } = await Place.searchNearby(request);
-        
-        if (places && places.length > 0) {
-          // Format the new data to perfectly match our existing Qozob app logic
-          const formattedPlaces = places.map(p => ({
-            place_id: p.id,
-            name: p.displayName,
-            vicinity: p.formattedAddress,
-            geometry: {
-              location: {
-                lat: () => p.location.lat(),
-                lng: () => p.location.lng()
-              }
-            }
-          }));
-          onStationsFound(formattedPlaces);
-        }
-      } catch (error) {
-        console.error("Qozob Places API Error:", error);
+    const service = new placesLib.PlacesService(map);
+    const request = { location: centerPoint, radius: 5000, type: 'gas_station' };
+    
+    service.nearbySearch(request, (results, status) => {
+      if (status === placesLib.PlacesServiceStatus.OK && results) {
+        onStationsFound(results);
       }
-    }
-
-    fetchNewPlaces();
-  }, [map, onStationsFound, userLoc, searchCenter]);
+    });
+  }, [map, placesLib, onStationsFound, userLoc, searchCenter]);
   
   return null;
 }
