@@ -61,15 +61,29 @@ function getPriceColor(role) {
   }
 }
 
-// --- Dynamic Google Places Fetcher ---
+// --- Dynamic Google Places Fetcher (Fixed Panning Bug) ---
 function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   const map = useMap();
   const placesLib = useMapsLibrary('places');
+  const [initialPanDone, setInitialPanDone] = useState(false);
 
   useEffect(() => {
     if (!map || !placesLib) return;
-    const centerPoint = searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 };
-    map.panTo(centerPoint);
+    let centerPoint = { lat: 6.5244, lng: 3.3792 };
+    
+    // Only move the map camera if we do a manual search, OR if it's the very first GPS lock
+    if (searchCenter) {
+      centerPoint = searchCenter;
+      map.panTo(centerPoint);
+      map.setZoom(14);
+    } else if (userLoc) {
+      centerPoint = userLoc;
+      if (!initialPanDone) {
+        map.panTo(centerPoint);
+        map.setZoom(14);
+        setInitialPanDone(true); // Lock the camera so user can scroll freely
+      }
+    }
     
     const service = new placesLib.PlacesService(map);
     const request = { location: centerPoint, radius: 5000, type: 'gas_station' };
@@ -79,55 +93,48 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
         onStationsFound(results);
       }
     });
-  }, [map, placesLib, onStationsFound, userLoc, searchCenter]);
+  }, [map, placesLib, onStationsFound, userLoc, searchCenter, initialPanDone]);
   
   return null;
 }
 
-// --- Custom Station Marker (Clearbit Logo API with Fallback) ---
+// --- Custom Station Marker (Dynamic Local Logo Matcher) ---
 function StationMarker({ name, hasPrice }) {
   const lowerName = name?.toLowerCase() || "";
   
-  let domain = null;
+  let matchedLogoUrl = null;
   let fallbackColor = "#10b981"; 
   let fallbackText = name ? name.substring(0, 2).toUpperCase() : "GS";
   
-  if (lowerName.includes("nnpc")) { 
-    domain = "nnpcgroup.com"; fallbackColor = "#ef4444"; fallbackText = "NN"; 
-  } else if (lowerName.includes("total")) { 
-    domain = "totalenergies.com"; fallbackColor = "#1e3a8a"; fallbackText = "TO"; 
-  } else if (lowerName.includes("mobil")) { 
-    domain = "mobil.com"; fallbackColor = "#2563eb"; fallbackText = "MO"; 
-  } else if (lowerName.includes("oando")) { 
-    domain = "oandoplc.com"; fallbackColor = "#dc2626"; fallbackText = "OA"; 
-  } else if (lowerName.includes("conoil")) { 
-    domain = "conoilplc.com"; fallbackColor = "#eab308"; fallbackText = "CO"; 
-  } else if (lowerName.includes("ardova") || lowerName.includes("ap")) { 
-    domain = "ardovaplc.com"; fallbackColor = "#ea580c"; fallbackText = "AP"; 
-  } else if (lowerName.includes("shell")) { 
-    domain = "shell.com"; fallbackColor = "#facc15"; fallbackText = "SH"; 
-  }
-
-  const logoUrl = domain ? `https://logo.clearbit.com/${domain}?size=80` : null;
+  // Scan the station name and point to local public folder
+  if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
+  else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
+  else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
+  else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
+  else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
+  else if (lowerName.includes("ardova") || lowerName.includes("ap")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
+  else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
+  else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
+  else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
 
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
       
-      {logoUrl && (
+      {matchedLogoUrl && (
         <img 
-          src={logoUrl} 
+          src={matchedLogoUrl} 
           alt={name} 
           className="w-full h-full object-contain rounded-full p-0.5" 
           onError={(e) => { 
-            e.target.style.display = 'none'; 
-            e.target.nextSibling.style.display = 'flex'; 
+            e.currentTarget.style.display = 'none'; 
+            if (e.currentTarget.nextSibling) (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex'; 
           }} 
         />
       )}
 
       <div 
         className="w-full h-full rounded-full items-center justify-center" 
-        style={{ backgroundColor: fallbackColor, display: logoUrl ? 'none' : 'flex' }}
+        style={{ backgroundColor: fallbackColor, display: matchedLogoUrl ? 'none' : 'flex' }}
       >
          <span className="text-white font-black text-[10px] tracking-tighter leading-none">
            {fallbackText}
@@ -570,7 +577,17 @@ function QozobLanding() {
         {/* ORDER 2: Map View */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
           <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white">
-            <Map defaultZoom={13} center={searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 }} mapId="QOZOB_MAIN_MAP" disableDefaultUI={true} gestureHandling={'greedy'}>
+            <Map 
+              defaultZoom={13} 
+              center={searchCenter || userLoc || { lat: 6.5244, lng: 3.3792 }} 
+              mapId="QOZOB_MAIN_MAP" 
+              disableDefaultUI={false} 
+              zoomControl={true} 
+              mapTypeControl={false} 
+              streetViewControl={false} 
+              fullscreenControl={false} 
+              gestureHandling={'greedy'}
+            >
               <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={searchCenter} />
 
               {mergedStations.map((station) => (
