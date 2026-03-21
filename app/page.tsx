@@ -102,9 +102,17 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
 function StationMarker({ name, hasPrice }) {
   const lowerName = name?.toLowerCase() || "";
   
-  let matchedLogoUrl = null;
+  let matchedLogoUrl = station.custom_logo_url || null; // <--- UPDATE THIS LINE
   let fallbackColor = "#10b981"; 
   let fallbackText = name ? name.substring(0, 2).toUpperCase() : "GS";
+  
+  // Scan the station name and point to local public folder ONLY if no custom logo exists
+  if (!matchedLogoUrl) {
+    if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
+    else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
+    else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
+    // ... the rest of your local logo logic stays exactly the same
+  }
   
   // Scan the station name and point to local public folder
   if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
@@ -369,6 +377,22 @@ function RateStationModal({ station, onClose }) {
       </div>
     </div>
   );
+  return {
+      id: googlePlace.place_id,
+      name: googlePlace.name,
+      address: googlePlace.vicinity,
+      lat: statLat,
+      lng: statLng,
+      distance: distance,
+      price_pms: dbData ? dbData.price_pms : null,
+      queue_status: dbData ? dbData.queue_status : "Unknown",
+      verified: dbData ? dbData.verified : false,
+      last_updated: dbData ? dbData.last_updated : "Never",
+      updated_by_role: dbData ? (dbData.updated_by_role || "User") : "User",
+      pump_accuracy: dbData ? (dbData.pump_accuracy || 0) : 0, 
+      accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0,
+      custom_logo_url: dbData ? dbData.custom_logo_url : null // <--- ADD THIS LINE
+    };
 }
 
 // =========================================================================
