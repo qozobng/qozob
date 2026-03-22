@@ -108,7 +108,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
   
   // Scan the station name and point to local public folder ONLY if no custom logo exists
   if (!matchedLogoUrl) {
-    if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#ef4444"; }
+    if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#00a94d"; }
     else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
     else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
     else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
@@ -125,6 +125,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("techno")) { matchedLogoUrl = "/logos/techno.png"; fallbackColor = "#ee161f"; }
     else if (lowerName.includes("enyo")) { matchedLogoUrl = "/logos/enyo.png"; fallbackColor = "#313864"; }
     else if (lowerName.includes("matrix")) { matchedLogoUrl = "/logos/matrix.png"; fallbackColor = "#5dc0e5"; }
+    else if (lowerName.includes("fatgbems")) { matchedLogoUrl = "/logos/fatgbems.png"; fallbackColor = "#a13227"; }
 
   }
 
