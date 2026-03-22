@@ -113,7 +113,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
     else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
     else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
-    else if (lowerName.includes("ardova") || lowerName.includes("ap") || lowerName.includes("forte")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
+    else if (lowerName.includes("ardova") || lowerName.includes("AP") || lowerName.includes("Forte")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
     else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
     else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
     else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
@@ -124,6 +124,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("nipco")) { matchedLogoUrl = "/logos/nipco.png"; fallbackColor = "#f50002"; }
     else if (lowerName.includes("techno")) { matchedLogoUrl = "/logos/techno.png"; fallbackColor = "#ee161f"; }
     else if (lowerName.includes("enyo")) { matchedLogoUrl = "/logos/enyo.png"; fallbackColor = "#313864"; }
+    else if (lowerName.includes("matrix")) { matchedLogoUrl = "/logos/matrix.png"; fallbackColor = "#5dc0e5"; }
 
   }
 
