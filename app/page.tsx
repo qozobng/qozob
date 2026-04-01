@@ -113,12 +113,12 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
     else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
     else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
-    else if (lowerName.includes("ardova") || lowerName.includes("AP")) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
+    else if (lowerName.includes("ardova") || /\bap\b/.test(lowerName)) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
     else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
     else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
     else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
     else if (lowerName.includes("mrs")) { matchedLogoUrl = "/logos/mrs.png"; fallbackColor = "#712539"; }
-    else if (lowerName.includes("11plc") || lowerName.includes("11")) { matchedLogoUrl = "/logos/11.png"; fallbackColor = "#0759ad"; }
+    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { matchedLogoUrl = "/logos/11.png"; fallbackColor = "#0759ad"; }
     else if (lowerName.includes("shafa")) { matchedLogoUrl = "/logos/shafa.png"; fallbackColor = "#e63035"; }
     else if (lowerName.includes("heyden")) { matchedLogoUrl = "/logos/heyden.png"; fallbackColor = "#f76300"; }
     else if (lowerName.includes("nipco")) { matchedLogoUrl = "/logos/nipco.png"; fallbackColor = "#f50002"; }
@@ -127,8 +127,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("matrix")) { matchedLogoUrl = "/logos/matrix.png"; fallbackColor = "#5dc0e5"; }
     else if (lowerName.includes("fatgbems")) { matchedLogoUrl = "/logos/fatgbems.png"; fallbackColor = "#a13227"; }
     else if (lowerName.includes("forte")) { matchedLogoUrl = "/logos/forte.png"; fallbackColor = "#a3bc01"; }
-
-  }
+    }
 
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
