@@ -138,6 +138,21 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
 
 // --- Custom Components ---
 
+// --- NEW: User Location Sonar Marker ---
+function UserLocationMarker({ position }) {
+  if (!position) return null;
+  return (
+    <AdvancedMarker position={position} zIndex={50}>
+      <div className="relative flex h-8 w-8 items-center justify-center">
+        {/* The expanding sonar ring */}
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+        {/* The solid center dot */}
+        <span className="relative inline-flex h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-lg"></span>
+      </div>
+    </AdvancedMarker>
+  );
+}
+
 function StationMarker({ name, hasPrice, customLogoUrl }) {
   const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
 
@@ -471,10 +486,10 @@ function QozobLanding() {
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [showRateForm, setShowRateForm] = useState(false);
 
-  // --- NEW: Global Map Instance for External Panning ---
+  // --- Global Map Instance for External Panning ---
   const map = useMap('main-map');
 
-  // --- NEW: Pan Map automatically when ANY station is selected ---
+  // --- Pan Map automatically when ANY station is selected ---
   useEffect(() => {
     if (selectedStation && map && selectedStation.lat && selectedStation.lng) {
       map.panTo({ lat: selectedStation.lat, lng: selectedStation.lng });
@@ -626,7 +641,6 @@ function QozobLanding() {
                 <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
               </div>
               
-              {/* --- NEW: Clickable Hero Title --- */}
               <h2 
                 className="text-3xl font-black mb-1 relative z-10 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
                 onClick={() => {
@@ -665,7 +679,7 @@ function QozobLanding() {
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
           <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white">
             <Map 
-              id="main-map"  /* <--- NEW: Map ID so useMap() can grab it externally */
+              id="main-map"  
               defaultZoom={13} 
               defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
               mapId="QOZOB_MAIN_MAP" 
@@ -678,6 +692,9 @@ function QozobLanding() {
               onClick={() => setSelectedStation(null)}
             >
               <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={searchCenter} />
+
+              {/* --- NEW: User Location Sonar Marker --- */}
+              <UserLocationMarker position={userLoc} />
 
               {mergedStations.map((station) => (
                 <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
