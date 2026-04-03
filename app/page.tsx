@@ -61,6 +61,44 @@ function getPriceColor(role) {
   }
 }
 
+// --- Helpers: Brand Info Extractor (DRY Logic for Map & Lists) ---
+function getStationBrandInfo(name, customLogoUrl) {
+  const lowerName = name?.toLowerCase() || "";
+  let logoUrl = customLogoUrl || null; 
+  let color = "#10b981"; 
+  let text = name ? name.substring(0, 2).toUpperCase() : "GS";
+  
+  if (!logoUrl) {
+    if (lowerName.includes("nnpc")) { logoUrl = "/logos/nnpc.png"; color = "#00a94d"; }
+    else if (lowerName.includes("total")) { logoUrl = "/logos/total.png"; color = "#1e3a8a"; }
+    else if (lowerName.includes("mobil")) { logoUrl = "/logos/mobil.png"; color = "#2563eb"; }
+    else if (lowerName.includes("oando")) { logoUrl = "/logos/oando.png"; color = "#dc2626"; }
+    else if (lowerName.includes("conoil")) { logoUrl = "/logos/conoil.png"; color = "#eab308"; }
+    else if (
+      lowerName.includes("ardova") || 
+      lowerName === "ap" || 
+      lowerName.startsWith("ap ") || 
+      lowerName.includes(" ap ") || 
+      lowerName.includes("a.p") || 
+      lowerName.includes("a p ")
+    ) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
+    else if (lowerName.includes("shell")) { logoUrl = "/logos/shell.png"; color = "#facc15"; }
+    else if (lowerName.includes("rainoil")) { logoUrl = "/logos/rainoil.png"; color = "#0ea5e9"; }
+    else if (lowerName.includes("bovas")) { logoUrl = "/logos/bovas.png"; color = "#f43f5e"; }
+    else if (lowerName.includes("mrs")) { logoUrl = "/logos/mrs.png"; color = "#712539"; }
+    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { logoUrl = "/logos/11.png"; color = "#0759ad"; }
+    else if (lowerName.includes("shafa")) { logoUrl = "/logos/shafa.png"; color = "#e63035"; }
+    else if (lowerName.includes("heyden")) { logoUrl = "/logos/heyden.png"; color = "#f76300"; }
+    else if (lowerName.includes("nipco")) { logoUrl = "/logos/nipco.png"; color = "#f50002"; }
+    else if (lowerName.includes("techno")) { logoUrl = "/logos/techno.png"; color = "#ee161f"; }
+    else if (lowerName.includes("enyo")) { logoUrl = "/logos/enyo.png"; color = "#313864"; }
+    else if (lowerName.includes("matrix")) { logoUrl = "/logos/matrix.png"; color = "#5dc0e5"; }
+    else if (lowerName.includes("fatgbems")) { logoUrl = "/logos/fatgbems.png"; color = "#a13227"; }
+    else if (lowerName.includes("forte")) { logoUrl = "/logos/forte.png"; color = "#a3bc01"; }
+  }
+  return { logoUrl, color, text };
+}
+
 // --- Dynamic Google Places Fetcher (Fixed Panning Bug) ---
 function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   const map = useMap();
@@ -98,53 +136,16 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   return null;
 }
 
-// --- Custom Station Marker (Dynamic Local Logo Matcher) ---
+// --- Custom Components ---
+
 function StationMarker({ name, hasPrice, customLogoUrl }) {
-  const lowerName = name?.toLowerCase() || "";
-  
-  let matchedLogoUrl = customLogoUrl || null; 
-  let fallbackColor = "#10b981"; 
-  let fallbackText = name ? name.substring(0, 2).toUpperCase() : "GS";
-  
-  // Scan the station name and point to local public folder ONLY if no custom logo exists
-  if (!matchedLogoUrl) {
-    if (lowerName.includes("nnpc")) { matchedLogoUrl = "/logos/nnpc.png"; fallbackColor = "#00a94d"; }
-    else if (lowerName.includes("total")) { matchedLogoUrl = "/logos/total.png"; fallbackColor = "#1e3a8a"; }
-    else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
-    else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
-    else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
-    else if (
-      lowerName.includes("ardova") || 
-      lowerName === "ap" || 
-      lowerName.startsWith("ap ") || 
-      lowerName.includes(" ap ") || 
-      lowerName.includes("a.p") || 
-      lowerName.includes("a p ")
-    ) { 
-      matchedLogoUrl = "/logos/ap-brand.png"; 
-      fallbackColor = "#ea580c"; 
-    }
-    else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
-    else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
-    else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
-    else if (lowerName.includes("mrs")) { matchedLogoUrl = "/logos/mrs.png"; fallbackColor = "#712539"; }
-    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { matchedLogoUrl = "/logos/11.png"; fallbackColor = "#0759ad"; }
-    else if (lowerName.includes("shafa")) { matchedLogoUrl = "/logos/shafa.png"; fallbackColor = "#e63035"; }
-    else if (lowerName.includes("heyden")) { matchedLogoUrl = "/logos/heyden.png"; fallbackColor = "#f76300"; }
-    else if (lowerName.includes("nipco")) { matchedLogoUrl = "/logos/nipco.png"; fallbackColor = "#f50002"; }
-    else if (lowerName.includes("techno")) { matchedLogoUrl = "/logos/techno.png"; fallbackColor = "#ee161f"; }
-    else if (lowerName.includes("enyo")) { matchedLogoUrl = "/logos/enyo.png"; fallbackColor = "#313864"; }
-    else if (lowerName.includes("matrix")) { matchedLogoUrl = "/logos/matrix.png"; fallbackColor = "#5dc0e5"; }
-    else if (lowerName.includes("fatgbems")) { matchedLogoUrl = "/logos/fatgbems.png"; fallbackColor = "#a13227"; }
-    else if (lowerName.includes("forte")) { matchedLogoUrl = "/logos/forte.png"; fallbackColor = "#a3bc01"; }
-  }
+  const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
 
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
-      
-      {matchedLogoUrl && (
+      {logoUrl && (
         <img 
-          src={matchedLogoUrl} 
+          src={logoUrl} 
           alt={name} 
           className="w-full h-full object-contain rounded-full p-0.5" 
           onError={(e) => { 
@@ -153,20 +154,70 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
           }} 
         />
       )}
-
       <div 
         className="w-full h-full rounded-full items-center justify-center" 
-        style={{ backgroundColor: fallbackColor, display: matchedLogoUrl ? 'none' : 'flex' }}
+        style={{ backgroundColor: color, display: logoUrl ? 'none' : 'flex' }}
       >
-         <span className="text-white font-black text-[10px] tracking-tighter leading-none">
-           {fallbackText}
-         </span>
+         <span className="text-white font-black text-[10px] tracking-tighter leading-none">{text}</span>
       </div>
-
       <div className="absolute -bottom-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
     </div>
   );
 }
+
+function ListLogo({ name, customLogoUrl }) {
+  const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
+  return (
+    <div className="flex-shrink-0 w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden shadow-sm mr-3">
+      {logoUrl && (
+        <img 
+          src={logoUrl} 
+          alt={name} 
+          className="w-full h-full object-contain p-1"
+          onError={(e) => { 
+            e.currentTarget.style.display = 'none'; 
+            if (e.currentTarget.nextSibling) (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex'; 
+          }}
+        />
+      )}
+      <div 
+        className="w-full h-full flex items-center justify-center"
+        style={{ backgroundColor: color, display: logoUrl ? 'none' : 'flex' }}
+      >
+        <span className="text-white font-black text-[10px] tracking-tighter leading-none">{text}</span>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// ISOLATED SEARCH BAR (Prevents map re-renders on every keystroke)
+// =========================================================================
+
+function IsolatedSearchBar({ onSearch }) {
+  const [localInput, setLocalInput] = useState("");
+
+  return (
+    <div className="flex-1 w-full md:max-w-md relative">
+       <input 
+          type="text" 
+          placeholder="Search location or station (e.g. Lekki)..." 
+          value={localInput} 
+          onChange={(e) => setLocalInput(e.target.value)} 
+          onKeyDown={(e) => e.key === 'Enter' && onSearch(localInput)}
+          className="w-full bg-white/10 border border-white/20 rounded-full py-2 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all"
+        />
+        <Search className="w-4 h-4 absolute left-4 top-2.5 text-indigo-300" />
+        <button 
+          onClick={() => onSearch(localInput)} 
+          className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors"
+        >
+          Go
+        </button>
+    </div>
+  );
+}
+
 
 // =========================================================================
 // ISOLATED MODALS (Prevents Input Focus Dropping)
@@ -392,33 +443,7 @@ function RateStationModal({ station, onClose }) {
     </div>
   );
 }
-// =========================================================================
-// ISOLATED SEARCH BAR (Prevents map re-renders on every keystroke)
-// =========================================================================
 
-function IsolatedSearchBar({ onSearch }) {
-  const [localInput, setLocalInput] = useState("");
-
-  return (
-    <div className="flex-1 w-full md:max-w-md relative">
-       <input 
-          type="text" 
-          placeholder="Search location or station (e.g. Lekki)..." 
-          value={localInput} 
-          onChange={(e) => setLocalInput(e.target.value)} 
-          onKeyDown={(e) => e.key === 'Enter' && onSearch(localInput)}
-          className="w-full bg-white/10 border border-white/20 rounded-full py-2 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all"
-        />
-        <Search className="w-4 h-4 absolute left-4 top-2.5 text-indigo-300" />
-        <button 
-          onClick={() => onSearch(localInput)} 
-          className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors"
-        >
-          Go
-        </button>
-    </div>
-  );
-}
 // =========================================================================
 // MAIN APP COMPONENT
 // =========================================================================
@@ -438,7 +463,7 @@ function QozobLanding() {
   const [userLoc, setUserLoc] = useState(null);
   
   const [searchCenter, setSearchCenter] = useState(null);
-    
+  
   const [listFilter, setListFilter] = useState("All");
   const [listSort, setListSort] = useState("Distance");
 
@@ -572,7 +597,7 @@ function QozobLanding() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
       
-     <nav className="bg-indigo-900 text-white p-4 sticky top-0 z-50 shadow-md">
+      <nav className="bg-indigo-900 text-white p-4 sticky top-0 z-50 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <h1 className="text-2xl font-black tracking-tighter text-emerald-400">Qozob.</h1>
           <IsolatedSearchBar onSearch={handleLocationSearch} />
@@ -737,20 +762,23 @@ function QozobLanding() {
            
            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2">
              {sortedAndFilteredList.map((station) => (
-               <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-100 cursor-pointer transition-colors">
-                 <div>
-                   <h3 className="font-bold text-slate-800 text-sm line-clamp-1">{station.name}</h3>
-                   <div className="flex items-center gap-2 mt-1">
-                     <p className="text-[10px] text-slate-500 line-clamp-1">{station.distance ? `${station.distance}km away` : station.address}</p>
-                     
-                     {station.accuracy_votes > 0 && (
-                       <div className="flex items-center text-[9px] font-bold text-amber-500">
-                         <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> {station.pump_accuracy}
-                       </div>
-                     )}
+               <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between items-center p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-100 cursor-pointer transition-colors gap-3">
+                 <div className="flex items-center flex-1 min-w-0">
+                   <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
+                   <div className="min-w-0 flex-1">
+                     <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
+                     <div className="flex items-center gap-2 mt-1">
+                       <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                       
+                       {station.accuracy_votes > 0 && (
+                         <div className="flex items-center text-[9px] font-bold text-amber-500 flex-shrink-0">
+                           <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> {station.pump_accuracy}
+                         </div>
+                       )}
+                     </div>
                    </div>
                  </div>
-                 <div className="text-right ml-2">
+                 <div className="text-right flex-shrink-0">
                    <div className="text-lg font-black" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
                      {station.price_pms ? `₦${station.price_pms}` : "---"}
                    </div>
@@ -776,12 +804,15 @@ function QozobLanding() {
             </h2>
             <div className="flex flex-col gap-3">
               {mergedStations.filter(s => !s.price_pms).slice(0, 4).map((station) => (
-                <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-100 cursor-pointer">
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-sm line-clamp-1">{station.name}</h3>
-                    <p className="text-[10px] text-slate-500 line-clamp-1">{station.distance ? `${station.distance}km away` : station.address}</p>
+                <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 border border-slate-100 cursor-pointer gap-3">
+                  <div className="flex items-center flex-1 min-w-0">
+                    <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
+                      <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                    </div>
                   </div>
-                  <div className="text-right text-xs font-bold text-slate-400 mt-2">Update</div>
+                  <div className="text-right text-xs font-bold text-slate-400 flex-shrink-0">Update</div>
                 </div>
               ))}
             </div>
