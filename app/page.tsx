@@ -113,7 +113,17 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("mobil")) { matchedLogoUrl = "/logos/mobil.png"; fallbackColor = "#2563eb"; }
     else if (lowerName.includes("oando")) { matchedLogoUrl = "/logos/oando.png"; fallbackColor = "#dc2626"; }
     else if (lowerName.includes("conoil")) { matchedLogoUrl = "/logos/conoil.png"; fallbackColor = "#eab308"; }
-    else if (lowerName.includes("ardova") || /\bap\b/.test(lowerName)) { matchedLogoUrl = "/logos/ap.png"; fallbackColor = "#ea580c"; }
+    else if (
+      lowerName.includes("ardova") || 
+      lowerName === "ap" || 
+      lowerName.startsWith("ap ") || 
+      lowerName.includes(" ap ") || 
+      lowerName.includes("a.p") || 
+      lowerName.includes("a p ")
+    ) { 
+      matchedLogoUrl = "/logos/ap-brand.png"; 
+      fallbackColor = "#ea580c"; 
+    }
     else if (lowerName.includes("shell")) { matchedLogoUrl = "/logos/shell.png"; fallbackColor = "#facc15"; }
     else if (lowerName.includes("rainoil")) { matchedLogoUrl = "/logos/rainoil.png"; fallbackColor = "#0ea5e9"; }
     else if (lowerName.includes("bovas")) { matchedLogoUrl = "/logos/bovas.png"; fallbackColor = "#f43f5e"; }
@@ -127,7 +137,7 @@ function StationMarker({ name, hasPrice, customLogoUrl }) {
     else if (lowerName.includes("matrix")) { matchedLogoUrl = "/logos/matrix.png"; fallbackColor = "#5dc0e5"; }
     else if (lowerName.includes("fatgbems")) { matchedLogoUrl = "/logos/fatgbems.png"; fallbackColor = "#a13227"; }
     else if (lowerName.includes("forte")) { matchedLogoUrl = "/logos/forte.png"; fallbackColor = "#a3bc01"; }
-    }
+  }
 
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
@@ -600,6 +610,7 @@ function QozobLanding() {
               streetViewControl={false} 
               fullscreenControl={false} 
               gestureHandling={'greedy'}
+              onClick={() => setSelectedStation(null)}
             >
               <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={searchCenter} />
 
@@ -615,10 +626,18 @@ function QozobLanding() {
 
               {selectedStation && (
                 <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
-                  <div className="p-3 min-w-[240px] font-sans">
-                    <div className="flex justify-between items-start mb-1">
-                      <h3 className="font-extrabold text-indigo-950 text-lg">{selectedStation.name}</h3>
-                      {selectedStation.verified && <ShieldCheck className="w-5 h-5 text-blue-500" title="Verified Official Price" />}
+                  <div className="p-3 min-w-[240px] font-sans relative">
+                    
+                    <button 
+                      onClick={() => setSelectedStation(null)} 
+                      className="absolute top-1 right-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full p-1.5 transition-colors z-10"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+
+                    <div className="flex justify-between items-start mb-1 pr-8">
+                      <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{selectedStation.name}</h3>
+                      {selectedStation.verified && <ShieldCheck className="w-5 h-5 text-blue-500 flex-shrink-0 ml-1" title="Verified Official Price" />}
                     </div>
                     <p className="text-xs text-slate-500 mb-1">{selectedStation.address}</p>
                     
