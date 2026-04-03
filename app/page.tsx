@@ -54,11 +54,20 @@ function getPriceColor(role) {
   const cleanRole = role.replace(/['"]/g, '').trim().toLowerCase();
   
   switch(cleanRole) {
-    case 'qozob rep': return '#34A853'; // Google Green
-    case 'owner': return '#4285F4';     // Google Blue
-    case 'user': return '#FBBC05';      // Google Yellow
-    default: return '#FBBC05';          // Default to Yellow for unknown
+    case 'qozob rep': return '#34A853'; 
+    case 'owner': return '#4285F4';     
+    case 'user': return '#FBBC05';      
+    default: return '#FBBC05';          
   }
+}
+
+// --- NEW Helper: Typographic Price Formatter (Decimals) ---
+function formatPrice(price, decimalClass) {
+  if (price === null || price === undefined) return "---";
+  const [whole, decimal] = Number(price).toFixed(2).split('.');
+  return (
+    <>₦{whole}<span className={decimalClass}>.{decimal}</span></>
+  );
 }
 
 // --- Helpers: Brand Info Extractor (DRY Logic for Map & Lists) ---
@@ -138,7 +147,7 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
 
 // --- Custom Components ---
 
-// --- NEW: User Location Sonar Marker ---
+// --- User Location Sonar Marker ---
 function UserLocationMarker({ position }) {
   if (!position) return null;
   return (
@@ -233,7 +242,6 @@ function IsolatedSearchBar({ onSearch }) {
   );
 }
 
-
 // =========================================================================
 // ISOLATED MODALS (Prevents Input Focus Dropping)
 // =========================================================================
@@ -253,7 +261,7 @@ function PriceUpdateModal({ station, onClose }) {
       address: station.address,
       lat: station.lat,
       lng: station.lng,
-      price_pms: parseInt(suggestedPrice),
+      price_pms: parseFloat(suggestedPrice), // --- NEW: Parses floats instead of Ints
       queue_status: suggestedQueue,
       last_updated: new Date().toISOString(), 
       updated_by_role: 'User', 
@@ -279,9 +287,9 @@ function PriceUpdateModal({ station, onClose }) {
         
         <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
         <input 
-          type="number" value={suggestedPrice} onChange={(e) => setSuggestedPrice(e.target.value)} 
+          type="number" step="0.01" value={suggestedPrice} onChange={(e) => setSuggestedPrice(e.target.value)} 
           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
-          placeholder="e.g. 950" autoFocus 
+          placeholder="e.g. 950.50" autoFocus 
         />
         
         <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
@@ -660,8 +668,12 @@ function QozobLanding() {
                 </div>
               )}
               
-              <div className="text-5xl font-black mb-1 relative z-10" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                ₦{heroStation.price_pms} <span className="text-sm font-normal text-indigo-300">/ liter</span>
+              {/* --- NEW: Formatted Price with Baseline Alignment --- */}
+              <div className="flex items-baseline gap-1 relative z-10 mb-1">
+                <div className="text-5xl font-black" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                  {formatPrice(heroStation.price_pms, "text-2xl")}
+                </div>
+                <span className="text-sm font-normal text-indigo-300">/ liter</span>
               </div>
               
               <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300 relative z-10 mb-6 uppercase tracking-wider">
@@ -693,7 +705,6 @@ function QozobLanding() {
             >
               <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={searchCenter} />
 
-              {/* --- NEW: User Location Sonar Marker --- */}
               <UserLocationMarker position={userLoc} />
 
               {mergedStations.map((station) => (
@@ -737,8 +748,9 @@ function QozobLanding() {
                       <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Current PMS Price</p>
                         
-                        <div className="text-3xl font-black mb-1" style={{ color: getPriceColor(selectedStation.updated_by_role), textShadow: selectedStation.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
-                          {selectedStation.price_pms ? `₦${selectedStation.price_pms}` : "---"}
+                        {/* --- NEW: Formatted Price Map Popup --- */}
+                        <div className="text-3xl font-black mb-1 flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role), textShadow: selectedStation.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
+                          {formatPrice(selectedStation.price_pms, "text-base")}
                         </div>
                         
                         {selectedStation.price_pms && (
@@ -819,8 +831,9 @@ function QozobLanding() {
                    </div>
                  </div>
                  <div className="text-right flex-shrink-0">
-                   <div className="text-lg font-black" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
-                     {station.price_pms ? `₦${station.price_pms}` : "---"}
+                   {/* --- NEW: Formatted Price List View --- */}
+                   <div className="text-lg font-black flex items-baseline justify-end" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
+                     {formatPrice(station.price_pms, "text-[10px]")}
                    </div>
                    {station.price_pms && (
                       <div className="flex items-center justify-end gap-1 text-[8px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">
