@@ -61,13 +61,20 @@ function getPriceColor(role) {
   }
 }
 
-// --- NEW Helper: Typographic Price Formatter (Decimals) ---
+// --- NEW Helper: Smart Typographic Price Formatter (No trailing zeros) ---
 function formatPrice(price, decimalClass) {
   if (price === null || price === undefined) return "---";
-  const [whole, decimal] = Number(price).toFixed(2).split('.');
-  return (
-    <>₦{whole}<span className={decimalClass}>.{decimal}</span></>
-  );
+  const numPrice = Number(price);
+  
+  // If the price is a flat integer (e.g. 950), return it clean without .00
+  if (numPrice % 1 === 0) {
+    return <>₦{numPrice}</>;
+  } 
+  // If it has decimals (e.g. 950.50), format and scale the decimal typography
+  else {
+    const [whole, decimal] = numPrice.toFixed(2).split('.');
+    return <>₦{whole}<span className={decimalClass}>.{decimal}</span></>;
+  }
 }
 
 // --- Helpers: Brand Info Extractor (DRY Logic for Map & Lists) ---
@@ -261,7 +268,7 @@ function PriceUpdateModal({ station, onClose }) {
       address: station.address,
       lat: station.lat,
       lng: station.lng,
-      price_pms: parseFloat(suggestedPrice), // --- NEW: Parses floats instead of Ints
+      price_pms: parseFloat(suggestedPrice),
       queue_status: suggestedQueue,
       last_updated: new Date().toISOString(), 
       updated_by_role: 'User', 
@@ -289,7 +296,7 @@ function PriceUpdateModal({ station, onClose }) {
         <input 
           type="number" step="0.01" value={suggestedPrice} onChange={(e) => setSuggestedPrice(e.target.value)} 
           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
-          placeholder="e.g. 950.50" autoFocus 
+          placeholder="e.g. 950" autoFocus 
         />
         
         <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
@@ -668,7 +675,7 @@ function QozobLanding() {
                 </div>
               )}
               
-              {/* --- NEW: Formatted Price with Baseline Alignment --- */}
+              {/* Formatted Price with Baseline Alignment */}
               <div className="flex items-baseline gap-1 relative z-10 mb-1">
                 <div className="text-5xl font-black" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
                   {formatPrice(heroStation.price_pms, "text-2xl")}
@@ -748,7 +755,7 @@ function QozobLanding() {
                       <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Current PMS Price</p>
                         
-                        {/* --- NEW: Formatted Price Map Popup --- */}
+                        {/* Formatted Price Map Popup */}
                         <div className="text-3xl font-black mb-1 flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role), textShadow: selectedStation.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
                           {formatPrice(selectedStation.price_pms, "text-base")}
                         </div>
@@ -831,7 +838,7 @@ function QozobLanding() {
                    </div>
                  </div>
                  <div className="text-right flex-shrink-0">
-                   {/* --- NEW: Formatted Price List View --- */}
+                   {/* Formatted Price List View */}
                    <div className="text-lg font-black flex items-baseline justify-end" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
                      {formatPrice(station.price_pms, "text-[10px]")}
                    </div>
