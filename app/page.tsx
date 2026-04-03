@@ -392,7 +392,33 @@ function RateStationModal({ station, onClose }) {
     </div>
   );
 }
+// =========================================================================
+// ISOLATED SEARCH BAR (Prevents map re-renders on every keystroke)
+// =========================================================================
 
+function IsolatedSearchBar({ onSearch }) {
+  const [localInput, setLocalInput] = useState("");
+
+  return (
+    <div className="flex-1 w-full md:max-w-md relative">
+       <input 
+          type="text" 
+          placeholder="Search location or station (e.g. Lekki)..." 
+          value={localInput} 
+          onChange={(e) => setLocalInput(e.target.value)} 
+          onKeyDown={(e) => e.key === 'Enter' && onSearch(localInput)}
+          className="w-full bg-white/10 border border-white/20 rounded-full py-2 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all"
+        />
+        <Search className="w-4 h-4 absolute left-4 top-2.5 text-indigo-300" />
+        <button 
+          onClick={() => onSearch(localInput)} 
+          className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors"
+        >
+          Go
+        </button>
+    </div>
+  );
+}
 // =========================================================================
 // MAIN APP COMPONENT
 // =========================================================================
@@ -412,8 +438,7 @@ function QozobLanding() {
   const [userLoc, setUserLoc] = useState(null);
   
   const [searchCenter, setSearchCenter] = useState(null);
-  const [searchInput, setSearchInput] = useState("");
-  
+    
   const [listFilter, setListFilter] = useState("All");
   const [listSort, setListSort] = useState("Distance");
 
@@ -530,12 +555,12 @@ function QozobLanding() {
     return 0;
   });
 
-  const handleLocationSearch = () => {
-    if (!searchInput) return;
+  const handleLocationSearch = (searchTerm) => {
+    if (!searchTerm) return;
     if (!window.google || !window.google.maps) return alert("Map is still loading, please wait.");
     
     const geocoder = new window.google.maps.Geocoder();
-    geocoder.geocode({ address: searchInput }, (results, status) => {
+    geocoder.geocode({ address: searchTerm }, (results, status) => {
       if (status === "OK" && results[0]) {
         setSearchCenter({ lat: results[0].geometry.location.lat(), lng: results[0].geometry.location.lng() });
       } else alert("Could not find that location.");
@@ -547,18 +572,10 @@ function QozobLanding() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
       
-      <nav className="bg-indigo-900 text-white p-4 sticky top-0 z-50 shadow-md">
+     <nav className="bg-indigo-900 text-white p-4 sticky top-0 z-50 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <h1 className="text-2xl font-black tracking-tighter text-emerald-400">Qozob.</h1>
-          <div className="flex-1 w-full md:max-w-md relative">
-             <input 
-                type="text" placeholder="Search location or station (e.g. Lekki)..." 
-                value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLocationSearch()}
-                className="w-full bg-white/10 border border-white/20 rounded-full py-2 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all"
-              />
-              <Search className="w-4 h-4 absolute left-4 top-2.5 text-indigo-300" />
-              <button onClick={handleLocationSearch} className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors">Go</button>
-          </div>
+          <IsolatedSearchBar onSearch={handleLocationSearch} />
         </div>
       </nav>
 
