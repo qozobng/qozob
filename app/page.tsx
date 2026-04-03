@@ -471,6 +471,16 @@ function QozobLanding() {
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [showRateForm, setShowRateForm] = useState(false);
 
+  // --- NEW: Global Map Instance for External Panning ---
+  const map = useMap('main-map');
+
+  // --- NEW: Pan Map automatically when ANY station is selected ---
+  useEffect(() => {
+    if (selectedStation && map && selectedStation.lat && selectedStation.lng) {
+      map.panTo({ lat: selectedStation.lat, lng: selectedStation.lng });
+    }
+  }, [selectedStation, map]);
+
   useEffect(() => {
     if (navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
@@ -615,7 +625,19 @@ function QozobLanding() {
                 <AlertTriangle className="text-emerald-400 w-5 h-5" />
                 <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
               </div>
-              <h2 className="text-3xl font-black mb-1 relative z-10">{heroStation.name}</h2>
+              
+              {/* --- NEW: Clickable Hero Title --- */}
+              <h2 
+                className="text-3xl font-black mb-1 relative z-10 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
+                onClick={() => {
+                  setSelectedStation(heroStation);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                title="Locate on Map"
+              >
+                {heroStation.name}
+              </h2>
+
               <p className="text-indigo-200 text-sm mb-2 relative z-10">{heroStation.distance}km away • {heroStation.queue_status} Queue</p>
               
               {heroStation.accuracy_votes > 0 && (
@@ -643,6 +665,7 @@ function QozobLanding() {
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
           <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white">
             <Map 
+              id="main-map"  /* <--- NEW: Map ID so useMap() can grab it externally */
               defaultZoom={13} 
               defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
               mapId="QOZOB_MAIN_MAP" 
