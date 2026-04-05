@@ -44,7 +44,7 @@ export default function AdminDashboard() {
   const fetchClaims = async () => {
     setIsLoading(true);
     
-    // 1. Fetch all claims
+    // 1. Fetch all claims (now containing native lat/lng)
     const { data: claimsData, error: claimsError } = await supabase
       .from('station_claims')
       .select('*')
@@ -57,23 +57,21 @@ export default function AdminDashboard() {
       return;
     }
 
-    // 2. Fetch all stations to grab their coordinates and addresses
+    // 2. Fetch stations JUST to get the physical address text
     const { data: stationsData, error: stationsError } = await supabase
       .from('stations')
-      .select('station_id, address, lat, lng');
+      .select('station_id, address');
 
     if (stationsError) {
       console.warn("Could not fetch stations for address matching:", stationsError.message);
     }
 
-    // 3. Merge the address and map coordinates into the claims data
+    // 3. Merge the address text back into the claims data for the UI
     const mergedClaims = (claimsData || []).map(claim => {
       const matchedStation = (stationsData || []).find(s => s.station_id === claim.station_id);
       return {
         ...claim,
-        address: matchedStation?.address || "Address unavailable",
-        lat: matchedStation?.lat,
-        lng: matchedStation?.lng
+        address: matchedStation?.address || "Address unavailable"
       };
     });
 
@@ -227,7 +225,7 @@ export default function AdminDashboard() {
                   
                   <h4 className="font-black text-indigo-950 text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
                   
-                  {/* Address display */}
+                  {/* --- RESTORED: Address display --- */}
                   <p className="text-xs font-bold text-slate-500 mb-2 leading-snug pr-8">
                     {claim.address}
                   </p>
@@ -253,7 +251,6 @@ export default function AdminDashboard() {
 
                   <div className="flex flex-col gap-2 mt-auto">
                     
-                    {/* --- FIXED: Exact Google Maps Link Engine using Official Maps API --- */}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <a 
                         href={claim.document_url || "#"} 
@@ -264,6 +261,7 @@ export default function AdminDashboard() {
                         <FileText className="w-4 h-4" /> CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
                       </a>
 
+                      {/* --- Exact Coordinate Link --- */}
                       <a 
                         href={claim.lat && claim.lng 
                           ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}&query_place_id=${claim.station_id}` 
