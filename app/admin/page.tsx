@@ -227,7 +227,7 @@ export default function AdminDashboard() {
                   
                   <h4 className="font-black text-indigo-950 text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
                   
-                  {/* --- NEW: Address display --- */}
+                  {/* Address display */}
                   <p className="text-xs font-bold text-slate-500 mb-2 leading-snug pr-8">
                     {claim.address}
                   </p>
@@ -253,7 +253,7 @@ export default function AdminDashboard() {
 
                   <div className="flex flex-col gap-2 mt-auto">
                     
-                    {/* --- NEW: Split Document & Map Buttons --- */}
+                    {/* --- FIXED: Exact Google Maps Link Engine --- */}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <a 
                         href={claim.document_url || "#"} 
@@ -265,7 +265,9 @@ export default function AdminDashboard() {
                       </a>
 
                       <a 
-                        href={claim.lat && claim.lng ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}&query_place_id=${claim.station_id}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name)}`}
+                        href={claim.lat && claim.lng 
+                          ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}&query_place_id=${claim.station_id}` 
+                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name + ' ' + (claim.address || ''))}`}
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors border border-slate-200 text-xs shadow-sm"
