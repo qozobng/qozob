@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import { 
-  ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, ExternalLink, RefreshCw
+  ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, ExternalLink, RefreshCw, MapPin
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -40,20 +40,44 @@ export default function AdminDashboard() {
     setClaims([]);
   };
 
-  // --- Fetch Claims from Supabase ---
+  // --- Fetch Claims & Smart Merge with Station Addresses ---
   const fetchClaims = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
+    
+    // 1. Fetch all claims
+    const { data: claimsData, error: claimsError } = await supabase
       .from('station_claims')
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) {
-      console.error("Error fetching claims:", error.message);
+    if (claimsError) {
+      console.error("Error fetching claims:", claimsError.message);
       alert("Failed to load claims. Check console for details.");
-    } else {
-      setClaims(data || []);
+      setIsLoading(false);
+      return;
     }
+
+    // 2. Fetch all stations to grab their coordinates and addresses
+    const { data: stationsData, error: stationsError } = await supabase
+      .from('stations')
+      .select('station_id, address, lat, lng');
+
+    if (stationsError) {
+      console.warn("Could not fetch stations for address matching:", stationsError.message);
+    }
+
+    // 3. Merge the address and map coordinates into the claims data
+    const mergedClaims = (claimsData || []).map(claim => {
+      const matchedStation = (stationsData || []).find(s => s.station_id === claim.station_id);
+      return {
+        ...claim,
+        address: matchedStation?.address || "Address unavailable",
+        lat: matchedStation?.lat,
+        lng: matchedStation?.lng
+      };
+    });
+
+    setClaims(mergedClaims);
     setIsLoading(false);
   };
 
@@ -202,7 +226,13 @@ export default function AdminDashboard() {
                   <div className="absolute top-0 right-0 bg-amber-100 text-amber-800 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-widest">Pending Review</div>
                   
                   <h4 className="font-black text-indigo-950 text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
-                  <p className="text-xs text-slate-500 mb-4 flex items-center gap-1"><Clock className="w-3 h-3"/> Claimed {new Date(claim.created_at).toLocaleDateString()}</p>
+                  
+                  {/* --- NEW: Address display --- */}
+                  <p className="text-xs font-bold text-slate-500 mb-2 leading-snug pr-8">
+                    {claim.address}
+                  </p>
+                  
+                  <p className="text-[10px] text-slate-400 mb-5 flex items-center gap-1"><Clock className="w-3 h-3"/> Claimed {new Date(claim.created_at).toLocaleDateString()}</p>
                   
                   <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-6 flex-1">
                     <div className="grid grid-cols-2 gap-4 text-sm">
@@ -221,20 +251,34 @@ export default function AdminDashboard() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-3 mt-auto">
-                    {claim.document_url ? (
-                      <a href={claim.document_url} target="_blank" rel="noopener noreferrer" className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-3 rounded-xl transition-colors border border-indigo-200 text-sm">
-                        <FileText className="w-4 h-4" /> View CAC Document <ExternalLink className="w-3 h-3 ml-1 opacity-50"/>
+                  <div className="flex flex-col gap-2 mt-auto">
+                    
+                    {/* --- NEW: Split Document & Map Buttons --- */}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <a 
+                        href={claim.document_url || "#"} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className={`flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-sm ${!claim.document_url ? 'opacity-50 pointer-events-none' : ''}`}
+                      >
+                        <FileText className="w-4 h-4" /> CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
                       </a>
-                    ) : (
-                      <div className="w-full text-center py-3 text-slate-400 text-sm font-bold bg-slate-50 rounded-xl">No Document Uploaded</div>
-                    )}
+
+                      <a 
+                        href={claim.lat && claim.lng ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}&query_place_id=${claim.station_id}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name)}`}
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors border border-slate-200 text-xs shadow-sm"
+                      >
+                        <MapPin className="w-4 h-4 text-emerald-600" /> View Map <ExternalLink className="w-3 h-3 opacity-50"/>
+                      </a>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <button onClick={() => handleApprove(claim)} disabled={isProcessing} className="flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3 rounded-xl transition-colors disabled:opacity-50 text-sm">
                         <CheckCircle className="w-4 h-4" /> Approve
                       </button>
-                      <button onClick={() => handleReject(claim)} disabled={isProcessing} className="flex items-center justify-center gap-1 bg-red-100 hover:bg-red-200 text-red-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm border border-red-200">
+                      <button onClick={() => handleReject(claim)} disabled={isProcessing} className="flex items-center justify-center gap-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm border border-red-200">
                         <XCircle className="w-4 h-4" /> Reject
                       </button>
                     </div>
