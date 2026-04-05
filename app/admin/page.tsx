@@ -253,7 +253,7 @@ export default function AdminDashboard() {
 
                   <div className="flex flex-col gap-2 mt-auto">
                     
-                    {/* --- FIXED: Exact Google Maps Link Engine --- */}
+                    {/* --- FIXED: Exact Google Maps Link Engine using Official Maps API --- */}
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <a 
                         href={claim.document_url || "#"} 
