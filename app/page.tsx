@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { 
   APIProvider, Map, AdvancedMarker, InfoWindow, 
-  useMap, useMapsLibrary 
+  useMap 
 } from '@vis.gl/react-google-maps';
 import { createClient } from '@supabase/supabase-js';
 
@@ -15,7 +15,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ---> PUT YOUR API KEY HERE <---
+// --- Map Visual Key (Used ONLY for drawing the map tiles now) ---
 const GOOGLE_MAPS_API_KEY = "AIzaSyBR1zxq9SGdcKUHgbLjvl1j0A50F1eG54o";
 
 // --- Helpers: Distance Calculation ---
@@ -48,7 +48,7 @@ function timeAgo(dateString) {
   return `${days}d ago`;
 }
 
-// --- Helpers: Dynamic Color by Role (Google Hex) ---
+// --- Helpers: Dynamic Color by Role ---
 function getPriceColor(role) {
   if (!role) return '#FBBC05'; 
   const cleanRole = role.replace(/['"]/g, '').trim().toLowerCase();
@@ -61,7 +61,7 @@ function getPriceColor(role) {
   }
 }
 
-// --- NEW Helper: Smart Typographic Price Formatter (No trailing zeros) ---
+// --- Helper: Smart Typographic Price Formatter ---
 function formatPrice(price, decimalClass) {
   if (price === null || price === undefined) return "---";
   const numPrice = Number(price);
@@ -77,7 +77,7 @@ function formatPrice(price, decimalClass) {
   }
 }
 
-// --- Helpers: Brand Info Extractor (DRY Logic for Map & Lists) ---
+// --- Helpers: Brand Info Extractor ---
 function getStationBrandInfo(name, customLogoUrl) {
   const lowerName = name?.toLowerCase() || "";
   let logoUrl = customLogoUrl || null; 
@@ -115,14 +115,13 @@ function getStationBrandInfo(name, customLogoUrl) {
   return { logoUrl, color, text };
 }
 
-// --- Dynamic Google Places Fetcher (Fixed Panning Bug) ---
+// --- SECURE BACKEND FETCHER ---
 function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
   const map = useMap();
-  const placesLib = useMapsLibrary('places');
   const [initialPanDone, setInitialPanDone] = useState(false);
 
   useEffect(() => {
-    if (!map || !placesLib) return;
+    if (!map) return;
     let centerPoint = { lat: 6.5244, lng: 3.3792 };
     
     // Only move the map camera if we do a manual search, OR if it's the very first GPS lock
@@ -139,30 +138,33 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }) {
       }
     }
     
-    const service = new placesLib.PlacesService(map);
-    const request = { location: centerPoint, radius: 5000, type: 'gas_station' };
-    
-    service.nearbySearch(request, (results, status) => {
-      if (status === placesLib.PlacesServiceStatus.OK && results) {
-        onStationsFound(results);
+    // Secure call to our Next.js Backend API
+    const fetchStations = async () => {
+      try {
+        const res = await fetch(`/api/stations?lat=${centerPoint.lat}&lng=${centerPoint.lng}`);
+        const data = await res.json();
+        if (data.results) {
+          onStationsFound(data.results);
+        }
+      } catch (err) {
+        console.error("Error fetching secure stations:", err);
       }
-    });
-  }, [map, placesLib, onStationsFound, userLoc, searchCenter, initialPanDone]);
+    };
+
+    fetchStations();
+  }, [map, onStationsFound, userLoc, searchCenter, initialPanDone]);
   
   return null;
 }
 
 // --- Custom Components ---
 
-// --- User Location Sonar Marker ---
 function UserLocationMarker({ position }) {
   if (!position) return null;
   return (
     <AdvancedMarker position={position} zIndex={50}>
       <div className="relative flex h-8 w-8 items-center justify-center">
-        {/* The expanding sonar ring */}
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
-        {/* The solid center dot */}
         <span className="relative inline-flex h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-lg"></span>
       </div>
     </AdvancedMarker>
@@ -222,7 +224,7 @@ function ListLogo({ name, customLogoUrl }) {
 }
 
 // =========================================================================
-// ISOLATED SEARCH BAR (Prevents map re-renders on every keystroke)
+// ISOLATED SEARCH BAR
 // =========================================================================
 
 function IsolatedSearchBar({ onSearch }) {
@@ -250,7 +252,7 @@ function IsolatedSearchBar({ onSearch }) {
 }
 
 // =========================================================================
-// ISOLATED MODALS (Prevents Input Focus Dropping)
+// ISOLATED MODALS
 // =========================================================================
 
 function PriceUpdateModal({ station, onClose }) {
@@ -288,26 +290,40 @@ function PriceUpdateModal({ station, onClose }) {
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800"><X className="w-6 h-6" /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800">
+          <X className="w-6 h-6" />
+        </button>
         <h2 className="text-2xl font-black text-indigo-950 mb-1">Update Price</h2>
         <p className="text-sm text-slate-500 mb-6">{station.name}</p>
         
         <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
         <input 
-          type="number" step="0.01" value={suggestedPrice} onChange={(e) => setSuggestedPrice(e.target.value)} 
+          type="number" 
+          step="0.01" 
+          value={suggestedPrice} 
+          onChange={(e) => setSuggestedPrice(e.target.value)} 
           className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
-          placeholder="e.g. 950" autoFocus 
+          placeholder="e.g. 950" 
+          autoFocus 
         />
         
         <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
-        <select value={suggestedQueue} onChange={(e) => setSuggestedQueue(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-6 outline-none cursor-pointer">
+        <select 
+          value={suggestedQueue} 
+          onChange={(e) => setSuggestedQueue(e.target.value)} 
+          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-6 outline-none cursor-pointer"
+        >
           <option value="No Queue">No Queue (Fast)</option>
           <option value="Moderate">Moderate</option>
           <option value="Heavy">Heavy Queue</option>
           <option value="No Fuel">No Fuel Dispensing</option>
         </select>
 
-        <button onClick={handleSuggestPrice} disabled={!suggestedPrice || isSubmittingPrice} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50">
+        <button 
+          onClick={handleSuggestPrice} 
+          disabled={!suggestedPrice || isSubmittingPrice} 
+          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50"
+        >
           {isSubmittingPrice ? "Saving..." : "Submit to Map"}
         </button>
       </div>
@@ -325,36 +341,69 @@ function ClaimStationModal({ station, onClose }) {
   const [cacFile, setCacFile] = useState(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
-  const handleSendOTP = async () => { setOtpSent(true); alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); };
-  const handleVerifyOTP = async () => { if(otp === "123456" || otp.length === 6) setPhoneVerified(true); else alert("Invalid OTP"); };
+  const handleSendOTP = async () => { 
+    setOtpSent(true); 
+    alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); 
+  };
+  
+  const handleVerifyOTP = async () => { 
+    if(otp === "123456" || otp.length === 6) {
+      setPhoneVerified(true); 
+    } else {
+      alert("Invalid OTP"); 
+    }
+  };
 
   const handleFinalSubmitClaim = async () => {
-    if (!cacFile || !applicantName || !cacNumber || !phoneVerified) return alert("Please fill all fields, verify phone, and upload CAC document.");
+    if (!cacFile || !applicantName || !cacNumber || !phoneVerified) {
+      return alert("Please fill all fields, verify phone, and upload CAC document.");
+    }
     setIsSubmittingClaim(true);
     try {
       const fileExt = cacFile.name.split('.').pop();
       const fileName = `cac_${station.id}_${Date.now()}.${fileExt}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage.from('cac_documents').upload(fileName, cacFile);
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('cac_documents')
+        .upload(fileName, cacFile);
+      
       if (uploadError) throw new Error(uploadError.message);
-      const { data: publicUrlData } = supabase.storage.from('cac_documents').getPublicUrl(fileName);
+      
+      const { data: publicUrlData } = supabase.storage
+        .from('cac_documents')
+        .getPublicUrl(fileName);
 
       const { error: dbError } = await supabase.from('station_claims').insert({
-        station_id: station.id, station_name: station.name, applicant_name: applicantName,
-        applicant_role: "Manager", business_reg_number: cacNumber, official_email: "pending@email.com",
-        phone_number: phone, document_url: publicUrlData.publicUrl, status: 'Pending Review'
+        station_id: station.id, 
+        station_name: station.name, 
+        applicant_name: applicantName,
+        applicant_role: "Manager", 
+        business_reg_number: cacNumber, 
+        official_email: "pending@email.com",
+        phone_number: phone, 
+        document_url: publicUrlData.publicUrl, 
+        status: 'Pending Review',
+        lat: station.lat,
+        lng: station.lng
       });
+
       if (dbError) throw new Error(dbError.message);
 
       alert("Claim submitted successfully!");
       onClose();
-    } catch (err) { alert("Error: " + err.message); } 
-    finally { setIsSubmittingClaim(false); }
+    } catch (err) { 
+      alert("Error: " + err.message); 
+    } finally { 
+      setIsSubmittingClaim(false); 
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-8 max-w-md w-full relative shadow-2xl overflow-y-auto max-h-[90vh]">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800"><X className="w-6 h-6" /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800">
+          <X className="w-6 h-6" />
+        </button>
         <h2 className="text-2xl font-black text-indigo-950 mb-2">Claim Station</h2>
         <p className="text-sm text-slate-500 mb-6">Verify ownership of <strong>{station.name}</strong>.</p>
         
@@ -364,13 +413,32 @@ function ClaimStationModal({ station, onClose }) {
             </label>
             {!phoneVerified && (
               <div className="mt-2 flex flex-col gap-2">
-                <input type="tel" disabled={otpSent} value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500" placeholder="08012345678" autoFocus />
+                <input 
+                  type="tel" 
+                  disabled={otpSent} 
+                  value={phone} 
+                  onChange={(e) => setPhone(e.target.value)} 
+                  className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500" 
+                  placeholder="08012345678" 
+                  autoFocus 
+                />
                 {!otpSent ? (
-                  <button onClick={handleSendOTP} className="bg-indigo-600 text-white font-bold py-2 rounded-lg">Send OTP</button>
+                  <button onClick={handleSendOTP} className="bg-indigo-600 text-white font-bold py-2 rounded-lg">
+                    Send OTP
+                  </button>
                 ) : (
                   <div className="flex gap-2">
-                    <input type="text" value={otp} onChange={(e) => setOtp(e.target.value)} className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none focus:border-indigo-500" placeholder="123456" maxLength={6} />
-                    <button onClick={handleVerifyOTP} className="w-1/3 bg-emerald-500 text-white font-bold py-2 rounded-lg">Verify</button>
+                    <input 
+                      type="text" 
+                      value={otp} 
+                      onChange={(e) => setOtp(e.target.value)} 
+                      className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none focus:border-indigo-500" 
+                      placeholder="123456" 
+                      maxLength={6} 
+                    />
+                    <button onClick={handleVerifyOTP} className="w-1/3 bg-emerald-500 text-white font-bold py-2 rounded-lg">
+                      Verify
+                    </button>
                   </div>
                 )}
               </div>
@@ -379,14 +447,39 @@ function ClaimStationModal({ station, onClose }) {
 
           <div className={`transition-all duration-300 flex flex-col gap-1 ${!phoneVerified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
             <label className="text-xs font-bold text-slate-500 uppercase mt-2">2. Applicant Name</label>
-            <input type="text" value={applicantName} onChange={(e) => setApplicantName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500" placeholder="e.g. Adebayo Johnson" />
+            <input 
+              type="text" 
+              value={applicantName} 
+              onChange={(e) => setApplicantName(e.target.value)} 
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500" 
+              placeholder="e.g. Adebayo Johnson" 
+            />
+            
             <label className="text-xs font-bold text-slate-500 uppercase mt-2">CAC Reg Number</label>
-            <input type="text" value={cacNumber} onChange={(e) => setCacNumber(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500" placeholder="RC-123456" />
-            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mt-2"><UploadCloud className="w-4 h-4" /> Upload CAC Document (PDF/JPG)</label>
-            <input type="file" accept=".pdf, image/jpeg, image/png" onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200" />
+            <input 
+              type="text" 
+              value={cacNumber} 
+              onChange={(e) => setCacNumber(e.target.value)} 
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500" 
+              placeholder="RC-123456" 
+            />
+            
+            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mt-2">
+              <UploadCloud className="w-4 h-4" /> Upload CAC Document (PDF/JPG)
+            </label>
+            <input 
+              type="file" 
+              accept=".pdf, image/jpeg, image/png" 
+              onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} 
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200" 
+            />
           </div>
 
-          <button onClick={handleFinalSubmitClaim} disabled={!phoneVerified || isSubmittingClaim} className="w-full bg-indigo-900 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50">
+          <button 
+            onClick={handleFinalSubmitClaim} 
+            disabled={!phoneVerified || isSubmittingClaim} 
+            className="w-full bg-indigo-900 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50"
+          >
               {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
           </button>
       </div>
@@ -394,7 +487,6 @@ function ClaimStationModal({ station, onClose }) {
   );
 }
 
-// === PUBLIC LITRE INTEGRITY RATING MODAL ===
 function RateStationModal({ station, onClose }) {
   const [hoveredStar, setHoveredStar] = useState(0);
   const [selectedStar, setSelectedStar] = useState(0);
@@ -437,7 +529,9 @@ function RateStationModal({ station, onClose }) {
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800"><X className="w-6 h-6" /></button>
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800">
+          <X className="w-6 h-6" />
+        </button>
         <h2 className="text-2xl font-black text-indigo-950 mb-1">Rate Pump Integrity</h2>
         <p className="text-sm text-slate-500 mb-6">{station.name}</p>
         
@@ -466,7 +560,11 @@ function RateStationModal({ station, onClose }) {
           </div>
         </div>
 
-        <button onClick={handleSubmitRating} disabled={selectedStar === 0 || isSubmitting} className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50">
+        <button 
+          onClick={handleSubmitRating} 
+          disabled={selectedStar === 0 || isSubmitting} 
+          className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50"
+        >
           {isSubmitting ? "Submitting..." : "Submit Public Rating"}
         </button>
       </div>
@@ -540,8 +638,11 @@ function QozobLanding() {
 
   const mergedStations = googleStations.map(googlePlace => {
     const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
-    const statLat = googlePlace.geometry?.location?.lat();
-    const statLng = googlePlace.geometry?.location?.lng();
+    
+    // Support parsing both direct objects (from our API) and Google Map library objects
+    const statLat = typeof googlePlace.geometry?.location?.lat === 'function' ? googlePlace.geometry.location.lat() : googlePlace.geometry?.location?.lat;
+    const statLng = typeof googlePlace.geometry?.location?.lng === 'function' ? googlePlace.geometry.location.lng() : googlePlace.geometry?.location?.lng;
+    
     const distance = userLoc ? getDistanceFromLatLonInKm(userLoc.lat, userLoc.lng, statLat, statLng) : null;
 
     return {
