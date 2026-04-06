@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'API key missing on server' }, { status: 500 });
   }
 
-  const radius = 5000; 
+  const radius = 5001; 
   const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=gas_station&key=${apiKey}`;
 
   try {
