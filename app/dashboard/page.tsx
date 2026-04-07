@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
-  LogOut, UploadCloud, CheckCircle2, ShieldCheck, Loader2
+  LogOut, UploadCloud, CheckCircle2, ShieldCheck, Loader2, X
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
