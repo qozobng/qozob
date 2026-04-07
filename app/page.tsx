@@ -887,7 +887,11 @@ function QozobLanding() {
 
                     <div className="flex justify-between items-start mb-1 pr-8">
                       <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{selectedStation.name}</h3>
-                      {selectedStation.verified && <ShieldCheck className="w-5 h-5 text-blue-500 flex-shrink-0 ml-1" title="Verified Official Price" />}
+                      {selectedStation.verified && (
+                        <span title="Verified Official Price" className="flex-shrink-0 ml-1">
+                          <ShieldCheck className="w-5 h-5 text-blue-500" />
+                        </span>
+                       )}
                     </div>
                     <p className="text-xs text-slate-500 mb-1">{selectedStation.address}</p>
                     
