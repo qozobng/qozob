@@ -3,12 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, ExternalLink, RefreshCw, MapPin
 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+
+// FIXED: Using your new secure utility instead of the raw library
+import { createClient } from '@/utils/supabase/client';
 
 // --- Supabase Setup ---
+// FIXED: Added '!' to tell TypeScript these definitely exist
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient();
 
 // --- Prototype Master Password ---
 const ADMIN_PASSCODE = "qozob-admin-2026";
@@ -18,12 +21,14 @@ export default function AdminDashboard() {
   const [passcode, setPasscode] = useState("");
   const [loginError, setLoginError] = useState("");
   
-  const [claims, setClaims] = useState([]);
+  // FIXED: Explicitly typed the claims array
+  const [claims, setClaims] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
 
   // --- Auth Handlers ---
-  const handleLogin = (e) => {
+  // FIXED: Added 'React.FormEvent' to stop the "Implicit Any" error
+  const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     if (passcode === ADMIN_PASSCODE) {
       setIsAuthenticated(true);
@@ -44,7 +49,7 @@ export default function AdminDashboard() {
   const fetchClaims = async () => {
     setIsLoading(true);
     
-    // 1. Fetch all claims (now containing native lat/lng)
+    // 1. Fetch all claims
     const { data: claimsData, error: claimsError } = await supabase
       .from('station_claims')
       .select('*')
@@ -52,12 +57,12 @@ export default function AdminDashboard() {
 
     if (claimsError) {
       console.error("Error fetching claims:", claimsError.message);
-      alert("Failed to load claims. Check console for details.");
+      alert("Failed to load claims.");
       setIsLoading(false);
       return;
     }
 
-    // 2. Fetch stations JUST to get the physical address text
+    // 2. Fetch stations for the physical address text
     const { data: stationsData, error: stationsError } = await supabase
       .from('stations')
       .select('station_id, address');
@@ -80,7 +85,7 @@ export default function AdminDashboard() {
   };
 
   // --- Action Handlers (Approve/Reject) ---
-  const handleApprove = async (claim) => {
+  const handleApprove = async (claim: any) => {
     const confirmApprove = window.confirm(`Are you sure you want to approve ${claim.applicant_name} for ${claim.station_name}?`);
     if (!confirmApprove) return;
 
@@ -108,12 +113,12 @@ export default function AdminDashboard() {
       alert("Error updating station verification: " + stationError.message);
     } else {
       alert("Station successfully claimed and verified!");
-      fetchClaims(); // Refresh list
+      fetchClaims(); 
     }
     setIsProcessing(false);
   };
 
-  const handleReject = async (claim) => {
+  const handleReject = async (claim: any) => {
     const confirmReject = window.confirm(`Are you sure you want to REJECT this claim?`);
     if (!confirmReject) return;
 
@@ -127,7 +132,7 @@ export default function AdminDashboard() {
       alert("Error rejecting claim: " + error.message);
     } else {
       alert("Claim rejected.");
-      fetchClaims(); // Refresh list
+      fetchClaims();
     }
     setIsProcessing(false);
   };
@@ -192,7 +197,6 @@ export default function AdminDashboard() {
 
       <main className="max-w-7xl mx-auto p-4 mt-6 flex flex-col gap-8">
         
-        {/* Header Stats */}
         <div className="flex justify-between items-end">
           <div>
             <h2 className="text-3xl font-black text-indigo-950 mb-1">Station Claims</h2>
@@ -203,7 +207,6 @@ export default function AdminDashboard() {
           </button>
         </div>
 
-        {/* Pending Claims Section */}
         <section>
           <div className="flex items-center gap-2 mb-4">
             <Clock className="w-5 h-5 text-amber-500" />
@@ -225,7 +228,6 @@ export default function AdminDashboard() {
                   
                   <h4 className="font-black text-indigo-950 text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
                   
-                  {/* --- RESTORED: Address display --- */}
                   <p className="text-xs font-bold text-slate-500 mb-2 leading-snug pr-8">
                     {claim.address}
                   </p>
@@ -250,7 +252,6 @@ export default function AdminDashboard() {
                   </div>
 
                   <div className="flex flex-col gap-2 mt-auto">
-                    
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <a 
                         href={claim.document_url || "#"} 
@@ -261,11 +262,10 @@ export default function AdminDashboard() {
                         <FileText className="w-4 h-4" /> CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
                       </a>
 
-                      {/* --- Exact Coordinate Link --- */}
                       <a 
                         href={claim.lat && claim.lng 
-                          ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}&query_place_id=${claim.station_id}` 
-                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name + ' ' + (claim.address || ''))}`}
+                          ? `https://www.google.com/maps/search/?api=1&query=${claim.lat},${claim.lng}` 
+                          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name)}`}
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors border border-slate-200 text-xs shadow-sm"
@@ -289,7 +289,6 @@ export default function AdminDashboard() {
           )}
         </section>
 
-        {/* History Section */}
         {pastClaims.length > 0 && (
           <section className="mt-8">
              <div className="flex items-center gap-2 mb-4 opacity-50">
