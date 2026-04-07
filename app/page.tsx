@@ -946,9 +946,12 @@ function QozobLanding() {
                         </button>
                       )}
 
-                      <button onClick={() => setShowClaimForm(true)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
-                        <ShieldCheck className="w-4 h-4" /> Claim This Station
-                      </button>
+                      {/* Only show the Claim button if the station is NOT verified */}
+                      {!selectedStation.verified && (
+                        <button onClick={() => setShowClaimForm(true)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
+                          <ShieldCheck className="w-4 h-4" /> Claim This Station
+                        </button>
+                      )}
                     </div>
                   </div>
                 </InfoWindow>
