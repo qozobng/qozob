@@ -680,8 +680,9 @@ function QozobLanding() {
 
     return {
       id: googlePlace.place_id,
-      name: googlePlace.name,
-      address: googlePlace.vicinity,
+      // THIS IS THE FIX: Prioritize Supabase data, fallback to Google
+      name: dbData?.name || googlePlace.name,
+      address: dbData?.address || googlePlace.vicinity,
       lat: statLat,
       lng: statLng,
       distance: distance,
