@@ -63,9 +63,10 @@ function getStationBrandInfo(name: string | null | undefined, customLogoUrl: str
 }
 
 // Generate a clean, readable unique code based on the database UUID
-function generateStationCode(uuid: string) {
-  if (!uuid) return "QZB-XXXX";
-  return `QZB-${uuid.substring(0, 6).toUpperCase()}`;
+function generateStationCode(stationId: string) {
+  if (!stationId) return "QZB-XXXX";
+  // Grab the last 6 characters of the Google Place ID to ensure uniqueness
+  return `QZB-${stationId.slice(-6).toUpperCase()}`;
 }
 
 // Basic CSV Parser that handles commas inside quotes (Address fields)
@@ -218,7 +219,7 @@ export default function DashboardPage() {
     const headers = ["System_ID", "Station_Code", "Name", "Address", "PMS_Price"];
     const rows = stations.map(s => [
       s.station_id, // We use the Google Place ID as the secure System ID for matching
-      generateStationCode(s.id),
+      generateStationCode(s.station_id),
       `"${(s.name || "").replace(/"/g, '""')}"`,
       `"${(s.address || "").replace(/"/g, '""')}"`,
       s.price_pms || ""
@@ -375,7 +376,7 @@ export default function DashboardPage() {
           <div className={viewMode === 'card' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-4"}>
             {stations.map(station => {
               const { logoUrl, color, text } = getStationBrandInfo(station.name, station.custom_logo_url);
-              const stationCode = generateStationCode(station.id);
+              const stationCode = generateStationCode(station.station_id);
 
               return (
                 <div key={station.id} className={`bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex ${viewMode === 'card' ? 'flex-col' : 'flex-col lg:flex-row lg:items-center gap-4 lg:gap-6'}`}>
@@ -504,7 +505,7 @@ export default function DashboardPage() {
               <X className="w-6 h-6" />
             </button>
             <h2 className="text-2xl font-black text-indigo-950 mb-1">Edit Station</h2>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">ID: {generateStationCode(editingStation.id)}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">ID: {generateStationCode(editingStation.station_id)}</p>
 
             {/* Form Fields */}
             <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Station Name</label>
