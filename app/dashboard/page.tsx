@@ -70,7 +70,7 @@ function generateStationCode(uuid: string) {
 
 // Basic CSV Parser that handles commas inside quotes (Address fields)
 function parseCSV(str: string) {
-  const arr = [];
+  const arr: string[][] = []; // <-- THE FIX: Added explicit TypeScript definition
   let quote = false;
   let row = 0, col = 0;
   for (let c = 0; c < str.length; c++) {
