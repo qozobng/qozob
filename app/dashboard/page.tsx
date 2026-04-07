@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
-  LogOut, CheckCircle2, ShieldCheck, Loader2, X
+  LogOut, CheckCircle2, ShieldCheck, Loader2, X, Navigation,
+  LayoutGrid, List // <-- Added icons for view toggle
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -79,6 +80,9 @@ export default function DashboardPage() {
   const [editingStation, setEditingStation] = useState<Station | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  // View Toggle State (Card vs List)
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
 
   // Form State
   const [editName, setEditName] = useState("");
@@ -213,11 +217,35 @@ export default function DashboardPage() {
 
       {/* MAIN CONTENT */}
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-black text-indigo-950 flex items-center gap-2">
-            <ShieldCheck className="text-emerald-500 w-8 h-8" /> Your Claimed Stations
-          </h2>
-          <p className="text-slate-500 mt-2">Updates made here will instantly override community data and apply the "Official Verified" badge to your stations on the public map.</p>
+        
+        {/* HEADER & VIEW CONTROLS */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h2 className="text-3xl font-black text-indigo-950 flex items-center gap-2">
+              <ShieldCheck className="text-emerald-500 w-8 h-8" /> Your Claimed Stations
+            </h2>
+            <p className="text-slate-500 mt-2">Updates made here will instantly override community data and apply the "Official Verified" badge to your stations on the public map.</p>
+          </div>
+          
+          {/* View Toggle */}
+          {stations.length > 0 && (
+            <div className="flex bg-slate-200 p-1 rounded-lg w-fit flex-shrink-0">
+              <button 
+                onClick={() => setViewMode('card')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'card' ? 'bg-white shadow-sm text-indigo-900' : 'text-slate-500 hover:text-slate-700'}`}
+                title="Card View"
+              >
+                <LayoutGrid className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-indigo-900' : 'text-slate-500 hover:text-slate-700'}`}
+                title="List View"
+              >
+                <List className="w-5 h-5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {stations.length === 0 ? (
@@ -227,16 +255,17 @@ export default function DashboardPage() {
             <p className="text-slate-500 max-w-md mx-auto">You currently do not have management access to any stations. Claim a station on the public map to manage it here.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className={viewMode === 'card' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-4"}>
             {stations.map(station => {
               const { logoUrl, color, text } = getStationBrandInfo(station.name, station.custom_logo_url);
 
               return (
-                <div key={station.id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col">
-                  <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+                <div key={station.id} className={`bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex ${viewMode === 'card' ? 'flex-col' : 'flex-col lg:flex-row lg:items-center gap-4 lg:gap-6'}`}>
+                  {/* Status Strip */}
+                  <div className={`absolute top-0 left-0 bg-emerald-500 ${viewMode === 'card' ? 'w-full h-2' : 'w-full h-2 lg:w-2 lg:h-full'}`}></div>
                   
-                  <div className="flex items-center gap-4 mb-6 mt-2">
-                    {/* THE FIX: Fixed w-16 h-16 logo container */}
+                  {/* Identity Section */}
+                  <div className={`flex items-center gap-4 ${viewMode === 'card' ? 'mb-4 mt-2' : 'flex-1 pt-4 lg:pt-0'}`}>
                     <div className="w-16 h-16 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
                       {logoUrl ? (
                         <img src={logoUrl} alt={station.name} className="w-full h-full object-contain p-1" />
@@ -246,15 +275,16 @@ export default function DashboardPage() {
                         </div>
                       )}
                     </div>
-                    <div>
-                      <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{station.name}</h3>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[180px]" title={station.address}>
+                    <div className="min-w-0">
+                      <h3 className="font-extrabold text-indigo-950 text-lg leading-tight truncate">{station.name}</h3>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[200px] xl:max-w-[300px]" title={station.address}>
                         <MapPin className="w-3 h-3 flex-shrink-0" /> {station.address}
                       </p>
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100 flex justify-between items-center flex-grow">
+                  {/* Price Section */}
+                  <div className={`bg-slate-50 rounded-xl p-4 border border-slate-100 flex justify-between items-center ${viewMode === 'card' ? 'mb-6 flex-grow' : 'w-full lg:w-48 flex-shrink-0'}`}>
                     <div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase">Official Price</p>
                       <p className="text-2xl font-black text-indigo-900">{station.price_pms ? `₦${station.price_pms}` : 'Not Set'}</p>
@@ -262,20 +292,23 @@ export default function DashboardPage() {
                     <Tag className="w-6 h-6 text-emerald-400" />
                   </div>
 
-                  <div className="flex flex-col gap-2 mt-auto">
+                  {/* Actions Section */}
+                  <div className={`flex gap-2 ${viewMode === 'card' ? 'mt-auto flex-col sm:flex-row' : 'flex-col sm:flex-row w-full lg:w-auto'}`}>
                     <button 
                       onClick={() => openEditModal(station)}
-                      className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-colors text-sm"
+                      className={`bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-3 px-4 rounded-xl transition-colors text-sm ${viewMode === 'card' ? 'w-full sm:flex-[2]' : 'w-full sm:w-auto'}`}
                     >
-                      Manage Details & Pricing
+                      Manage Details
                     </button>
-                    {/* THE FIX: Deep Linking directly back to the map map with the station ID */}
-                    <button 
-                      onClick={() => router.push(`/?select=${station.station_id}`)}
-                      className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 rounded-xl transition-colors border border-emerald-100 text-sm flex items-center justify-center gap-2"
+                    {/* FIXED: Reverted to external Google Maps URL for directions */}
+                    <a 
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 px-4 rounded-xl transition-colors border border-emerald-100 text-sm flex items-center justify-center gap-2 ${viewMode === 'card' ? 'w-full sm:flex-1' : 'w-full sm:w-auto'}`}
                     >
-                      <MapPin className="w-4 h-4" /> Locate on Map
-                    </button>
+                      <Navigation className="w-4 h-4" /> Map
+                    </a>
                   </div>
                 </div>
               );
