@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
-  X, UploadCloud, CheckCircle2, AlertTriangle, Search, Filter, ArrowUpDown, Star
+  X, UploadCloud, CheckCircle2, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings
 } from 'lucide-react';
 import { 
   APIProvider, Map, AdvancedMarker, InfoWindow, 
@@ -609,10 +609,14 @@ export default function QozobApp() {
 
 function QozobLanding() {
   const supabase = createClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const autoSelectId = searchParams.get('select');
 
   const [user, setUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
   const [googleStations, setGoogleStations] = useState<any[]>([]);
   const [supabasePrices, setSupabasePrices] = useState<any[]>([]);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
@@ -620,6 +624,7 @@ function QozobLanding() {
   const [searchCenter, setSearchCenter] = useState<{ lat: number, lng: number } | null>(null);
   const [listFilter, setListFilter] = useState("All");
   const [listSort, setListSort] = useState("Distance");
+  
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [showRateForm, setShowRateForm] = useState(false);
@@ -630,11 +635,15 @@ function QozobLanding() {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+      if (user) {
+        setUserRole(user.user_metadata?.role || 'User');
+      }
     };
     fetchUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      setUserRole(session?.user?.user_metadata?.role || null);
     });
 
     return () => subscription.unsubscribe();
@@ -642,6 +651,8 @@ function QozobLanding() {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    setIsMenuOpen(false);
+    window.location.reload();
   };
 
   useEffect(() => {
@@ -677,7 +688,7 @@ function QozobLanding() {
     fetchPrices();
   }, []);
 
-  // THE FIX: Merge stations prioritizing Supabase Name and Address
+  // Merging logic
   const mergedStations: Station[] = googleStations.map(googlePlace => {
     const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
     const statLat = typeof googlePlace.geometry?.location?.lat === 'function' ? googlePlace.geometry.location.lat() : googlePlace.geometry?.location?.lat;
@@ -702,7 +713,6 @@ function QozobLanding() {
     };
   });
 
-  // THE FIX: Deep linking from Dashboard to specific station
   useEffect(() => {
     if (autoSelectId && mergedStations.length > 0) {
       const target = mergedStations.find(s => s.id === autoSelectId);
@@ -780,6 +790,15 @@ function QozobLanding() {
 
   const getDirectionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
+  // SECURITY: Require login for interactions
+  const handleProtectedAction = (action: () => void) => {
+    if (!user) {
+      router.push('/login');
+    } else {
+      action();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
       
@@ -790,25 +809,50 @@ function QozobLanding() {
           
           <div className="flex items-center gap-4">
             {user ? (
-              <div className="flex items-center gap-3">
-                <div className="hidden md:flex flex-col items-end">
-                  <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-widest leading-none mb-1">Manager Access</span>
-                  <span className="text-xs font-bold text-white">{user.email}</span>
-                </div>
+              <div className="relative">
                 <button 
-                  onClick={handleSignOut} 
-                  className="text-xs font-black bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 rounded-xl transition-all"
+                  onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 rounded-xl transition-all"
                 >
-                  Sign Out
+                  <Menu className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-bold truncate max-w-[100px] hidden sm:inline-block">{user.email}</span>
                 </button>
+
+                {/* HAMBURGER DROPDOWN */}
+                {isMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
+                    <div className="p-3 bg-indigo-50 border-b border-indigo-100">
+                      <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Signed in as</p>
+                      <p className="text-xs font-bold text-indigo-950 truncate">{user.email}</p>
+                      <p className="text-[10px] font-bold text-emerald-600 mt-1">{userRole}</p>
+                    </div>
+                    <div className="p-2 flex flex-col gap-1">
+                      {userRole === 'Manager' && (
+                         <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                            <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                         </button>
+                      )}
+                      <button className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                        <UserIcon className="w-4 h-4" /> My Contributions
+                      </button>
+                      <button className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                        <Settings className="w-4 h-4" /> Account Settings
+                      </button>
+                      <div className="h-px bg-slate-100 my-1"></div>
+                      <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
+                        <LogOut className="w-4 h-4" /> Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
-              <a 
-                href="/login" 
+              <button 
+                onClick={() => router.push('/login')} 
                 className="text-xs font-black bg-emerald-500 hover:bg-emerald-400 text-indigo-950 px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
               >
-                Manager Login
-              </a>
+                Sign In
+              </button>
             )}
           </div>
         </div>
@@ -943,28 +987,26 @@ function QozobLanding() {
 
                     <div className="flex flex-col gap-2">
                       <button 
-                        onClick={() => {
-                          if (!user) {
-                            alert("You must be a registered Manager to update prices.");
-                            window.location.href = "/login";
-                            return;
-                          }
-                          setShowPriceForm(true);
-                        }} 
+                        onClick={() => handleProtectedAction(() => setShowPriceForm(true))} 
                         className="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold py-2 rounded-lg text-sm border border-emerald-300 transition-colors"
                       >
                         {selectedStation.price_pms ? "Update Pricing" : "Be the first to add price!"}
                       </button>
                       
                       {selectedStation.price_pms && (
-                        <button onClick={() => setShowRateForm(true)} className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors">
+                        <button 
+                          onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
+                          className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors"
+                        >
                           <Star className="w-4 h-4 fill-amber-500" /> Rate Pump Accuracy
                         </button>
                       )}
 
-                      {/* THE FIX: Only show Claim Button if station is not verified */}
                       {!selectedStation.verified && (
-                        <button onClick={() => setShowClaimForm(true)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
+                        <button 
+                          onClick={() => handleProtectedAction(() => setShowClaimForm(true))} 
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
+                        >
                           <ShieldCheck className="w-4 h-4" /> Claim This Station
                         </button>
                       )}

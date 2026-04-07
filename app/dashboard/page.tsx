@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
   LogOut, CheckCircle2, ShieldCheck, Loader2, X, Navigation,
-  LayoutGrid, List, FileDown, FileUp, AlertCircle
+  LayoutGrid, List, FileDown, FileUp, AlertCircle, Menu, Settings, Map as MapIcon
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -100,6 +100,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [stations, setStations] = useState<Station[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   // Modals
   const [editingStation, setEditingStation] = useState<Station | null>(null);
@@ -305,19 +306,51 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-slate-50 font-sans">
       {/* NAVBAR */}
-      <nav className="bg-indigo-900 text-white p-4 shadow-md">
+      <nav className="bg-indigo-900 text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-6xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-black tracking-tighter text-emerald-400">Qozob.</h1>
+            <h1 className="text-2xl font-black tracking-tighter text-emerald-400 cursor-pointer" onClick={() => router.push('/')}>Qozob.</h1>
             <span className="bg-white/10 text-xs font-bold px-3 py-1 rounded-full text-indigo-200 border border-white/10 hidden sm:inline-block">
               Supplier Control Center
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-sm font-bold text-indigo-200">{user?.email}</span>
-            <button onClick={handleSignOut} className="flex items-center gap-2 text-xs font-black bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 rounded-xl transition-all">
-              <LogOut className="w-4 h-4" /> Sign Out
-            </button>
+            
+            {/* MANAGER HAMBURGER MENU */}
+            <div className="relative">
+              <button 
+                onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 rounded-xl transition-all"
+              >
+                <Menu className="w-5 h-5 text-emerald-400" />
+                <span className="text-xs font-bold truncate max-w-[100px] hidden sm:inline-block">{user.email}</span>
+              </button>
+
+              {isMenuOpen && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in slide-in-from-top-2 text-slate-800">
+                  <div className="p-3 bg-indigo-50 border-b border-indigo-100">
+                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Station Manager</p>
+                    <p className="text-xs font-bold text-indigo-950 truncate">{user.email}</p>
+                  </div>
+                  <div className="p-2 flex flex-col gap-1">
+                    <button onClick={() => router.push('/')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                      <MapIcon className="w-4 h-4" /> View Public Map
+                    </button>
+                    <button onClick={() => { setShowBulkModal(true); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                      <FileUp className="w-4 h-4" /> Bulk Excel Update
+                    </button>
+                    <button className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                      <Settings className="w-4 h-4" /> Account Settings
+                    </button>
+                    <div className="h-px bg-slate-100 my-1"></div>
+                    <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
           </div>
         </div>
       </nav>
