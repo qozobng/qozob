@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
-  LogOut, UploadCloud, CheckCircle2, ShieldCheck, Loader2, X
+  LogOut, CheckCircle2, ShieldCheck, Loader2, X, Navigation
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -13,13 +13,56 @@ import { createClient } from '@/utils/supabase/client';
 // =========================================================================
 
 interface Station {
-  id: string; // The Supabase row ID
-  station_id: string; // The Google Place ID
+  id: string; 
+  station_id: string; 
   name: string;
   address: string;
+  lat: number;
+  lng: number;
   price_pms: number | null;
   custom_logo_url: string | null;
   manager_id: string;
+}
+
+// =========================================================================
+// BRAND LOGO HELPER (Brought over from main map)
+// =========================================================================
+
+function getStationBrandInfo(name: string | null | undefined, customLogoUrl: string | null | undefined) {
+  const lowerName = name?.toLowerCase() || "";
+  let logoUrl = customLogoUrl || null; 
+  let color = "#10b981"; 
+  let text = name ? name.substring(0, 2).toUpperCase() : "GS";
+  
+  if (!logoUrl) {
+    if (lowerName.includes("nnpc")) { logoUrl = "/logos/nnpc.png"; color = "#00a94d"; }
+    else if (lowerName.includes("total")) { logoUrl = "/logos/total.png"; color = "#1e3a8a"; }
+    else if (lowerName.includes("mobil")) { logoUrl = "/logos/mobil.png"; color = "#2563eb"; }
+    else if (lowerName.includes("oando")) { logoUrl = "/logos/oando.png"; color = "#dc2626"; }
+    else if (lowerName.includes("conoil")) { logoUrl = "/logos/conoil.png"; color = "#eab308"; }
+    else if (
+      lowerName.includes("ardova") || 
+      lowerName === "ap" || 
+      lowerName.startsWith("ap ") || 
+      lowerName.includes(" ap ") || 
+      lowerName.includes("a.p") || 
+      lowerName.includes("a p ")
+    ) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
+    else if (lowerName.includes("shell")) { logoUrl = "/logos/shell.png"; color = "#facc15"; }
+    else if (lowerName.includes("rainoil")) { logoUrl = "/logos/rainoil.png"; color = "#0ea5e9"; }
+    else if (lowerName.includes("bovas")) { logoUrl = "/logos/bovas.png"; color = "#f43f5e"; }
+    else if (lowerName.includes("mrs")) { logoUrl = "/logos/mrs.png"; color = "#712539"; }
+    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { logoUrl = "/logos/11.png"; color = "#0759ad"; }
+    else if (lowerName.includes("shafa")) { logoUrl = "/logos/shafa.png"; color = "#e63035"; }
+    else if (lowerName.includes("heyden")) { logoUrl = "/logos/heyden.png"; color = "#f76300"; }
+    else if (lowerName.includes("nipco")) { logoUrl = "/logos/nipco.png"; color = "#f50002"; }
+    else if (lowerName.includes("techno")) { logoUrl = "/logos/techno.png"; color = "#ee161f"; }
+    else if (lowerName.includes("enyo")) { logoUrl = "/logos/enyo.png"; color = "#313864"; }
+    else if (lowerName.includes("matrix")) { logoUrl = "/logos/matrix.png"; color = "#5dc0e5"; }
+    else if (lowerName.includes("fatgbems")) { logoUrl = "/logos/fatgbems.png"; color = "#a13227"; }
+    else if (lowerName.includes("forte")) { logoUrl = "/logos/forte.png"; color = "#a3bc01"; }
+  }
+  return { logoUrl, color, text };
 }
 
 // =========================================================================
@@ -55,7 +98,6 @@ export default function DashboardPage() {
       
       setUser(user);
 
-      // Fetch ONLY the stations where the current user is the manager
       const { data: managerStations, error: dbError } = await supabase
         .from('stations')
         .select('*')
@@ -94,14 +136,12 @@ export default function DashboardPage() {
       const fileName = `logo_${Date.now()}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
 
-      // Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('station_logos')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // Get Public URL
       const { data } = supabase.storage.from('station_logos').getPublicUrl(filePath);
       setEditLogoUrl(data.publicUrl);
 
@@ -127,8 +167,8 @@ export default function DashboardPage() {
         verified: true,           
         last_updated: new Date().toISOString()
       })
-      .eq('station_id', editingStation.station_id) // <--- THIS IS THE FIX
-      .eq('manager_id', user.id);
+      .eq('station_id', editingStation.station_id)
+      .eq('manager_id', user.id); 
 
     setIsSaving(false);
 
@@ -137,7 +177,6 @@ export default function DashboardPage() {
     } else {
       alert("Station details updated successfully! Live on map.");
       setEditingStation(null);
-      // Refresh local state to show new data
       setStations(stations.map(s => s.station_id === editingStation.station_id ? {
         ...s, name: editName, address: editAddress, price_pms: parseFloat(editPrice), custom_logo_url: editLogoUrl
       } : s));
@@ -189,42 +228,59 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {stations.map(station => (
-              <div key={station.id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
-                
-                <div className="flex items-center gap-4 mb-6 mt-2">
-                  {station.custom_logo_url ? (
-                    <img src={station.custom_logo_url} alt="Logo" className="w-16 h-16 rounded-full border border-slate-200 object-contain p-1" />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200 text-slate-400">
-                      <ImageIcon className="w-6 h-6" />
+            {stations.map(station => {
+              // Get standard branding logic based on name or custom logo
+              const { logoUrl, color, text } = getStationBrandInfo(station.name, station.custom_logo_url);
+
+              return (
+                <div key={station.id} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
+                  
+                  <div className="flex items-center gap-4 mb-6 mt-2">
+                    <div className="w-16 h-16 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
+                      {logoUrl ? (
+                        <img src={logoUrl} alt={station.name} className="w-full h-full object-contain p-1" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: color }}>
+                          <span className="text-white font-black text-xl tracking-tighter leading-none">{text}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div>
-                    <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{station.name}</h3>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[200px]">
-                      <MapPin className="w-3 h-3 flex-shrink-0" /> {station.address}
-                    </p>
+                    <div>
+                      <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{station.name}</h3>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[200px]" title={station.address}>
+                        <MapPin className="w-3 h-3 flex-shrink-0" /> {station.address}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100 flex justify-between items-center flex-grow">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Official Price</p>
+                      <p className="text-2xl font-black text-indigo-900">{station.price_pms ? `₦${station.price_pms}` : 'Not Set'}</p>
+                    </div>
+                    <Tag className="w-6 h-6 text-emerald-400" />
+                  </div>
+
+                  <div className="flex gap-2 mt-auto">
+                    <button 
+                      onClick={() => openEditModal(station)}
+                      className="flex-[2] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 rounded-xl transition-colors border border-indigo-100 text-sm"
+                    >
+                      Manage Details
+                    </button>
+                    <a 
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 rounded-xl transition-colors border border-emerald-100 text-sm flex items-center justify-center gap-1"
+                    >
+                      <Navigation className="w-4 h-4" /> Navigate
+                    </a>
                   </div>
                 </div>
-
-                <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100 flex justify-between items-center">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">Official Price</p>
-                    <p className="text-2xl font-black text-indigo-900">{station.price_pms ? `₦${station.price_pms}` : 'Not Set'}</p>
-                  </div>
-                  <Tag className="w-6 h-6 text-emerald-400" />
-                </div>
-
-                <button 
-                  onClick={() => openEditModal(station)}
-                  className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 rounded-xl transition-colors border border-indigo-100"
-                >
-                  Manage Details & Pricing
-                </button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
