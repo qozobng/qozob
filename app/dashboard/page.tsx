@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
-  LogOut, CheckCircle2, ShieldCheck, Loader2, X, Navigation
+  LogOut, CheckCircle2, ShieldCheck, Loader2, X
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
@@ -25,7 +25,7 @@ interface Station {
 }
 
 // =========================================================================
-// BRAND LOGO HELPER (Brought over from main map)
+// BRAND LOGO HELPER 
 // =========================================================================
 
 function getStationBrandInfo(name: string | null | undefined, customLogoUrl: string | null | undefined) {
@@ -229,7 +229,6 @@ export default function DashboardPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stations.map(station => {
-              // Get standard branding logic based on name or custom logo
               const { logoUrl, color, text } = getStationBrandInfo(station.name, station.custom_logo_url);
 
               return (
@@ -237,6 +236,7 @@ export default function DashboardPage() {
                   <div className="absolute top-0 left-0 w-full h-2 bg-emerald-500"></div>
                   
                   <div className="flex items-center gap-4 mb-6 mt-2">
+                    {/* THE FIX: Fixed w-16 h-16 logo container */}
                     <div className="w-16 h-16 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm">
                       {logoUrl ? (
                         <img src={logoUrl} alt={station.name} className="w-full h-full object-contain p-1" />
@@ -248,7 +248,7 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{station.name}</h3>
-                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[200px]" title={station.address}>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1 truncate max-w-[180px]" title={station.address}>
                         <MapPin className="w-3 h-3 flex-shrink-0" /> {station.address}
                       </p>
                     </div>
@@ -262,21 +262,20 @@ export default function DashboardPage() {
                     <Tag className="w-6 h-6 text-emerald-400" />
                   </div>
 
-                  <div className="flex gap-2 mt-auto">
+                  <div className="flex flex-col gap-2 mt-auto">
                     <button 
                       onClick={() => openEditModal(station)}
-                      className="flex-[2] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-3 rounded-xl transition-colors border border-indigo-100 text-sm"
+                      className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-bold py-3 rounded-xl transition-colors text-sm"
                     >
-                      Manage Details
+                      Manage Details & Pricing
                     </button>
-                    <a 
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lng}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 rounded-xl transition-colors border border-emerald-100 text-sm flex items-center justify-center gap-1"
+                    {/* THE FIX: Deep Linking directly back to the map map with the station ID */}
+                    <button 
+                      onClick={() => router.push(`/?select=${station.station_id}`)}
+                      className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-3 rounded-xl transition-colors border border-emerald-100 text-sm flex items-center justify-center gap-2"
                     >
-                      <Navigation className="w-4 h-4" /> Navigate
-                    </a>
+                      <MapPin className="w-4 h-4" /> Locate on Map
+                    </button>
                   </div>
                 </div>
               );

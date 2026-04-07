@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, CheckCircle2, AlertTriangle, Search, Filter, ArrowUpDown, Star
@@ -10,14 +11,14 @@ import {
   useMap 
 } from '@vis.gl/react-google-maps';
 
-// --- NEW AUTH INTEGRATION ---
+// --- AUTH INTEGRATION ---
 import { createClient } from '@/utils/supabase/client';
 
 // --- Map Visual Key ---
 const GOOGLE_MAPS_API_KEY = "AIzaSyBR1zxq9SGdcKUHgbLjvl1j0A50F1eG54o";
 
 // =========================================================================
-// TYPES (Defining the data structure for error-free logic)
+// TYPES
 // =========================================================================
 
 interface Station {
@@ -38,7 +39,7 @@ interface Station {
 }
 
 // =========================================================================
-// HELPERS & UTILITIES (PRESERVING ALL ORIGINAL LOGIC)
+// HELPERS & UTILITIES
 // =========================================================================
 
 function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): string | null {
@@ -132,7 +133,7 @@ function getStationBrandInfo(name: string | null | undefined, customLogoUrl: str
 }
 
 // =========================================================================
-// COMPONENTS (PRESERVING FULL STRUCTURE)
+// COMPONENTS
 // =========================================================================
 
 interface GasStationFetcherProps {
@@ -269,7 +270,7 @@ function IsolatedSearchBar({ onSearch }: { onSearch: (val: string) => void }) {
 }
 
 // =========================================================================
-// MODALS (PRESERVING FULL DESIGN & LOGIC)
+// MODALS
 // =========================================================================
 
 function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () => void }) {
@@ -593,19 +594,23 @@ function RateStationModal({ station, onClose }: { station: Station, onClose: () 
 }
 
 // =========================================================================
-// MAIN APP & LANDING (FULLY RESTORED & AUTH-AWARE)
+// MAIN APP & LANDING
 // =========================================================================
 
 export default function QozobApp() {
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
-      <QozobLanding />
+      <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+        <QozobLanding />
+      </Suspense>
     </APIProvider>
   );
 }
 
 function QozobLanding() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const autoSelectId = searchParams.get('select');
 
   const [user, setUser] = useState<any>(null);
   const [googleStations, setGoogleStations] = useState<any[]>([]);
@@ -672,6 +677,7 @@ function QozobLanding() {
     fetchPrices();
   }, []);
 
+  // THE FIX: Merge stations prioritizing Supabase Name and Address
   const mergedStations: Station[] = googleStations.map(googlePlace => {
     const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
     const statLat = typeof googlePlace.geometry?.location?.lat === 'function' ? googlePlace.geometry.location.lat() : googlePlace.geometry?.location?.lat;
@@ -680,7 +686,6 @@ function QozobLanding() {
 
     return {
       id: googlePlace.place_id,
-      // THIS IS THE FIX: Prioritize Supabase data, fallback to Google
       name: dbData?.name || googlePlace.name,
       address: dbData?.address || googlePlace.vicinity,
       lat: statLat,
@@ -696,6 +701,17 @@ function QozobLanding() {
       custom_logo_url: dbData ? dbData.custom_logo_url : null
     };
   });
+
+  // THE FIX: Deep linking from Dashboard to specific station
+  useEffect(() => {
+    if (autoSelectId && mergedStations.length > 0) {
+      const target = mergedStations.find(s => s.id === autoSelectId);
+      if (target) {
+        setSelectedStation(target);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  }, [autoSelectId, mergedStations]);
 
   const pricedStations = mergedStations.filter(s => s.price_pms !== null);
   
@@ -892,7 +908,7 @@ function QozobLanding() {
                         <span title="Verified Official Price" className="flex-shrink-0 ml-1">
                           <ShieldCheck className="w-5 h-5 text-blue-500" />
                         </span>
-                       )}
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 mb-1">{selectedStation.address}</p>
                     
@@ -946,7 +962,7 @@ function QozobLanding() {
                         </button>
                       )}
 
-                      {/* Only show the Claim button if the station is NOT verified */}
+                      {/* THE FIX: Only show Claim Button if station is not verified */}
                       {!selectedStation.verified && (
                         <button onClick={() => setShowClaimForm(true)} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors">
                           <ShieldCheck className="w-4 h-4" /> Claim This Station
