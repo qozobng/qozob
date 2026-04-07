@@ -123,12 +123,12 @@ export default function DashboardPage() {
         address: editAddress,
         price_pms: editPrice ? parseFloat(editPrice) : null,
         custom_logo_url: editLogoUrl,
-        updated_by_role: 'Owner', // Flags this as an official price on the map
-        verified: true,           // Adds the blue checkmark on the map
+        updated_by_role: 'Owner', 
+        verified: true,           
         last_updated: new Date().toISOString()
       })
-      .eq('id', editingStation.id)
-      .eq('manager_id', user.id); // Double security check
+      .eq('station_id', editingStation.station_id) // <--- THIS IS THE FIX
+      .eq('manager_id', user.id);
 
     setIsSaving(false);
 
@@ -138,7 +138,7 @@ export default function DashboardPage() {
       alert("Station details updated successfully! Live on map.");
       setEditingStation(null);
       // Refresh local state to show new data
-      setStations(stations.map(s => s.id === editingStation.id ? {
+      setStations(stations.map(s => s.station_id === editingStation.station_id ? {
         ...s, name: editName, address: editAddress, price_pms: parseFloat(editPrice), custom_logo_url: editLogoUrl
       } : s));
     }
