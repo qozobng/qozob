@@ -60,7 +60,7 @@ export async function GET(request: Request) {
   }
 
   // =========================================================================
-  // STEP 2: FETCH FROM GOOGLE (IF SUPABASE IS EMPTY)
+  // STEP 2: FETCH FROM GOOGLE "PLACES API (NEW)" (ZERO ATMOSPHERE COST)
   // =========================================================================
   
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -70,34 +70,71 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'API key missing on server' }, { status: 500 });
   }
 
-  const radius = 5001; 
-  
-  // THE BILLING LEAK FIX: We added the '&fields=' parameter.
-  // This explicitly blocks Google from attaching expensive 'Atmosphere Data' (reviews/ratings).
-  const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=gas_station&fields=name,geometry,vicinity,place_id&key=${apiKey}`;
+  // The New Places API Endpoint
+  const url = `https://places.googleapis.com/v1/places:searchNearby`;
+
+  // We explicitly declare the field mask. This absolutely blocks Atmosphere/Contact Data.
+  const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.location';
+
+  const requestBody = {
+    includedTypes: ["gas_station"],
+    maxResultCount: 20,
+    locationRestriction: {
+      circle: {
+        center: {
+          latitude: latNum,
+          longitude: lngNum
+        },
+        radius: 5000.0 // 5km radius
+      }
+    }
+  };
 
   try {
-    const res = await fetch(url, { next: { revalidate: 3600 } });
+    const res = await fetch(url, { 
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': fieldMask
+      },
+      body: JSON.stringify(requestBody),
+      next: { revalidate: 3600 } 
+    });
+    
     const data = await res.json();
     
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      console.error("GOOGLE API REJECTED THE REQUEST:", data.status, data.error_message);
+    if (data.error) {
+      console.error("GOOGLE API REJECTED THE REQUEST:", data.error.message);
       return NextResponse.json({ error: 'Failed to fetch stations from Google' }, { status: 500 });
     }
     
-    console.log(`📡 CACHE MISS: Fetched ${data.results?.length || 0} stations from Google.`);
+    // Format the "New" API response to match our older frontend structure
+    const formattedResults = (data.places || []).map((place: any) => ({
+      place_id: place.id,
+      name: place.displayName?.text || "Unknown Station",
+      vicinity: place.formattedAddress || "No address provided",
+      geometry: {
+        location: {
+          lat: place.location?.latitude,
+          lng: place.location?.longitude
+        }
+      }
+    }));
+
+    console.log(`📡 CACHE MISS: Fetched ${formattedResults.length} stations from Google.`);
 
     // =========================================================================
     // STEP 3: SAVE GOOGLE DATA TO SUPABASE (SO IT'S FREE NEXT TIME)
     // =========================================================================
     
-    if (data.results && data.results.length > 0) {
-      const stationsToInsert = data.results.map((place: any) => ({
+    if (formattedResults.length > 0) {
+      const stationsToInsert = formattedResults.map((place: any) => ({
         station_id: place.place_id,
         name: place.name,
-        address: place.vicinity || "No address provided",
-        lat: place.geometry?.location?.lat,
-        lng: place.geometry?.location?.lng,
+        address: place.vicinity,
+        lat: place.geometry.location.lat,
+        lng: place.geometry.location.lng,
         // Default values for new stations so your frontend doesn't crash
         price_pms: null,
         queue_status: 'Unknown',
@@ -120,7 +157,7 @@ export async function GET(request: Request) {
       }
     }
     
-    return NextResponse.json({ results: data.results || [] });
+    return NextResponse.json({ results: formattedResults });
   } catch (error) {
     console.error("Backend fetch error:", error);
     return NextResponse.json({ error: 'Failed to fetch stations from Google' }, { status: 500 });
