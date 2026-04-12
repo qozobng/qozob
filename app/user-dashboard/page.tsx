@@ -1,11 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { User as UserIcon, Settings, LogOut, Map as MapIcon, Loader2, CheckCircle2, Droplet, Star, TrendingUp } from 'lucide-react';
 
-export default function UserDashboardPage() {
+// =========================================================================
+// 1. MAIN CONTENT (Extracted to allow Suspense wrapping)
+// =========================================================================
+function UserDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
@@ -206,5 +209,20 @@ export default function UserDashboardPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+// =========================================================================
+// 2. MAIN EXPORT WRAPPED IN SUSPENSE (Fixes Vercel Build Error)
+// =========================================================================
+export default function UserDashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+      </div>
+    }>
+      <UserDashboardContent />
+    </Suspense>
   );
 }
