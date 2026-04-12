@@ -32,12 +32,12 @@ export default function LoginPage() {
     }
 
     if (data.user) {
-      // Check role and redirect
+      // Check role and redirect to the appropriate dashboard
       const role = data.user.user_metadata?.role;
       if (role === 'Manager') {
         router.push('/dashboard');
       } else {
-        router.push('/');
+        router.push('/user-dashboard');
       }
     }
   };

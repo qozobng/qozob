@@ -71,7 +71,7 @@ function generateStationCode(stationId: string) {
 
 // Basic CSV Parser that handles commas inside quotes (Address fields)
 function parseCSV(str: string) {
-  const arr: string[][] = []; // <-- THE FIX: Added explicit TypeScript definition
+  const arr: string[][] = [];
   let quote = false;
   let row = 0, col = 0;
   for (let c = 0; c < str.length; c++) {
@@ -125,6 +125,12 @@ export default function DashboardPage() {
       
       if (authError || !user) {
         router.push('/login');
+        return;
+      }
+
+      // STRICT ROUTE PROTECTION: Ensure Everyday Users cannot access this dashboard
+      if (user.user_metadata?.role !== 'Manager') {
+        router.push('/user-dashboard');
         return;
       }
       

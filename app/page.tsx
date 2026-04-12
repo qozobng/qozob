@@ -827,17 +827,28 @@ function QozobLanding() {
                       <p className="text-[10px] font-bold text-emerald-600 mt-1">{userRole}</p>
                     </div>
                     <div className="p-2 flex flex-col gap-1">
-                      {userRole === 'Manager' && (
-                         <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
-                            <ShieldCheck className="w-4 h-4" /> Go to Dashboard
-                         </button>
+                      
+                      {userRole === 'Manager' ? (
+                        <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                        </button>
+                      ) : (
+                        <button onClick={() => router.push('/user-dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                        </button>
                       )}
-                      <button className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
-                        <UserIcon className="w-4 h-4" /> My Contributions
-                      </button>
-                      <button className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
-                        <Settings className="w-4 h-4" /> Account Settings
-                      </button>
+
+                      {userRole !== 'Manager' && (
+                        <>
+                          <button onClick={() => router.push('/user-dashboard?tab=contributions')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                            <UserIcon className="w-4 h-4" /> My Contributions
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=settings')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2">
+                            <Settings className="w-4 h-4" /> Account Settings
+                          </button>
+                        </>
+                      )}
+
                       <div className="h-px bg-slate-100 my-1"></div>
                       <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
                         <LogOut className="w-4 h-4" /> Sign Out
@@ -993,7 +1004,8 @@ function QozobLanding() {
                         {selectedStation.price_pms ? "Update Pricing" : "Be the first to add price!"}
                       </button>
                       
-                      {selectedStation.price_pms && (
+                      {/* FIXED: Only Everyday Users and logged-out users can rate pumps */}
+                      {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
                           onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
                           className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors"
@@ -1002,7 +1014,8 @@ function QozobLanding() {
                         </button>
                       )}
 
-                      {!selectedStation.verified && (
+                      {/* FIXED: Only Station Managers and logged-out users can claim stations */}
+                      {!selectedStation.verified && (!user || userRole === 'Manager') && (
                         <button 
                           onClick={() => handleProtectedAction(() => setShowClaimForm(true))} 
                           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors"
