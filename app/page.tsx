@@ -1181,3 +1181,10 @@ function QozobLanding() {
           </div>
         </div>
       </footer>
+
+      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} />}
+      {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} />}
+      {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} />}
+    </div>
+  );
+}
