@@ -139,6 +139,51 @@ function getStationBrandInfo(name: string | null | undefined, customLogoUrl: str
 // COMPONENTS
 // =========================================================================
 
+interface GasStationFetcherProps {
+  onStationsFound: (stations: any[]) => void;
+  userLoc: { lat: number; lng: number } | null;
+  searchCenter: { lat: number; lng: number } | null;
+}
+
+function GasStationFetcher({ onStationsFound, userLoc, searchCenter }: GasStationFetcherProps) {
+  const map = useMap();
+  const [initialPanDone, setInitialPanDone] = useState(false);
+
+  useEffect(() => {
+    if (!map) return;
+    let centerPoint = { lat: 6.5244, lng: 3.3792 };
+    
+    if (searchCenter) {
+      centerPoint = searchCenter;
+      map.panTo(centerPoint);
+      map.setZoom(14);
+    } else if (userLoc) {
+      centerPoint = userLoc;
+      if (!initialPanDone) {
+        map.panTo(centerPoint);
+        map.setZoom(14);
+        setInitialPanDone(true);
+      }
+    }
+    
+    const fetchStations = async () => {
+      try {
+        const res = await fetch(`/api/stations?lat=${centerPoint.lat}&lng=${centerPoint.lng}`);
+        const data = await res.json();
+        if (data.results) {
+          onStationsFound(data.results);
+        }
+      } catch (err) {
+        console.error("Error fetching secure stations:", err);
+      }
+    };
+
+    fetchStations();
+  }, [map, onStationsFound, userLoc, searchCenter, initialPanDone]);
+  
+  return null;
+}
+
 function UserLocationMarker({ position }: { position: { lat: number, lng: number } | null }) {
   if (!position) return null;
   return (
@@ -1126,7 +1171,7 @@ function QozobLanding() {
           <div className="flex items-center gap-2">
             <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
             <span className="font-black text-white tracking-tighter">Qozob.</span>
-            <span className="text-slate-500">&copy; {new Date().getFullYear()} All rights reserved.</span>
+            <span className="text-slate-500">© {new Date().getFullYear()} All rights reserved.</span>
           </div>
           <div className="flex gap-6 font-bold text-xs">
             <a href="#" className="hover:text-emerald-400 transition-colors">About Us</a>
@@ -1136,10 +1181,3 @@ function QozobLanding() {
           </div>
         </div>
       </footer>
-
-      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} />}
-      {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} />}
-      {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} />}
-    </div>
-  );
-}
