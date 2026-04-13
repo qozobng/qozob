@@ -31,6 +31,7 @@ interface Station {
   price_pms: number | null;
   queue_status: string;
   verified: boolean;
+  claim_status: string; // Tracks 'None', 'Pending Review', 'Claimed'
   last_updated: string;
   updated_by_role: string;
   pump_accuracy: number;
@@ -74,7 +75,6 @@ function timeAgo(dateString: string | null | undefined): string {
 function getPriceColor(role: string | null | undefined): string {
   if (!role) return '#FBBC05'; 
   const cleanRole = role.replace(/['"]/g, '').trim().toLowerCase();
-  
   switch(cleanRole) {
     case 'qozob rep': return '#34A853'; 
     case 'owner': return '#4285F4';     
@@ -88,8 +88,7 @@ function formatPrice(price: number | string | null | undefined, decimalClass: st
   const numPrice = Number(price);
   if (numPrice % 1 === 0) {
     return <>₦{numPrice}</>;
-  } 
-  else {
+  } else {
     const [whole, decimal] = numPrice.toFixed(2).split('.');
     return <>₦{whole}<span className={decimalClass}>.{decimal}</span></>;
   }
@@ -107,14 +106,7 @@ function getStationBrandInfo(name: string | null | undefined, customLogoUrl: str
     else if (lowerName.includes("mobil")) { logoUrl = "/logos/mobil.png"; color = "#2563eb"; }
     else if (lowerName.includes("oando")) { logoUrl = "/logos/oando.png"; color = "#dc2626"; }
     else if (lowerName.includes("conoil")) { logoUrl = "/logos/conoil.png"; color = "#eab308"; }
-    else if (
-      lowerName.includes("ardova") || 
-      lowerName === "ap" || 
-      lowerName.startsWith("ap ") || 
-      lowerName.includes(" ap ") || 
-      lowerName.includes("a.p") || 
-      lowerName.includes("a p ")
-    ) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
+    else if (lowerName.includes("ardova") || lowerName === "ap" || lowerName.startsWith("ap ") || lowerName.includes(" ap ") || lowerName.includes("a.p") || lowerName.includes("a p ")) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
     else if (lowerName.includes("shell")) { logoUrl = "/logos/shell.png"; color = "#facc15"; }
     else if (lowerName.includes("rainoil")) { logoUrl = "/logos/rainoil.png"; color = "#0ea5e9"; }
     else if (lowerName.includes("bovas")) { logoUrl = "/logos/bovas.png"; color = "#f43f5e"; }
@@ -136,7 +128,7 @@ function getStationBrandInfo(name: string | null | undefined, customLogoUrl: str
 }
 
 // =========================================================================
-// COMPONENTS
+// MAP COMPONENTS
 // =========================================================================
 
 interface GasStationFetcherProps {
@@ -177,7 +169,6 @@ function GasStationFetcher({ onStationsFound, userLoc, searchCenter }: GasStatio
         console.error("Error fetching secure stations:", err);
       }
     };
-
     fetchStations();
   }, [map, onStationsFound, userLoc, searchCenter, initialPanDone]);
   
@@ -198,7 +189,6 @@ function UserLocationMarker({ position }: { position: { lat: number, lng: number
 
 function StationMarker({ name, hasPrice, customLogoUrl }: { name: string, hasPrice: boolean, customLogoUrl?: string | null }) {
   const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
-
   return (
     <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 hover:scale-125 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
       {logoUrl && (
@@ -249,16 +239,39 @@ function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string
 }
 
 // =========================================================================
-// MODALS
+// MODALS (Upgraded for Phase 2: Phone OTP & Asterisks)
 // =========================================================================
 
 function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () => void }) {
   const supabase = createClient();
+  
+  // Pricing States
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [suggestedQueue, setSuggestedQueue] = useState("Moderate");
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
 
+  // OTP Verification States (Phase 2 Rule: Phone must be verified to update price)
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+
+  const handleSendOTP = async () => { 
+    if(!phone) return alert("Enter a valid phone number");
+    setOtpSent(true); 
+    alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); 
+  };
+  
+  const handleVerifyOTP = async () => { 
+    if(otp === "123456" || otp.length === 6) {
+      setPhoneVerified(true); 
+    } else {
+      alert("Invalid OTP"); 
+    }
+  };
+
   const handleSuggestPrice = async () => {
+    if (!phoneVerified) return alert("You must verify your phone number first.");
     if (!suggestedPrice || !station) return;
     setIsSubmittingPrice(true);
 
@@ -293,37 +306,82 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
         </button>
         <h2 className="text-2xl font-black text-indigo-950 mb-1">Update Price</h2>
         <p className="text-sm text-slate-500 mb-6">{station.name}</p>
-        
-        <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
-        <input 
-          type="number" 
-          step="0.01" 
-          value={suggestedPrice} 
-          onChange={(e) => setSuggestedPrice(e.target.value)} 
-          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
-          placeholder="e.g. 950" 
-          autoFocus 
-        />
-        
-        <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
-        <select 
-          value={suggestedQueue} 
-          onChange={(e) => setSuggestedQueue(e.target.value)} 
-          className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-6 outline-none cursor-pointer"
-        >
-          <option value="No Queue">No Queue (Fast)</option>
-          <option value="Moderate">Moderate</option>
-          <option value="Heavy">Heavy Queue</option>
-          <option value="No Fuel">No Fuel Dispensing</option>
-        </select>
 
-        <button 
-          onClick={handleSuggestPrice} 
-          disabled={!suggestedPrice || isSubmittingPrice} 
-          className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
-        >
-          {isSubmittingPrice ? "Saving..." : "Submit to Map"}
-        </button>
+        {/* OTP AUTHENTICATION BLOCK */}
+        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4">
+          <label className="text-xs font-bold text-indigo-900 uppercase flex items-center gap-2">
+            Verify Phone to Update {phoneVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+          </label>
+          {!phoneVerified && (
+            <div className="mt-2 flex flex-col gap-2">
+              <input 
+                type="tel" 
+                disabled={otpSent} 
+                value={phone} 
+                onChange={(e) => setPhone(e.target.value)} 
+                className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500 text-sm" 
+                placeholder="Enter Phone Number" 
+              />
+              {!otpSent ? (
+                <button 
+                  onClick={handleSendOTP} 
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-sm transition-colors active:scale-95"
+                >
+                  Send OTP
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={otp} 
+                    onChange={(e) => setOtp(e.target.value)} 
+                    className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none text-sm focus:border-indigo-500" 
+                    placeholder="123456" 
+                    maxLength={6} 
+                  />
+                  <button 
+                    onClick={handleVerifyOTP} 
+                    className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm transition-colors active:scale-95"
+                  >
+                    Verify
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        
+        <div className={`transition-all duration-300 ${!phoneVerified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+          <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
+          <input 
+            type="number" 
+            step="0.01" 
+            value={suggestedPrice} 
+            onChange={(e) => setSuggestedPrice(e.target.value)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
+            placeholder="e.g. 950" 
+          />
+          
+          <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
+          <select 
+            value={suggestedQueue} 
+            onChange={(e) => setSuggestedQueue(e.target.value)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-6 outline-none cursor-pointer"
+          >
+            <option value="No Queue">No Queue (Fast)</option>
+            <option value="Moderate">Moderate</option>
+            <option value="Heavy">Heavy Queue</option>
+            <option value="No Fuel">No Fuel Dispensing</option>
+          </select>
+
+          <button 
+            onClick={handleSuggestPrice} 
+            disabled={!suggestedPrice || isSubmittingPrice || !phoneVerified} 
+            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
+          >
+            {isSubmittingPrice ? "Saving..." : "Submit to Map"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -341,6 +399,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
   const handleSendOTP = async () => { 
+    if(!phone) return alert("Enter a valid phone number");
     setOtpSent(true); 
     alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); 
   };
@@ -355,7 +414,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
 
   const handleFinalSubmitClaim = async () => {
     if (!cacFile || !applicantName || !cacNumber || !phoneVerified) {
-      return alert("Please fill all fields, verify phone, and upload CAC document.");
+      return alert("Please fill all required fields (*), verify phone, and upload CAC document.");
     }
     setIsSubmittingClaim(true);
     try {
@@ -388,8 +447,9 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
 
       if (dbError) throw new Error(dbError.message);
 
-      alert("Claim submitted successfully!");
+      alert("Claim submitted successfully! The station is now marked as 'Claim in Progress'.");
       onClose();
+      window.location.reload();
     } catch (err: any) { 
       alert("Error: " + err.message); 
     } finally { 
@@ -408,7 +468,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
         
         <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4">
             <label className="text-xs font-bold text-indigo-900 uppercase flex items-center gap-2">
-              1. Verify Phone {phoneVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+              1. Verify Phone <span className="text-red-500">*</span> {phoneVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
             </label>
             {!phoneVerified && (
               <div className="mt-2 flex flex-col gap-2">
@@ -417,12 +477,14 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
                   disabled={otpSent} 
                   value={phone} 
                   onChange={(e) => setPhone(e.target.value)} 
-                  className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500" 
+                  className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500 text-sm" 
                   placeholder="08012345678" 
-                  autoFocus 
                 />
                 {!otpSent ? (
-                  <button onClick={handleSendOTP} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg transition-colors active:scale-95">
+                  <button 
+                    onClick={handleSendOTP} 
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg transition-colors active:scale-95 text-sm"
+                  >
                     Send OTP
                   </button>
                 ) : (
@@ -431,11 +493,14 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
                       type="text" 
                       value={otp} 
                       onChange={(e) => setOtp(e.target.value)} 
-                      className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none focus:border-indigo-500" 
+                      className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none focus:border-indigo-500 text-sm" 
                       placeholder="123456" 
                       maxLength={6} 
                     />
-                    <button onClick={handleVerifyOTP} className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg transition-colors active:scale-95">
+                    <button 
+                      onClick={handleVerifyOTP} 
+                      className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg transition-colors active:scale-95 text-sm"
+                    >
                       Verify
                     </button>
                   </div>
@@ -602,6 +667,7 @@ function QozobLanding() {
   
   const [googleStations, setGoogleStations] = useState<any[]>([]);
   const [supabasePrices, setSupabasePrices] = useState<any[]>([]);
+  const [supabaseClaims, setSupabaseClaims] = useState<any[]>([]); // Phase 2: Tracking claims
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   
   const [userLoc, setUserLoc] = useState<{ lat: number, lng: number } | null>(null);
@@ -617,6 +683,7 @@ function QozobLanding() {
 
   const map = useMap('main-map');
 
+  // Sync Auth User
   useEffect(() => {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -633,19 +700,21 @@ function QozobLanding() {
     return () => subscription.unsubscribe();
   }, [supabase]);
 
+  // Handle Logout
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setIsMenuOpen(false);
     window.location.reload();
   };
 
+  // Pan Map to Station when selected
   useEffect(() => {
     if (selectedStation && map && selectedStation.lat && selectedStation.lng) {
       map.panTo({ lat: selectedStation.lat, lng: selectedStation.lng });
     }
   }, [selectedStation, map]);
 
-  // Initial user location fetch
+  // Track User Geolocation
   useEffect(() => {
     if (navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
@@ -665,16 +734,19 @@ function QozobLanding() {
     }
   }, []);
 
-  // Fetch baseline Supabase data for pricing
+  // Phase 2: Fetch baseline DB data for pricing AND active claims
   useEffect(() => {
-    async function fetchPrices() {
-      const { data } = await supabase.from('stations').select('*');
-      if (data) setSupabasePrices(data);
+    async function fetchData() {
+      const { data: prices } = await supabase.from('stations').select('*');
+      if (prices) setSupabasePrices(prices);
+      
+      const { data: claims } = await supabase.from('station_claims').select('station_id, status');
+      if (claims) setSupabaseClaims(claims);
     }
-    fetchPrices();
+    fetchData();
   }, [supabase]);
 
-  // Dynamic Map Fetching Logic (Triggers on Pan/Zoom)
+  // Dynamic Map Fetching based on idle movement
   const handleMapIdle = useCallback(async () => {
     if (!map) return;
     const center = map.getCenter();
@@ -683,7 +755,6 @@ function QozobLanding() {
     const lat = center.lat();
     const lng = center.lng();
 
-    // Only fetch if moved more than 2km from last fetched center to save API calls
     const dist = getDistanceFromLatLonInKm(mapCenter.lat, mapCenter.lng, lat, lng);
     if (dist && parseFloat(dist) > 2.0) {
       setMapCenter({ lat, lng });
@@ -692,7 +763,6 @@ function QozobLanding() {
         const res = await fetch(`/api/stations?lat=${lat}&lng=${lng}`);
         const data = await res.json();
         if (data.results) {
-          // Merge securely without duplicates
           setGoogleStations(prev => {
             const existingIds = new Set(prev.map(p => p.place_id));
             const newStations = data.results.filter((r: any) => !existingIds.has(r.place_id));
@@ -707,12 +777,21 @@ function QozobLanding() {
     }
   }, [map, mapCenter]);
 
-  // Merging logic (Google Places + Supabase DB)
+  // Phase 2: Merge Google Places + Supabase DB + Claim Status
   const mergedStations: Station[] = googleStations.map(googlePlace => {
     const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
+    const claimData = supabaseClaims.find(c => c.station_id === googlePlace.place_id);
+    
     const statLat = typeof googlePlace.geometry?.location?.lat === 'function' ? googlePlace.geometry.location.lat() : googlePlace.geometry?.location?.lat;
     const statLng = typeof googlePlace.geometry?.location?.lng === 'function' ? googlePlace.geometry.location.lng() : googlePlace.geometry?.location?.lng;
     const distance = userLoc ? getDistanceFromLatLonInKm(userLoc.lat, userLoc.lng, statLat, statLng) : null;
+
+    let computedClaimStatus = "None";
+    if (dbData?.verified) {
+      computedClaimStatus = "Claimed";
+    } else if (claimData) {
+      computedClaimStatus = claimData.status;
+    }
 
     return {
       id: googlePlace.place_id,
@@ -724,6 +803,7 @@ function QozobLanding() {
       price_pms: dbData ? dbData.price_pms : null,
       queue_status: dbData ? dbData.queue_status : "Unknown",
       verified: dbData ? dbData.verified : false,
+      claim_status: computedClaimStatus,
       last_updated: dbData ? dbData.last_updated : "Never",
       updated_by_role: dbData ? (dbData.updated_by_role || "User") : "User",
       pump_accuracy: dbData ? (dbData.pump_accuracy || 0) : 0, 
@@ -732,6 +812,7 @@ function QozobLanding() {
     };
   });
 
+  // Auto-Select from URL parameters
   useEffect(() => {
     if (autoSelectId && mergedStations.length > 0) {
       const target = mergedStations.find(s => s.id === autoSelectId);
@@ -742,17 +823,12 @@ function QozobLanding() {
     }
   }, [autoSelectId, mergedStations]);
 
+  // Determine the Best/Hero Station
   const pricedStations = mergedStations.filter(s => s.price_pms !== null);
-  
   const sortedByPriceAndDistance = [...pricedStations].sort((a, b) => {
     if (a.price_pms === b.price_pms) {
       const distA = parseFloat(a.distance || "0");
       const distB = parseFloat(b.distance || "0");
-      if (Math.abs(distA - distB) <= 0.5) {
-        const ratingA = a.pump_accuracy || 0;
-        const ratingB = b.pump_accuracy || 0;
-        if (ratingA !== ratingB) return ratingB - ratingA;
-      }
       return distA - distB; 
     }
     const priceA = a.price_pms || 0;
@@ -761,6 +837,7 @@ function QozobLanding() {
   });
   const heroStation = sortedByPriceAndDistance[0];
 
+  // Filtering for List View
   const filteredList = mergedStations.filter(s => {
     if (listFilter === "Priced") return s.price_pms !== null;
     if (listFilter === "No Queue") return s.queue_status === "No Queue";
@@ -768,34 +845,16 @@ function QozobLanding() {
     return true;
   });
 
+  // Sorting for List View
   const sortedAndFilteredList = [...filteredList].sort((a, b) => {
-    if (listSort === "Distance") {
-      const distA = a.distance ? parseFloat(a.distance) : 9999;
-      const distB = b.distance ? parseFloat(b.distance) : 9999;
-      return distA - distB; 
-    }
-    if (listSort === "Price") {
-      const priceA = a.price_pms || 999999; 
-      const priceB = b.price_pms || 999999;
-      return priceA - priceB; 
-    }
-    if (listSort === "Recent") {
-      const timeA = (a.last_updated && a.last_updated !== "Never" && a.last_updated !== "Just now") 
-        ? new Date(a.last_updated).getTime() : (a.last_updated === "Just now" ? Date.now() : 0);
-      const timeB = (b.last_updated && b.last_updated !== "Never" && b.last_updated !== "Just now") 
-        ? new Date(b.last_updated).getTime() : (b.last_updated === "Just now" ? Date.now() : 0);
-      return timeB - timeA; 
-    }
-    if (listSort === "Rating") {
-      const ratingA = a.pump_accuracy || 0;
-      const ratingB = b.pump_accuracy || 0;
-      return ratingB - ratingA;
-    }
+    if (listSort === "Distance") return (parseFloat(a.distance || "999") - parseFloat(b.distance || "999"));
+    if (listSort === "Price") return ((a.price_pms || 999999) - (b.price_pms || 999999));
+    if (listSort === "Rating") return ((b.pump_accuracy || 0) - (a.pump_accuracy || 0));
     if (listSort === "Name") return (a.name || "").localeCompare(b.name || "");
     return 0;
   });
 
-  // SMART SEARCH: Handles compounds, LGAs, fits to bounds dynamically
+  // Smart Search Geocoding
   const handleLocationSearch = (searchTerm: string) => {
     if (!searchTerm) return;
     if (!(window as any).google || !(window as any).google.maps) return alert("Map is still loading, please wait.");
@@ -804,32 +863,49 @@ function QozobLanding() {
     geocoder.geocode({ address: searchTerm + ", Nigeria" }, (results: any, status: string) => {
       if (status === "OK" && results[0]) {
         if (map && results[0].geometry.viewport) {
-          map.fitBounds(results[0].geometry.viewport); // Auto-zoom to fit the LGA/Street
-        } else if (map) {
-          map.panTo(results[0].geometry.location);
-          map.setZoom(14);
+          map.fitBounds(results[0].geometry.viewport); 
+        } else if (map) { 
+          map.panTo(results[0].geometry.location); 
+          map.setZoom(14); 
         }
       } else {
-        alert("Could not locate that specific area. Please try a nearby landmark.");
+        alert("Could not locate that specific area.");
       }
     });
   };
 
   const getDirectionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-  const handleProtectedAction = (action: () => void) => {
-    if (!user) router.push('/login');
-    else action();
+  // Phase 2: Dynamic Claim Logic Handler
+  const handleDynamicClaimAction = () => {
+    if (!selectedStation) return;
+
+    // 1. Not logged in -> Redirect to login with station ID callback
+    if (!user) {
+      return router.push(`/login?redirect=claim&stationId=${selectedStation.id}`);
+    }
+
+    // 2. Logged in but not a manager -> Send to settings to upgrade
+    if (userRole !== 'Manager') {
+      alert("Only Station Owners/Managers can claim stations. Please update your account role in Settings.");
+      return router.push('/user-dashboard?tab=settings');
+    }
+
+    // 3. Manager -> Open the form
+    setShowClaimForm(true);
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col relative">
       
-      {/* RESPONSIVE NAVBAR */}
+      {/* ======================= RESPONSIVE NAVBAR ======================= */}
       <nav className="bg-indigo-900 text-white p-3 sm:p-4 sticky top-0 z-50 shadow-md transition-all">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-6">
           
-          <h1 className="text-xl sm:text-2xl font-black tracking-tighter text-emerald-400 hidden xs:block cursor-pointer" onClick={() => window.scrollTo(0,0)}>
+          <h1 
+            className="text-xl sm:text-2xl font-black tracking-tighter text-emerald-400 hidden xs:block cursor-pointer" 
+            onClick={() => window.scrollTo(0,0)}
+          >
             Qozob.
           </h1>
           <h1 className="text-xl font-black text-emerald-400 block xs:hidden cursor-pointer">
@@ -842,8 +918,8 @@ function QozobLanding() {
                   type="text" 
                   id="smart-search-input"
                   placeholder="Search streets, LGAs, or landmarks..." 
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value)
+                  onKeyDown={(e) => { 
+                    if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
                   }}
                   className="w-full bg-white/10 border border-white/20 rounded-full py-2.5 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all shadow-inner"
                 />
@@ -879,11 +955,11 @@ function QozobLanding() {
                       
                       {userRole === 'Manager' ? (
                         <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                          <ShieldCheck className="w-4 h-4" /> Go to Dashboard
                         </button>
                       ) : (
                         <button onClick={() => router.push('/user-dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                          <ShieldCheck className="w-4 h-4" /> Go to Dashboard
                         </button>
                       )}
 
@@ -920,10 +996,12 @@ function QozobLanding() {
 
       <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
         
+        {/* ======================= HERO CARD ======================= */}
         <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col h-full">
           {heroStation && (
             <div className="bg-indigo-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden border border-indigo-700 h-full group hover:shadow-2xl transition-all">
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 group-hover:opacity-30 transition-opacity"></div>
+              
               <div className="flex items-center gap-2 mb-2 relative z-10">
                 <AlertTriangle className="text-emerald-400 w-5 h-5" />
                 <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
@@ -931,16 +1009,18 @@ function QozobLanding() {
               
               <h2 
                 className="text-3xl font-black mb-1 relative z-10 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
-                onClick={() => {
-                  setSelectedStation(heroStation);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                onClick={() => { 
+                  setSelectedStation(heroStation); 
+                  window.scrollTo({ top: 0, behavior: 'smooth' }); 
+                }} 
                 title="Locate on Map"
               >
                 {heroStation.name}
               </h2>
 
-              <p className="text-indigo-200 text-sm mb-2 relative z-10">{heroStation.distance}km away • {heroStation.queue_status} Queue</p>
+              <p className="text-indigo-200 text-sm mb-2 relative z-10">
+                {heroStation.distance}km away • {heroStation.queue_status} Queue
+              </p>
               
               {heroStation.accuracy_votes > 0 && (
                 <div className="flex items-center gap-1 text-xs font-bold text-amber-400 mb-4 relative z-10">
@@ -959,22 +1039,30 @@ function QozobLanding() {
                 <Clock className="w-3 h-3" /> Updated {timeAgo(heroStation.last_updated)}
               </div>
               
-              <a href={getDirectionsUrl(heroStation.lat, heroStation.lng)} target="_blank" rel="noopener noreferrer" className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 relative z-10 shadow-lg mt-auto">
+              <a 
+                href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 relative z-10 shadow-lg mt-auto"
+              >
                 <Navigation className="w-5 h-5" /> Navigate Now
               </a>
             </div>
           )}
         </div>
 
+        {/* ======================= MAIN MAP CONTAINER ======================= */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
           <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white group">
+            
             {isFetchingDynamic && (
-               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4">
-                 <div className="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div> Fetching area...
-               </div>
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4">
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div> Fetching area...
+              </div>
             )}
+
             <Map 
-              id="main-map"  
+              id="main-map" 
               defaultZoom={13} 
               defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
               mapId="QOZOB_MAIN_MAP" 
@@ -983,35 +1071,30 @@ function QozobLanding() {
               mapTypeControl={false} 
               streetViewControl={false} 
               fullscreenControl={false} 
-              gestureHandling={'greedy'}
-              onClick={() => setSelectedStation(null)}
+              gestureHandling={'greedy'} 
+              onClick={() => setSelectedStation(null)} 
               onIdle={(e) => handleMapIdle()}
             >
               <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={null} />
-
               <UserLocationMarker position={userLoc} />
-
+              
               {mergedStations.map((station) => (
                 <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
-                  <StationMarker 
-                    name={station.name} 
-                    hasPrice={station.price_pms !== null} 
-                    customLogoUrl={station.custom_logo_url} 
-                  />
+                  <StationMarker name={station.name} hasPrice={station.price_pms !== null} customLogoUrl={station.custom_logo_url} />
                 </AdvancedMarker>
               ))}
 
+              {/* ======================= MAP INFO WINDOW ======================= */}
               {selectedStation && (
                 <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
                   <div className="p-3 min-w-[240px] font-sans relative">
-                    
                     <button 
                       onClick={() => setSelectedStation(null)} 
                       className="absolute top-1 right-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full p-1.5 transition-colors z-10"
                     >
                       <X className="w-4 h-4" />
                     </button>
-
+                    
                     <div className="flex justify-between items-start mb-1 pr-8">
                       <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{selectedStation.name}</h3>
                       {selectedStation.verified && (
@@ -1020,6 +1103,7 @@ function QozobLanding() {
                         </span>
                       )}
                     </div>
+                    
                     <p className="text-xs text-slate-500 mb-1">{selectedStation.address}</p>
                     
                     {selectedStation.accuracy_votes > 0 && (
@@ -1028,18 +1112,21 @@ function QozobLanding() {
                       </div>
                     )}
                     
-                    <a href={getDirectionsUrl(selectedStation.lat, selectedStation.lng)} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-xs font-bold flex items-center gap-1 mb-4 hover:underline transition-all">
+                    <a 
+                      href={getDirectionsUrl(selectedStation.lat, selectedStation.lng)} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-indigo-600 text-xs font-bold flex items-center gap-1 mb-4 hover:underline transition-all"
+                    >
                       <Navigation className="w-3 h-3" /> Get Directions ({selectedStation.distance ? `${selectedStation.distance}km away` : 'Calculating...'})
                     </a>
                     
                     <div className="bg-slate-50 p-3 rounded-xl mb-4 border border-slate-100 flex justify-between items-end">
                       <div>
                         <p className="text-[10px] font-bold text-slate-400 uppercase">Current PMS Price</p>
-                        
                         <div className="text-3xl font-black mb-1 flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role), textShadow: selectedStation.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
                           {formatPrice(selectedStation.price_pms, "text-base")}
                         </div>
-                        
                         {selectedStation.price_pms && (
                           <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
                             <Clock className="w-3 h-3" /> {timeAgo(selectedStation.last_updated)}
@@ -1053,7 +1140,7 @@ function QozobLanding() {
 
                     <div className="flex flex-col gap-2">
                       <button 
-                        onClick={() => handleProtectedAction(() => setShowPriceForm(true))} 
+                        onClick={() => setShowPriceForm(true)} 
                         className="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold py-2 rounded-lg text-sm border border-emerald-300 transition-colors active:scale-95"
                       >
                         {selectedStation.price_pms ? "Update Pricing" : "Be the first to add price!"}
@@ -1061,21 +1148,38 @@ function QozobLanding() {
                       
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
-                          onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
+                          onClick={() => { if(!user) router.push('/login'); else setShowRateForm(true); }} 
                           className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors active:scale-95"
                         >
                           <Star className="w-4 h-4 fill-amber-500" /> Rate Pump Accuracy
                         </button>
                       )}
 
-                      {!selectedStation.verified && (!user || userRole === 'Manager') && (
+                      {/* PHASE 2: DYNAMIC CLAIM LOGIC */}
+                      {selectedStation.claim_status === 'None' && (
                         <button 
-                          onClick={() => handleProtectedAction(() => setShowClaimForm(true))} 
+                          onClick={handleDynamicClaimAction} 
                           className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors active:scale-95"
                         >
                           <ShieldCheck className="w-4 h-4" /> Claim This Station
                         </button>
                       )}
+                      
+                      {selectedStation.claim_status === 'Pending Review' && (
+                        <button 
+                          onClick={() => alert("This station is currently under review by our team.")} 
+                          className="w-full bg-indigo-100 text-indigo-700 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 border border-indigo-200"
+                        >
+                           Claim In Progress...
+                        </button>
+                      )}
+
+                      {selectedStation.claim_status === 'Claimed' && (
+                         <div className="w-full bg-emerald-50 text-emerald-700 font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1 border border-emerald-100">
+                           <ShieldCheck className="w-4 h-4" /> Station Officially Claimed
+                         </div>
+                      )}
+
                     </div>
                   </div>
                 </InfoWindow>
@@ -1084,14 +1188,20 @@ function QozobLanding() {
           </div>
         </div>
 
+        {/* ======================= LIST VIEW & FILTER ======================= */}
         <div className="order-3 lg:order-3 lg:col-span-2 lg:col-start-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
               <h2 className="text-xl font-extrabold text-indigo-950 flex items-center gap-2">
                 <Filter className="w-5 h-5 text-emerald-500" /> Local Stations
               </h2>
+              
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-none">
-                  <select value={listSort} onChange={(e) => setListSort(e.target.value)} className="w-full sm:w-auto bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-2 pl-8 text-sm font-bold outline-none cursor-pointer appearance-none transition-colors hover:bg-indigo-100">
+                  <select 
+                    value={listSort} 
+                    onChange={(e) => setListSort(e.target.value)} 
+                    className="w-full sm:w-auto bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-2 pl-8 text-sm font-bold outline-none cursor-pointer appearance-none transition-colors hover:bg-indigo-100"
+                  >
                     <option value="Distance">Nearest</option>
                     <option value="Price">Cheapest</option>
                     <option value="Rating">Highest Rated</option>
@@ -1100,7 +1210,12 @@ function QozobLanding() {
                   </select>
                   <ArrowUpDown className="w-4 h-4 absolute left-2 top-2.5 text-indigo-500 pointer-events-none" />
                 </div>
-                <select value={listFilter} onChange={(e) => setListFilter(e.target.value)} className="flex-1 sm:flex-none bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none cursor-pointer transition-colors hover:bg-slate-100">
+                
+                <select 
+                  value={listFilter} 
+                  onChange={(e) => setListFilter(e.target.value)} 
+                  className="flex-1 sm:flex-none bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none cursor-pointer transition-colors hover:bg-slate-100"
+                >
                   <option value="All">All Found</option>
                   <option value="Priced">Priced Only</option>
                   <option value="Top Rated">Top Rated (4+ Stars)</option>
@@ -1111,14 +1226,17 @@ function QozobLanding() {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 pb-2">
               {sortedAndFilteredList.map((station) => (
-                <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between items-center p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-md border border-slate-100 cursor-pointer transition-all duration-200 gap-3">
+                <div 
+                  key={station.id} 
+                  onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
+                  className="flex justify-between items-center p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-md border border-slate-100 cursor-pointer transition-all duration-200 gap-3"
+                >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
                     <div className="min-w-0 flex-1">
                       <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
-                        
                         {station.accuracy_votes > 0 && (
                           <div className="flex items-center text-[9px] font-bold text-amber-500 flex-shrink-0">
                             <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> {station.pump_accuracy}
@@ -1132,9 +1250,9 @@ function QozobLanding() {
                       {formatPrice(station.price_pms, "text-[10px]")}
                     </div>
                     {station.price_pms && (
-                       <div className="flex items-center justify-end gap-1 text-[8px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">
-                         <Clock className="w-2.5 h-2.5" /> {timeAgo(station.last_updated)}
-                       </div>
+                      <div className="flex items-center justify-end gap-1 text-[8px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">
+                        <Clock className="w-2.5 h-2.5" /> {timeAgo(station.last_updated)}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1142,6 +1260,7 @@ function QozobLanding() {
             </div>
         </div>
 
+        {/* ======================= NEEDS PRICING LIST ======================= */}
         <div className="order-4 lg:order-4 lg:col-start-3 h-fit">
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
             <h2 className="text-lg font-extrabold text-indigo-950 mb-4 flex items-center gap-2">
@@ -1149,7 +1268,11 @@ function QozobLanding() {
             </h2>
             <div className="flex flex-col gap-3">
               {mergedStations.filter(s => !s.price_pms).slice(0, 4).map((station) => (
-                <div key={station.id} onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-sm border border-slate-100 cursor-pointer gap-3 transition-all duration-200">
+                <div 
+                  key={station.id} 
+                  onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
+                  className="flex justify-between items-center p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-sm border border-slate-100 cursor-pointer gap-3 transition-all duration-200"
+                >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
                     <div className="min-w-0 flex-1">
@@ -1165,7 +1288,7 @@ function QozobLanding() {
         </div>
       </main>
 
-      {/* GLOBAL FOOTER */}
+      {/* ======================= GLOBAL FOOTER ======================= */}
       <footer className="bg-slate-900 text-slate-400 py-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
