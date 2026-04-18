@@ -4,7 +4,7 @@ import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
-  X, UploadCloud, CheckCircle2, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings
+  X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings
 } from 'lucide-react';
 import { 
   APIProvider, Map, AdvancedMarker, InfoWindow, 
@@ -239,39 +239,17 @@ function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string
 }
 
 // =========================================================================
-// MODALS (Upgraded for Phase 2: Phone OTP & Asterisks)
+// MODALS (Fully Cleaned - No OTP)
 // =========================================================================
 
 function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () => void }) {
   const supabase = createClient();
   
-  // Pricing States
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [suggestedQueue, setSuggestedQueue] = useState("Moderate");
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
 
-  // OTP Verification States (Phase 2 Rule: Phone must be verified to update price)
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [phoneVerified, setPhoneVerified] = useState(false);
-
-  const handleSendOTP = async () => { 
-    if(!phone) return alert("Enter a valid phone number");
-    setOtpSent(true); 
-    alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); 
-  };
-  
-  const handleVerifyOTP = async () => { 
-    if(otp === "123456" || otp.length === 6) {
-      setPhoneVerified(true); 
-    } else {
-      alert("Invalid OTP"); 
-    }
-  };
-
   const handleSuggestPrice = async () => {
-    if (!phoneVerified) return alert("You must verify your phone number first.");
     if (!suggestedPrice || !station) return;
     setIsSubmittingPrice(true);
 
@@ -307,51 +285,7 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
         <h2 className="text-2xl font-black text-indigo-950 mb-1">Update Price</h2>
         <p className="text-sm text-slate-500 mb-6">{station.name}</p>
 
-        {/* OTP AUTHENTICATION BLOCK */}
-        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4">
-          <label className="text-xs font-bold text-indigo-900 uppercase flex items-center gap-2">
-            Verify Phone to Update {phoneVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-          </label>
-          {!phoneVerified && (
-            <div className="mt-2 flex flex-col gap-2">
-              <input 
-                type="tel" 
-                disabled={otpSent} 
-                value={phone} 
-                onChange={(e) => setPhone(e.target.value)} 
-                className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500 text-sm" 
-                placeholder="Enter Phone Number" 
-              />
-              {!otpSent ? (
-                <button 
-                  onClick={handleSendOTP} 
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-sm transition-colors active:scale-95"
-                >
-                  Send OTP
-                </button>
-              ) : (
-                <div className="flex gap-2">
-                  <input 
-                    type="text" 
-                    value={otp} 
-                    onChange={(e) => setOtp(e.target.value)} 
-                    className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none text-sm focus:border-indigo-500" 
-                    placeholder="123456" 
-                    maxLength={6} 
-                  />
-                  <button 
-                    onClick={handleVerifyOTP} 
-                    className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg text-sm transition-colors active:scale-95"
-                  >
-                    Verify
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        <div className={`transition-all duration-300 ${!phoneVerified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+        <div className="transition-all duration-300">
           <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
           <input 
             type="number" 
@@ -360,6 +294,7 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
             onChange={(e) => setSuggestedPrice(e.target.value)} 
             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
             placeholder="e.g. 950" 
+            autoFocus
           />
           
           <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
@@ -376,7 +311,7 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
 
           <button 
             onClick={handleSuggestPrice} 
-            disabled={!suggestedPrice || isSubmittingPrice || !phoneVerified} 
+            disabled={!suggestedPrice || isSubmittingPrice} 
             className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
           >
             {isSubmittingPrice ? "Saving..." : "Submit to Map"}
@@ -391,30 +326,13 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
   const supabase = createClient();
   const [applicantName, setApplicantName] = useState("");
   const [cacNumber, setCacNumber] = useState("");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [phone, setPhone] = useState(""); // Kept to just collect the number
   const [cacFile, setCacFile] = useState<File | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
-  const handleSendOTP = async () => { 
-    if(!phone) return alert("Enter a valid phone number");
-    setOtpSent(true); 
-    alert(`Mock OTP sent to ${phone}. Use 123456 to test.`); 
-  };
-  
-  const handleVerifyOTP = async () => { 
-    if(otp === "123456" || otp.length === 6) {
-      setPhoneVerified(true); 
-    } else {
-      alert("Invalid OTP"); 
-    }
-  };
-
   const handleFinalSubmitClaim = async () => {
-    if (!cacFile || !applicantName || !cacNumber || !phoneVerified) {
-      return alert("Please fill all required fields (*), verify phone, and upload CAC document.");
+    if (!cacFile || !applicantName || !cacNumber || !phone) {
+      return alert("Please fill all required fields (*), including contact phone, and upload CAC document.");
     }
     setIsSubmittingClaim(true);
     try {
@@ -466,90 +384,59 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
         <h2 className="text-2xl font-black text-indigo-950 mb-2">Claim Station</h2>
         <p className="text-sm text-slate-500 mb-6">Verify ownership of <strong>{station.name}</strong>.</p>
         
-        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-4">
-            <label className="text-xs font-bold text-indigo-900 uppercase flex items-center gap-2">
-              1. Verify Phone <span className="text-red-500">*</span> {phoneVerified && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-            </label>
-            {!phoneVerified && (
-              <div className="mt-2 flex flex-col gap-2">
-                <input 
-                  type="tel" 
-                  disabled={otpSent} 
-                  value={phone} 
-                  onChange={(e) => setPhone(e.target.value)} 
-                  className="w-full bg-white border border-slate-200 rounded-lg p-3 outline-none focus:border-indigo-500 text-sm" 
-                  placeholder="08012345678" 
-                />
-                {!otpSent ? (
-                  <button 
-                    onClick={handleSendOTP} 
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg transition-colors active:scale-95 text-sm"
-                  >
-                    Send OTP
-                  </button>
-                ) : (
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={otp} 
-                      onChange={(e) => setOtp(e.target.value)} 
-                      className="w-2/3 bg-white border rounded-lg p-3 text-center tracking-widest font-bold outline-none focus:border-indigo-500 text-sm" 
-                      placeholder="123456" 
-                      maxLength={6} 
-                    />
-                    <button 
-                      onClick={handleVerifyOTP} 
-                      className="w-1/3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 rounded-lg transition-colors active:scale-95 text-sm"
-                    >
-                      Verify
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+        <div className="transition-all duration-300 flex flex-col gap-1">
+          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
+            Applicant Name <span className="text-red-500">*</span>
+          </label>
+          <input 
+            type="text" 
+            value={applicantName} 
+            onChange={(e) => setApplicantName(e.target.value)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
+            placeholder="e.g. Adebayo Johnson" 
+            autoFocus
+          />
+
+          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
+            Contact Phone Number <span className="text-red-500">*</span>
+          </label>
+          <input 
+            type="tel" 
+            value={phone} 
+            onChange={(e) => setPhone(e.target.value)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
+            placeholder="08012345678" 
+          />
+          
+          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
+            CAC Reg Number <span className="text-red-500">*</span>
+          </label>
+          <input 
+            type="text" 
+            value={cacNumber} 
+            onChange={(e) => setCacNumber(e.target.value)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
+            placeholder="RC-123456" 
+          />
+          
+          <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mt-2">
+            <UploadCloud className="w-4 h-4" /> Upload CAC Document (PDF/JPG) <span className="text-red-500">*</span>
+          </label>
+          <input 
+            type="file" 
+            accept=".pdf, image/jpeg, image/png" 
+            onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} 
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 transition-colors cursor-pointer" 
+          />
         </div>
 
-          <div className={`transition-all duration-300 flex flex-col gap-1 ${!phoneVerified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-            <label className="text-xs font-bold text-slate-500 uppercase mt-2">
-              2. Applicant Name <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="text" 
-              value={applicantName} 
-              onChange={(e) => setApplicantName(e.target.value)} 
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
-              placeholder="e.g. Adebayo Johnson" 
-            />
-            
-            <label className="text-xs font-bold text-slate-500 uppercase mt-2">
-              CAC Reg Number <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="text" 
-              value={cacNumber} 
-              onChange={(e) => setCacNumber(e.target.value)} 
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
-              placeholder="RC-123456" 
-            />
-            
-            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mt-2">
-              <UploadCloud className="w-4 h-4" /> Upload CAC Document (PDF/JPG) <span className="text-red-500">*</span>
-            </label>
-            <input 
-              type="file" 
-              accept=".pdf, image/jpeg, image/png" 
-              onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} 
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 transition-colors cursor-pointer" 
-            />
-          </div>
-
-          <button 
-            onClick={handleFinalSubmitClaim} 
-            disabled={!phoneVerified || isSubmittingClaim} 
-            className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
-          >
-              {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
-          </button>
+        <button 
+          onClick={handleFinalSubmitClaim} 
+          disabled={isSubmittingClaim} 
+          className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
+        >
+            {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
+        </button>
       </div>
     </div>
   );
@@ -667,7 +554,7 @@ function QozobLanding() {
   
   const [googleStations, setGoogleStations] = useState<any[]>([]);
   const [supabasePrices, setSupabasePrices] = useState<any[]>([]);
-  const [supabaseClaims, setSupabaseClaims] = useState<any[]>([]); // Phase 2: Tracking claims
+  const [supabaseClaims, setSupabaseClaims] = useState<any[]>([]);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   
   const [userLoc, setUserLoc] = useState<{ lat: number, lng: number } | null>(null);
@@ -734,7 +621,7 @@ function QozobLanding() {
     }
   }, []);
 
-  // Phase 2: Fetch baseline DB data for pricing AND active claims
+  // Fetch baseline DB data for pricing AND active claims
   useEffect(() => {
     async function fetchData() {
       const { data: prices } = await supabase.from('stations').select('*');
@@ -777,7 +664,7 @@ function QozobLanding() {
     }
   }, [map, mapCenter]);
 
-  // Phase 2: Merge Google Places + Supabase DB + Claim Status
+  // Merge Google Places + Supabase DB + Claim Status
   const mergedStations: Station[] = googleStations.map(googlePlace => {
     const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
     const claimData = supabaseClaims.find(c => c.station_id === googlePlace.place_id);
@@ -876,22 +763,28 @@ function QozobLanding() {
 
   const getDirectionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-  // Phase 2: Dynamic Claim Logic Handler
+  // Auth Protection Wrapper (Replaces OTP)
+  const handleProtectedAction = (action: () => void) => {
+    if (!user) {
+      router.push(`/login?redirect=claim&stationId=${selectedStation?.id}`);
+    } else {
+      action();
+    }
+  };
+
+  // Dynamic Claim Logic Handler
   const handleDynamicClaimAction = () => {
     if (!selectedStation) return;
 
-    // 1. Not logged in -> Redirect to login with station ID callback
     if (!user) {
       return router.push(`/login?redirect=claim&stationId=${selectedStation.id}`);
     }
 
-    // 2. Logged in but not a manager -> Send to settings to upgrade
     if (userRole !== 'Manager') {
       alert("Only Station Owners/Managers can claim stations. Please update your account role in Settings.");
       return router.push('/user-dashboard?tab=settings');
     }
 
-    // 3. Manager -> Open the form
     setShowClaimForm(true);
   };
 
@@ -1140,7 +1033,7 @@ function QozobLanding() {
 
                     <div className="flex flex-col gap-2">
                       <button 
-                        onClick={() => setShowPriceForm(true)} 
+                        onClick={() => handleProtectedAction(() => setShowPriceForm(true))} 
                         className="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold py-2 rounded-lg text-sm border border-emerald-300 transition-colors active:scale-95"
                       >
                         {selectedStation.price_pms ? "Update Pricing" : "Be the first to add price!"}
@@ -1148,14 +1041,14 @@ function QozobLanding() {
                       
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
-                          onClick={() => { if(!user) router.push('/login'); else setShowRateForm(true); }} 
+                          onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
                           className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors active:scale-95"
                         >
                           <Star className="w-4 h-4 fill-amber-500" /> Rate Pump Accuracy
                         </button>
                       )}
 
-                      {/* PHASE 2: DYNAMIC CLAIM LOGIC */}
+                      {/* DYNAMIC CLAIM LOGIC */}
                       {selectedStation.claim_status === 'None' && (
                         <button 
                           onClick={handleDynamicClaimAction} 
