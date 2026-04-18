@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   User as UserIcon, Settings, ShieldCheck, Map, 
@@ -8,7 +8,8 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 
-export default function UserDashboardPage() {
+// 1. Create the inner component containing all the logic
+function UserDashboardContent() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -75,14 +76,14 @@ export default function UserDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center w-full bg-slate-50">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row w-full">
       
       {/* ======================= SIDEBAR NAVIGATION ======================= */}
       <aside className="w-full md:w-64 bg-indigo-900 text-white flex flex-col md:min-h-screen shadow-xl z-10 flex-shrink-0">
@@ -257,5 +258,18 @@ export default function UserDashboardPage() {
 
       </main>
     </div>
+  );
+}
+
+// 2. Export a default wrapper component that includes the Suspense boundary
+export default function UserDashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    }>
+      <UserDashboardContent />
+    </Suspense>
   );
 }
