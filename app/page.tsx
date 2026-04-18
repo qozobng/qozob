@@ -345,24 +345,23 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
       
       if (uploadError) throw new Error(uploadError.message);
       
-      const { data: publicUrlData } = supabase.storage
-        .from('cac_documents')
-        .getPublicUrl(fileName);
+      const { data: { user } } = await supabase.auth.getUser();
 
       const { error: dbError } = await supabase.from('station_claims').insert({
+        user_id: user?.id, // CRITICAL: Link claim to the user
         station_id: station.id, 
         station_name: station.name, 
         applicant_name: applicantName,
-        applicant_role: "Manager", 
+        applicant_role: "Pending Owner", // Changed from 'Manager'
         business_reg_number: cacNumber, 
-        official_email: "pending@email.com",
+        official_email: user?.email,
         phone_number: phone, 
         document_url: publicUrlData.publicUrl, 
         status: 'Pending Review',
         lat: station.lat,
         lng: station.lng
       });
-
+      
       if (dbError) throw new Error(dbError.message);
 
       alert("Claim submitted successfully! The station is now marked as 'Claim in Progress'.");
