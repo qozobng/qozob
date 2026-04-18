@@ -1,20 +1,22 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Use the SERVICE ROLE KEY for admin actions (Never expose this to the frontend)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function POST(request: Request) {
   try {
+    // MOVE INITIALIZATION INSIDE THE HANDLER
+    // This prevents Vercel from crashing during the static build phase
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error("Missing Supabase Admin credentials in environment variables.");
+    }
+
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
     const { claimId, userId, stationId, adminNotes, status } = await request.json();
 
-    // 1. Verify the request is coming from an actual Admin
-    // (In production, extract the JWT token from headers and verify admin status here)
-
-    // 2. Update the Claim Status
+    // 1. Update the Claim Status
     const { error: claimError } = await supabaseAdmin
       .from('station_claims')
       .update({ 
@@ -26,7 +28,7 @@ export async function POST(request: Request) {
 
     if (claimError) throw claimError;
 
-    // 3. If Approved, escalate the user's role and verify the station
+    // 2. If Approved, escalate the user's role and verify the station
     if (status === 'Approved') {
       // Escalate User Role
       const { error: userError } = await supabaseAdmin.auth.admin.updateUserById(
@@ -41,9 +43,6 @@ export async function POST(request: Request) {
         .update({ verified: true, claim_status: 'Claimed' })
         .eq('station_id', stationId);
       if (stationError) throw stationError;
-
-      // TODO: Trigger Email Notification (e.g., using Resend API)
-      // await sendEmail(userEmail, "Your Qozob Station Claim is Approved!");
     }
 
     return NextResponse.json({ success: true, message: `Claim ${status} successfully.` });
