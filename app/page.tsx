@@ -336,6 +336,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
     }
     setIsSubmittingClaim(true);
     try {
+      // 1. Upload Document First
       const fileExt = cacFile.name.split('.').pop();
       const fileName = `cac_${station.id}_${Date.now()}.${fileExt}`;
       
@@ -345,18 +346,26 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
       
       if (uploadError) throw new Error(uploadError.message);
       
-      const { data: { user } } = await supabase.auth.getUser();
+      // 2. Fetch the generated public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('cac_documents')
+        .getPublicUrl(fileName);
 
+      // 3. Get the active user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Authentication required. Please log in again.");
+
+      // 4. Save to the database
       const { error: dbError } = await supabase.from('station_claims').insert({
-        user_id: user?.id, // CRITICAL: Link claim to the user
+        user_id: user.id, // Linked securely
         station_id: station.id, 
         station_name: station.name, 
         applicant_name: applicantName,
-        applicant_role: "Pending Owner", // Changed from 'Manager'
+        applicant_role: "Pending Owner", // Corrected
         business_reg_number: cacNumber, 
-        official_email: user?.email,
+        official_email: user.email,
         phone_number: phone, 
-        document_url: publicUrlData.publicUrl, 
+        document_url: publicUrlData.publicUrl, // URL safely injected
         status: 'Pending Review',
         lat: station.lat,
         lng: station.lng
@@ -434,7 +443,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
           disabled={isSubmittingClaim} 
           className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
         >
-            {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
+          {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
         </button>
       </div>
     </div>
@@ -779,7 +788,7 @@ function QozobLanding() {
       return router.push(`/login?redirect=claim&stationId=${selectedStation.id}`);
     }
 
-    if (userRole !== 'Manager') {
+    if (userRole !== 'Manager' && userRole !== 'Admin') {
       alert("Only Station Owners/Managers can claim stations. Please update your account role in Settings.");
       return router.push('/user-dashboard?tab=settings');
     }
@@ -845,6 +854,12 @@ function QozobLanding() {
                     </div>
                     <div className="p-2 flex flex-col gap-1">
                       
+                      {userRole === 'Admin' && (
+                        <button onClick={() => router.push('/admin/claims')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
+                          <ShieldCheck className="w-4 h-4 text-purple-500" /> Admin Dashboard
+                        </button>
+                      )}
+
                       {userRole === 'Manager' ? (
                         <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
