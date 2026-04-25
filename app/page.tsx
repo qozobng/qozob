@@ -326,7 +326,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
   const supabase = createClient();
   const [applicantName, setApplicantName] = useState("");
   const [cacNumber, setCacNumber] = useState("");
-  const [phone, setPhone] = useState(""); // Kept to just collect the number
+  const [phone, setPhone] = useState(""); 
   const [cacFile, setCacFile] = useState<File | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
@@ -357,15 +357,15 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
 
       // 4. Save to the database
       const { error: dbError } = await supabase.from('station_claims').insert({
-        user_id: user.id, // Linked securely
+        user_id: user.id, 
         station_id: station.id, 
         station_name: station.name, 
         applicant_name: applicantName,
-        applicant_role: "Pending Owner", // Corrected
+        applicant_role: "Pending Owner", 
         business_reg_number: cacNumber, 
         official_email: user.email,
         phone_number: phone, 
-        document_url: publicUrlData.publicUrl, // URL safely injected
+        document_url: publicUrlData.publicUrl, 
         status: 'Pending Review',
         lat: station.lat,
         lng: station.lng
@@ -574,14 +574,12 @@ function QozobLanding() {
   
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [showPriceForm, setShowPriceForm] = useState(false);
-  // ... existing states ...
   const [showRateForm, setShowRateForm] = useState(false);
 
-  // NEW: Track scrolling for mobile ad docking
+  // Track scrolling for mobile ad docking
   const [isScrolled, setIsScrolled] = useState(false);
   useEffect(() => {
     const handleScroll = () => {
-      // Docks the ad to the bottom after scrolling 60px down
       setIsScrolled(window.scrollY > 60);
     };
     window.addEventListener('scroll', handleScroll);
@@ -783,7 +781,7 @@ function QozobLanding() {
 
   const getDirectionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
-  // Auth Protection Wrapper (Replaces OTP)
+  // Auth Protection Wrapper
   const handleProtectedAction = (action: () => void) => {
     if (!user) {
       router.push(`/login?redirect=claim&stationId=${selectedStation?.id}`);
@@ -822,7 +820,6 @@ function QozobLanding() {
         }`}>
           <div className="w-full h-[60px] flex items-center justify-center bg-indigo-950/80 relative overflow-hidden">
              <span className="text-[10px] font-bold text-indigo-300/60 uppercase tracking-widest">Mobile Carousel Ad</span>
-             {/* Mock Carousel Dots */}
              <div className="absolute bottom-1.5 flex gap-1.5">
                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
                <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
@@ -1176,6 +1173,106 @@ function QozobLanding() {
             </Map>
           </div>
         </div>
+
+        {/* ======================= LIST VIEW & FILTER ======================= */}
+        <div className="order-3 lg:order-3 lg:col-span-2 lg:col-start-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+              <h2 className="text-xl font-extrabold text-indigo-950 flex items-center gap-2">
+                <Filter className="w-5 h-5 text-emerald-500" /> Local Stations
+              </h2>
+              
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                <div className="relative flex-1 sm:flex-none">
+                  <select 
+                    value={listSort} 
+                    onChange={(e) => setListSort(e.target.value)} 
+                    className="w-full sm:w-auto bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-2 pl-8 text-sm font-bold outline-none cursor-pointer appearance-none transition-colors hover:bg-indigo-100"
+                  >
+                    <option value="Distance">Nearest</option>
+                    <option value="Price">Cheapest</option>
+                    <option value="Rating">Highest Rated</option>
+                    <option value="Recent">Recently Updated</option>
+                    <option value="Name">Name (A-Z)</option>
+                  </select>
+                  <ArrowUpDown className="w-4 h-4 absolute left-2 top-2.5 text-indigo-500 pointer-events-none" />
+                </div>
+                
+                <select 
+                  value={listFilter} 
+                  onChange={(e) => setListFilter(e.target.value)} 
+                  className="flex-1 sm:flex-none bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none cursor-pointer transition-colors hover:bg-slate-100"
+                >
+                  <option value="All">All Found</option>
+                  <option value="Priced">Priced Only</option>
+                  <option value="Top Rated">Top Rated (4+ Stars)</option>
+                  <option value="No Queue">No Queue</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 pb-2">
+              {sortedAndFilteredList.map((station) => (
+                <div 
+                  key={station.id} 
+                  onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
+                  className="flex justify-between items-center p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-md border border-slate-100 cursor-pointer transition-all duration-200 gap-3"
+                >
+                  <div className="flex items-center flex-1 min-w-0">
+                    <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                        {station.accuracy_votes > 0 && (
+                          <div className="flex items-center text-[9px] font-bold text-amber-500 flex-shrink-0">
+                            <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> {station.pump_accuracy}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="text-lg font-black flex items-baseline justify-end" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
+                      {formatPrice(station.price_pms, "text-[10px]")}
+                    </div>
+                    {station.price_pms && (
+                      <div className="flex items-center justify-end gap-1 text-[8px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">
+                        <Clock className="w-2.5 h-2.5" /> {timeAgo(station.last_updated)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+        </div>
+
+        {/* ======================= NEEDS PRICING LIST ======================= */}
+        <div className="order-4 lg:order-4 lg:col-start-3 h-fit">
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+            <h2 className="text-lg font-extrabold text-indigo-950 mb-4 flex items-center gap-2">
+              <Droplet className="text-emerald-500"/> Needs Pricing Data
+            </h2>
+            <div className="flex flex-col gap-3">
+              {mergedStations.filter(s => !s.price_pms).slice(0, 4).map((station) => (
+                <div 
+                  key={station.id} 
+                  onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
+                  className="flex justify-between items-center p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-sm border border-slate-100 cursor-pointer gap-3 transition-all duration-200"
+                >
+                  <div className="flex items-center flex-1 min-w-0">
+                    <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
+                      <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                    </div>
+                  </div>
+                  <div className="text-right text-xs font-bold text-slate-400 flex-shrink-0 bg-slate-200 px-2 py-1 rounded-md">Update</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </main>
 
       {/* ======================= GLOBAL FOOTER ======================= */}
       <footer className="bg-slate-900 text-slate-400 pt-8 pb-28 lg:pb-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
