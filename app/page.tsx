@@ -959,14 +959,14 @@ function QozobLanding() {
                 
                 <div className="flex justify-between items-center gap-3">
                   <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                    <h2 className="text-base font-black truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
+                    <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
                     <p className="text-indigo-200 text-[11px] truncate mt-0.5">
                       {heroStation.distance}km • {heroStation.queue_status}
                     </p>
                   </div>
                   
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <div className="text-lg font-black leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
+                    <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
                       {formatPrice(heroStation.price_pms, "text-[10px]")}
                     </div>
                     <a 
@@ -989,7 +989,7 @@ function QozobLanding() {
                 </div>
                 
                 <h2 
-                  className="text-3xl font-black mb-1 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
+                  className="text-3xl font-bold mb-1 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
                   onClick={() => { 
                     setSelectedStation(heroStation); 
                     window.scrollTo({ top: 0, behavior: 'smooth' }); 
@@ -1010,7 +1010,7 @@ function QozobLanding() {
                 )}
                 
                 <div className="flex items-baseline gap-1 mb-1">
-                  <div className="text-5xl font-black" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                  <div className="text-5xl font-bold" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
                     {formatPrice(heroStation.price_pms, "text-2xl")}
                   </div>
                   <span className="text-sm font-normal text-indigo-300">/ liter</span>
@@ -1024,7 +1024,7 @@ function QozobLanding() {
                   href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
                   target="_blank" 
                   rel="noopener noreferrer" 
-                  className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg mt-auto"
+                  className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg mt-auto"
                 >
                   <Navigation className="w-5 h-5" /> Navigate Now
                 </a>
