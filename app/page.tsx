@@ -574,7 +574,19 @@ function QozobLanding() {
   
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [showPriceForm, setShowPriceForm] = useState(false);
+  // ... existing states ...
   const [showRateForm, setShowRateForm] = useState(false);
+
+  // NEW: Track scrolling for mobile ad docking
+  const [isScrolled, setIsScrolled] = useState(false);
+  useEffect(() => {
+    const handleScroll = () => {
+      // Docks the ad to the bottom after scrolling 60px down
+      setIsScrolled(window.scrollY > 60);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const map = useMap('main-map');
 
@@ -799,31 +811,49 @@ function QozobLanding() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col relative">
       
-      {/* ======================= RESPONSIVE HEADER WITH AD SPACE ======================= */}
+      {/* ======================= RESPONSIVE HEADER WITH DOCKING AD ======================= */}
       <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
         
-        {/* --- TOP ROW: Logo, Desktop Ad Space, Auth --- */}
+        {/* 1. MOBILE CAROUSEL AD (First on Mobile, Auto-Docks to Bottom) */}
+        <div className={`lg:hidden w-full transition-all duration-300 z-[100] ${
+          isScrolled 
+            ? 'fixed bottom-0 left-0 right-0 bg-indigo-950 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] border-t border-indigo-800 pb-2' 
+            : 'relative bg-indigo-900 border-b border-indigo-800/50'
+        }`}>
+          <div className="w-full h-[60px] flex items-center justify-center bg-indigo-950/80 relative overflow-hidden">
+             <span className="text-[10px] font-bold text-indigo-300/60 uppercase tracking-widest">Mobile Carousel Ad</span>
+             {/* Mock Carousel Dots */}
+             <div className="absolute bottom-1.5 flex gap-1.5">
+               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+               <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
+               <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
+             </div>
+          </div>
+        </div>
+
+        {/* 2. TOP ROW: Gen-Z Logo, Desktop Ad Space, Auth */}
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
-          {/* 1. LOGO */}
+          {/* GEN-Z STYLED LOGO (Full spell on all devices) */}
           <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
-            <h1 className="text-2xl font-black tracking-tighter text-emerald-400 hidden sm:block cursor-pointer">
-              Qozob.
-            </h1>
-            <h1 className="text-xl font-black text-emerald-400 block sm:hidden cursor-pointer">
-              Q.
+            <h1 className="cursor-pointer flex items-baseline select-none" title="Qozob">
+              <span className="font-black text-2xl sm:text-3xl tracking-tighter text-emerald-400">Q</span>
+              <span className="font-serif italic text-indigo-200 text-xl sm:text-2xl font-bold lowercase">o</span>
+              <span className="font-mono tracking-widest text-white text-2xl sm:text-3xl font-black mx-0.5">z</span>
+              <span className="font-serif italic text-indigo-200 text-xl sm:text-2xl font-bold lowercase">o</span>
+              <span className="font-black text-2xl sm:text-3xl tracking-tighter text-emerald-400 lowercase">b</span>
+              <span className="text-emerald-500 font-black text-2xl sm:text-3xl animate-pulse">.</span>
             </h1>
           </div>
           
-          {/* 2. DESKTOP AD SPACE (Visible on Large Screens - 728x90 Leaderboard) */}
-          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] bg-indigo-950/50 border-2 border-indigo-800/50 border-dashed rounded-xl items-center justify-center relative group transition-colors hover:bg-indigo-950">
+          {/* DESKTOP AD SPACE (Hidden on Mobile) */}
+          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] bg-indigo-950/50 border-2 border-indigo-800/50 border-dashed rounded-xl items-center justify-center relative group transition-colors hover:bg-indigo-950 mx-4">
             <span className="text-xs font-bold text-indigo-300/50 uppercase tracking-widest group-hover:text-indigo-300 transition-colors">
               Advertisement Space
             </span>
-            {/* Inject your Google AdSense or Custom Ad component here later */}
           </div>
 
-          {/* 3. USER AUTH & MENU */}
+          {/* USER PROFILE & MENU */}
           <div className="flex-shrink-0 flex items-center">
             {user ? (
               <div className="relative">
@@ -890,15 +920,8 @@ function QozobLanding() {
           </div>
         </div>
 
-        {/* --- BOTTOM ROW: Smart Search & Mobile Ad Space --- */}
-        <div className="bg-indigo-950 border-t border-indigo-800/50 px-4 py-3 flex flex-col md:flex-row items-center gap-3">
-          
-          {/* MOBILE/TABLET AD SPACE (Responsive Fallback - 320x50 Banner) */}
-          <div className="flex lg:hidden w-full max-w-[320px] h-[50px] bg-indigo-900/50 border border-indigo-800 border-dashed rounded-lg items-center justify-center mx-auto">
-            <span className="text-[10px] font-bold text-indigo-300/50 uppercase tracking-widest">Mobile Ad Space</span>
-          </div>
-
-          {/* SMART SEARCH INPUT */}
+        {/* 3. BOTTOM ROW: Dedicated Smart Search */}
+        <div className="bg-indigo-950 border-t border-indigo-800/50 px-4 py-3 flex items-center">
           <div className="w-full max-w-2xl mx-auto relative flex-1">
              <input 
                 type="text" 
@@ -917,7 +940,6 @@ function QozobLanding() {
                 Go
               </button>
           </div>
-
         </div>
       </header>
 
