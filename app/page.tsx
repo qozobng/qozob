@@ -946,92 +946,109 @@ function QozobLanding() {
       <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
         
         {/* ======================= HERO CARD ======================= */}
-        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col h-full">
+        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col h-fit lg:h-full z-10">
           {heroStation && (
-            <div className="bg-indigo-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden border border-indigo-700 h-full group hover:shadow-2xl transition-all">
+            <div className="bg-indigo-900 rounded-2xl lg:rounded-3xl p-4 lg:p-6 text-white shadow-xl relative overflow-hidden border border-indigo-700 h-full group hover:shadow-2xl transition-all flex flex-col justify-center">
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 group-hover:opacity-30 transition-opacity"></div>
               
-              <div className="flex items-center gap-2 mb-2 relative z-10">
-                <AlertTriangle className="text-emerald-400 w-5 h-5" />
-                <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
+              {/* === MOBILE VIEW (Ultra-Compact Horizontal Layout) === */}
+              <div className="flex lg:hidden flex-col gap-2 relative z-10">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
+                    <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Best Option</h3>
+                  </div>
+                  <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
+                    <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center gap-3">
+                  <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                    <h2 className="text-base font-black truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
+                    <p className="text-indigo-200 text-[11px] truncate mt-0.5">
+                      {heroStation.distance}km • {heroStation.queue_status}
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <div className="text-lg font-black leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
+                      {formatPrice(heroStation.price_pms, "text-[10px]")}
+                    </div>
+                    <a 
+                      href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="w-9 h-9 bg-emerald-400 hover:bg-emerald-300 text-indigo-950 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0"
+                    >
+                      <Navigation className="w-4 h-4 ml-[-1px]" />
+                    </a>
+                  </div>
+                </div>
               </div>
-              
-              <h2 
-                className="text-3xl font-black mb-1 relative z-10 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
-                onClick={() => { 
-                  setSelectedStation(heroStation); 
-                  window.scrollTo({ top: 0, behavior: 'smooth' }); 
-                }} 
-                title="Locate on Map"
-              >
-                {heroStation.name}
-              </h2>
 
-              <p className="text-indigo-200 text-sm mb-2 relative z-10">
-                {heroStation.distance}km away • {heroStation.queue_status} Queue
-              </p>
-              
-              {heroStation.accuracy_votes > 0 && (
-                <div className="flex items-center gap-1 text-xs font-bold text-amber-400 mb-4 relative z-10">
-                  <Star className="w-4 h-4 fill-amber-400" /> {heroStation.pump_accuracy}/5 Integrity ({heroStation.accuracy_votes} reviews)
+              {/* === DESKTOP VIEW (Original Large Vertical Layout) === */}
+              <div className="hidden lg:flex flex-col h-full relative z-10">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="text-emerald-400 w-5 h-5" />
+                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
                 </div>
-              )}
-              
-              <div className="flex items-baseline gap-1 relative z-10 mb-1">
-                <div className="text-5xl font-black" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                  {formatPrice(heroStation.price_pms, "text-2xl")}
+                
+                <h2 
+                  className="text-3xl font-black mb-1 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
+                  onClick={() => { 
+                    setSelectedStation(heroStation); 
+                    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+                  }} 
+                  title="Locate on Map"
+                >
+                  {heroStation.name}
+                </h2>
+
+                <p className="text-indigo-200 text-sm mb-2">
+                  {heroStation.distance}km away • {heroStation.queue_status} Queue
+                </p>
+                
+                {heroStation.accuracy_votes > 0 && (
+                  <div className="flex items-center gap-1 text-xs font-bold text-amber-400 mb-4">
+                    <Star className="w-4 h-4 fill-amber-400" /> {heroStation.pump_accuracy}/5 Integrity ({heroStation.accuracy_votes} reviews)
+                  </div>
+                )}
+                
+                <div className="flex items-baseline gap-1 mb-1">
+                  <div className="text-5xl font-black" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+                    {formatPrice(heroStation.price_pms, "text-2xl")}
+                  </div>
+                  <span className="text-sm font-normal text-indigo-300">/ liter</span>
                 </div>
-                <span className="text-sm font-normal text-indigo-300">/ liter</span>
+                
+                <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300 mb-6 uppercase tracking-wider">
+                  <Clock className="w-3 h-3" /> Updated {timeAgo(heroStation.last_updated)}
+                </div>
+                
+                <a 
+                  href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg mt-auto"
+                >
+                  <Navigation className="w-5 h-5" /> Navigate Now
+                </a>
               </div>
-              
-              <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300 relative z-10 mb-6 uppercase tracking-wider">
-                <Clock className="w-3 h-3" /> Updated {timeAgo(heroStation.last_updated)}
-              </div>
-              
-              <a 
-                href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 relative z-10 shadow-lg mt-auto"
-              >
-                <Navigation className="w-5 h-5" /> Navigate Now
-              </a>
             </div>
           )}
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
-          <div className="bg-slate-300 rounded-3xl h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white group">
+          {/* Note: Map height adjusted slightly on mobile to guarantee List visibility */}
+          <div className="bg-slate-300 rounded-3xl h-[45vh] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white group">
             
             {isFetchingDynamic && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4">
                 <div className="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div> Fetching area...
               </div>
             )}
-
-            <Map 
-              id="main-map" 
-              defaultZoom={13} 
-              defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
-              mapId="QOZOB_MAIN_MAP" 
-              disableDefaultUI={false} 
-              zoomControl={true} 
-              mapTypeControl={false} 
-              streetViewControl={false} 
-              fullscreenControl={false} 
-              gestureHandling={'greedy'} 
-              onClick={() => setSelectedStation(null)} 
-              onIdle={(e) => handleMapIdle()}
-            >
-              <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={null} />
-              <UserLocationMarker position={userLoc} />
-              
-              {mergedStations.map((station) => (
-                <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
-                  <StationMarker name={station.name} hasPrice={station.price_pms !== null} customLogoUrl={station.custom_logo_url} />
-                </AdvancedMarker>
-              ))}
 
               {/* ======================= MAP INFO WINDOW ======================= */}
               {selectedStation && (
