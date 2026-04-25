@@ -1238,14 +1238,21 @@ function QozobLanding() {
       </main>
 
       {/* ======================= GLOBAL FOOTER ======================= */}
-      <footer className="bg-slate-900 text-slate-400 py-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
+      <footer className="bg-slate-900 text-slate-400 pt-8 pb-28 lg:pb-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
             <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
-            <span className="font-black text-white tracking-tighter">Qozob.</span>
+            <span className="font-black text-white tracking-tighter">
+              <span className="text-emerald-400">Q</span>
+              <span className="font-serif italic text-indigo-200 lowercase">o</span>
+              <span className="font-mono text-white mx-0.5">z</span>
+              <span className="font-serif italic text-indigo-200 lowercase">o</span>
+              <span className="text-emerald-400 lowercase">b</span>
+              <span className="text-emerald-500">.</span>
+            </span>
             <span className="text-slate-500">© {new Date().getFullYear()} All rights reserved.</span>
           </div>
-          <div className="flex gap-6 font-bold text-xs">
+          <div className="flex gap-6 font-bold text-xs flex-wrap justify-center">
             <a href="#" className="hover:text-emerald-400 transition-colors">About Us</a>
             <a href="#" className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
             <a href="#" className="hover:text-emerald-400 transition-colors">Terms of Service</a>
