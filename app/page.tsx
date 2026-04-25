@@ -953,7 +953,7 @@ function QozobLanding() {
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-1.5">
                     <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
-                    <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Best Option</h3>
+                    <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
                   </div>
                   <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
                     <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
@@ -988,7 +988,7 @@ function QozobLanding() {
               <div className="hidden lg:flex flex-col h-full relative z-10">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="text-emerald-400 w-5 h-5" />
-                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Best Option Near You</h3>
+                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Top Pick Near You</h3>
                 </div>
                 
                 <h2 
