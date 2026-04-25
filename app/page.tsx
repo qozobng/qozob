@@ -799,42 +799,32 @@ function QozobLanding() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col relative">
       
-      {/* ======================= RESPONSIVE NAVBAR ======================= */}
-      <nav className="bg-indigo-900 text-white p-3 sm:p-4 sticky top-0 z-50 shadow-md transition-all">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 sm:gap-6">
+      {/* ======================= RESPONSIVE HEADER WITH AD SPACE ======================= */}
+      <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
+        
+        {/* --- TOP ROW: Logo, Desktop Ad Space, Auth --- */}
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
-          <h1 
-            className="text-xl sm:text-2xl font-black tracking-tighter text-emerald-400 hidden xs:block cursor-pointer" 
-            onClick={() => window.scrollTo(0,0)}
-          >
-            Qozob.
-          </h1>
-          <h1 className="text-xl font-black text-emerald-400 block xs:hidden cursor-pointer">
-            Q.
-          </h1>
-          
-          <div className="flex-1 max-w-xl">
-             <div className="relative w-full">
-               <input 
-                  type="text" 
-                  id="smart-search-input"
-                  placeholder="Search streets, LGAs, or landmarks..." 
-                  onKeyDown={(e) => { 
-                    if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
-                  }}
-                  className="w-full bg-white/10 border border-white/20 rounded-full py-2.5 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all shadow-inner"
-                />
-                <Search className="w-4 h-4 absolute left-4 top-3 text-indigo-300" />
-                <button 
-                  onClick={() => handleLocationSearch((document.getElementById('smart-search-input') as HTMLInputElement).value)} 
-                  className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors active:scale-95"
-                >
-                  Go
-                </button>
-            </div>
+          {/* 1. LOGO */}
+          <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
+            <h1 className="text-2xl font-black tracking-tighter text-emerald-400 hidden sm:block cursor-pointer">
+              Qozob.
+            </h1>
+            <h1 className="text-xl font-black text-emerald-400 block sm:hidden cursor-pointer">
+              Q.
+            </h1>
           </div>
           
-          <div className="flex items-center">
+          {/* 2. DESKTOP AD SPACE (Visible on Large Screens - 728x90 Leaderboard) */}
+          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] bg-indigo-950/50 border-2 border-indigo-800/50 border-dashed rounded-xl items-center justify-center relative group transition-colors hover:bg-indigo-950">
+            <span className="text-xs font-bold text-indigo-300/50 uppercase tracking-widest group-hover:text-indigo-300 transition-colors">
+              Advertisement Space
+            </span>
+            {/* Inject your Google AdSense or Custom Ad component here later */}
+          </div>
+
+          {/* 3. USER AUTH & MENU */}
+          <div className="flex-shrink-0 flex items-center">
             {user ? (
               <div className="relative">
                 <button 
@@ -899,7 +889,37 @@ function QozobLanding() {
             )}
           </div>
         </div>
-      </nav>
+
+        {/* --- BOTTOM ROW: Smart Search & Mobile Ad Space --- */}
+        <div className="bg-indigo-950 border-t border-indigo-800/50 px-4 py-3 flex flex-col md:flex-row items-center gap-3">
+          
+          {/* MOBILE/TABLET AD SPACE (Responsive Fallback - 320x50 Banner) */}
+          <div className="flex lg:hidden w-full max-w-[320px] h-[50px] bg-indigo-900/50 border border-indigo-800 border-dashed rounded-lg items-center justify-center mx-auto">
+            <span className="text-[10px] font-bold text-indigo-300/50 uppercase tracking-widest">Mobile Ad Space</span>
+          </div>
+
+          {/* SMART SEARCH INPUT */}
+          <div className="w-full max-w-2xl mx-auto relative flex-1">
+             <input 
+                type="text" 
+                id="smart-search-input"
+                placeholder="Search streets, LGAs, or landmarks..." 
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
+                }}
+                className="w-full bg-white/10 border border-white/20 rounded-full py-2.5 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all shadow-inner"
+              />
+              <Search className="w-4 h-4 absolute left-4 top-3 text-indigo-300" />
+              <button 
+                onClick={() => handleLocationSearch((document.getElementById('smart-search-input') as HTMLInputElement).value)} 
+                className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors active:scale-95"
+              >
+                Go
+              </button>
+          </div>
+
+        </div>
+      </header>
 
       <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
         
