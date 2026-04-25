@@ -832,14 +832,11 @@ function QozobLanding() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
           {/* GEN-Z STYLED LOGO (Full spell on all devices) */}
+          {/* UNIFIED MODERN LOGO */}
           <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
-            <h1 className="cursor-pointer flex items-baseline select-none" title="Qozob">
-              <span className="font-black text-2xl sm:text-3xl tracking-tighter text-emerald-400">Q</span>
-              <span className="font-serif italic text-indigo-200 text-xl sm:text-2xl font-bold lowercase">o</span>
-              <span className="font-mono tracking-widest text-white text-2xl sm:text-3xl font-black mx-0.5">z</span>
-              <span className="font-serif italic text-indigo-200 text-xl sm:text-2xl font-bold lowercase">o</span>
-              <span className="font-black text-2xl sm:text-3xl tracking-tighter text-emerald-400 lowercase">b</span>
-              <span className="text-emerald-500 font-black text-2xl sm:text-3xl animate-pulse">.</span>
+            <h1 className="cursor-pointer flex items-baseline select-none font-black tracking-tighter text-emerald-400 text-3xl sm:text-4xl" title="Qozob">
+              Qozob
+              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-400 rounded-full animate-pulse ml-0.5 self-end mb-1.5 sm:mb-2"></div>
             </h1>
           </div>
           
@@ -1279,14 +1276,12 @@ function QozobLanding() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
             <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
-            <span className="font-black text-white tracking-tighter">
-              <span className="text-emerald-400">Q</span>
-              <span className="font-serif italic text-indigo-200 lowercase">o</span>
-              <span className="font-mono text-white mx-0.5">z</span>
-              <span className="font-serif italic text-indigo-200 lowercase">o</span>
-              <span className="text-emerald-400 lowercase">b</span>
-              <span className="text-emerald-500">.</span>
+            {/* FOOTER LOGO */}
+            <span className="font-black text-emerald-400 tracking-tighter text-lg flex items-baseline">
+              Qozob
+              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse ml-0.5 self-end mb-1"></div>
             </span>
+            
             <span className="text-slate-500">© {new Date().getFullYear()} All rights reserved.</span>
           </div>
           <div className="flex gap-6 font-bold text-xs flex-wrap justify-center">
