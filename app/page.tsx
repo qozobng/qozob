@@ -294,7 +294,7 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
             onChange={(e) => setSuggestedPrice(e.target.value)} 
             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
             placeholder="e.g. 950" 
-            autoFocus
+            /* DELETE THE word `autoFocus` THAT WAS ON THIS LINE */
           />
           
           <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
@@ -402,7 +402,7 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
             onChange={(e) => setApplicantName(e.target.value)} 
             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
             placeholder="e.g. Adebayo Johnson" 
-            autoFocus
+            /* DELETE THE word `autoFocus` THAT WAS ON THIS LINE */
           />
 
           <label className="text-xs font-bold text-slate-500 uppercase mt-2">
