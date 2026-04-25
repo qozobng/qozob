@@ -807,7 +807,7 @@ function QozobLanding() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col relative">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative">
       
       {/* ======================= RESPONSIVE HEADER WITH DOCKING AD ======================= */}
       <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
@@ -1070,7 +1070,7 @@ function QozobLanding() {
               {/* ======================= MAP INFO WINDOW ======================= */}
               {selectedStation && (
                 <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
-                  <div className="p-3 min-w-[240px] font-sans relative">
+                  <div className="p-3 min-w-[240px] relative">
                     <button 
                       onClick={() => setSelectedStation(null)} 
                       className="absolute top-1 right-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full p-1.5 transition-colors z-10"
