@@ -34,13 +34,13 @@ export async function GET(request: Request) {
       .lte('lat', latNum + latOffset)
       .gte('lng', lngNum - lngOffset)
       .lte('lng', lngNum + lngOffset)
-      .limit(20);
+      .limit(30); // Increased limit slightly to account for the broader search
 
     // If we have stations saved in this area, return them instantly!
     if (cachedStations && cachedStations.length > 2) {
       console.log(`🤑 CACHE HIT: Found ${cachedStations.length} stations in Supabase. Bypassing Google API.`);
       
-      // Format them to match exactly what your frontend expects from Google
+      // Format them to match exactly what your frontend expects
       const formattedResults = cachedStations.map(station => ({
         place_id: station.station_id,
         name: station.name,
@@ -63,54 +63,70 @@ export async function GET(request: Request) {
   // STEP 2: FETCH FROM GOOGLE "PLACES API (NEW)" (ZERO ATMOSPHERE COST)
   // =========================================================================
   
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   
   if (!apiKey) {
-    console.error("CRITICAL ERROR: GOOGLE_MAPS_API_KEY is missing from .env.local");
+    console.error("CRITICAL ERROR: GOOGLE_MAPS_API_KEY is missing from environment variables");
     return NextResponse.json({ error: 'API key missing on server' }, { status: 500 });
   }
 
-  // The New Places API Endpoint
-  const url = `https://places.googleapis.com/v1/places:searchNearby`;
-
-  // We explicitly declare the field mask. This absolutely blocks Atmosphere/Contact Data.
+  // The explicit field mask absolutely blocks costly Atmosphere/Contact Data
   const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.location';
+  
+  // Base headers for both requests
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Goog-Api-Key': apiKey,
+    'X-Goog-FieldMask': fieldMask
+  };
 
-  const requestBody = {
+  // URL 1: Strict Category Search (Finds official gas stations)
+  const nearbyUrl = `https://places.googleapis.com/v1/places:searchNearby`;
+  const nearbyBody = {
     includedTypes: ["gas_station"],
     maxResultCount: 20,
     locationRestriction: {
-      circle: {
-        center: {
-          latitude: latNum,
-          longitude: lngNum
-        },
-        radius: 5000.0 // 5km radius
-      }
+      circle: { center: { latitude: latNum, longitude: lngNum }, radius: 5000.0 }
+    }
+  };
+
+  // URL 2: Broad Keyword Search (Finds miscategorized stations)
+  const textUrl = `https://places.googleapis.com/v1/places:searchText`;
+  const textBody = {
+    textQuery: "filling station OR petrol station OR fuel OR NNPC OR Bovas",
+    maxResultCount: 20,
+    locationBias: {
+      circle: { center: { latitude: latNum, longitude: lngNum }, radius: 5000.0 }
     }
   };
 
   try {
-    const res = await fetch(url, { 
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': fieldMask
-      },
-      body: JSON.stringify(requestBody),
-      next: { revalidate: 3600 } 
+    // Run BOTH API requests simultaneously for maximum speed
+    const [nearbyRes, textRes] = await Promise.all([
+      fetch(nearbyUrl, { method: 'POST', headers, body: JSON.stringify(nearbyBody) }),
+      fetch(textUrl, { method: 'POST', headers, body: JSON.stringify(textBody) })
+    ]);
+    
+    const nearbyData = await nearbyRes.json();
+    const textData = await textRes.json();
+    
+    if (nearbyData.error) console.error("Nearby API Error:", nearbyData.error.message);
+    if (textData.error) console.error("Text API Error:", textData.error.message);
+
+    // Combine both result arrays
+    const combinedPlaces = [...(nearbyData.places || []), ...(textData.places || [])];
+
+    // Deduplicate! Remove any station found in both searches using its unique 'id'
+    const uniqueStationsMap = new Map();
+    combinedPlaces.forEach((place: any) => {
+      if (!uniqueStationsMap.has(place.id)) {
+        uniqueStationsMap.set(place.id, place);
+      }
     });
-    
-    const data = await res.json();
-    
-    if (data.error) {
-      console.error("GOOGLE API REJECTED THE REQUEST:", data.error.message);
-      return NextResponse.json({ error: 'Failed to fetch stations from Google' }, { status: 500 });
-    }
-    
-    // Format the "New" API response to match our older frontend structure
-    const formattedResults = (data.places || []).map((place: any) => ({
+    const deduplicatedPlaces = Array.from(uniqueStationsMap.values());
+
+    // Format the combined "New" API response to match our frontend structure
+    const formattedResults = deduplicatedPlaces.map((place: any) => ({
       place_id: place.id,
       name: place.displayName?.text || "Unknown Station",
       vicinity: place.formattedAddress || "No address provided",
@@ -122,7 +138,7 @@ export async function GET(request: Request) {
       }
     }));
 
-    console.log(`📡 CACHE MISS: Fetched ${formattedResults.length} stations from Google.`);
+    console.log(`📡 CACHE MISS: Fetched and merged ${formattedResults.length} unique stations from Google.`);
 
     // =========================================================================
     // STEP 3: SAVE GOOGLE DATA TO SUPABASE (SO IT'S FREE NEXT TIME)
