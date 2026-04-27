@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       .lte('lat', latNum + latOffset)
       .gte('lng', lngNum - lngOffset)
       .lte('lng', lngNum + lngOffset)
-      .limit(30); // Increased limit slightly to account for the broader search
+      .limit(150); // Increased limit to ensure no stations are hidden in dense areas
 
     // If we have stations saved in this area, return them instantly!
     if (cachedStations && cachedStations.length > 2) {
@@ -90,10 +90,10 @@ export async function GET(request: Request) {
     }
   };
 
-  // URL 2: Broad Keyword Search (Finds miscategorized stations)
+  // URL 2: Broad Keyword Search (Finds miscategorized stations and missing brands)
   const textUrl = `https://places.googleapis.com/v1/places:searchText`;
   const textBody = {
-    textQuery: "filling station OR petrol station OR fuel OR NNPC OR Bovas",
+    textQuery: "MRS OR NNPC OR Bovas OR Total OR Mobil OR Oando OR Conoil OR Rainoil OR filling station OR petrol station OR fuel",
     maxResultCount: 20,
     locationBias: {
       circle: { center: { latitude: latNum, longitude: lngNum }, radius: 5000.0 }
