@@ -574,16 +574,6 @@ function QozobLanding() {
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [showRateForm, setShowRateForm] = useState(false);
 
-  // Track scrolling for mobile ad docking
-  const [isScrolled, setIsScrolled] = useState(false);
-  useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 60);
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   const map = useMap('main-map');
 
   // Sync Auth User
@@ -812,35 +802,19 @@ function QozobLanding() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative pb-24 lg:pb-0">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative pb-20 lg:pb-0">
       
-      {/* ======================= RESPONSIVE HEADER WITH DOCKING AD ======================= */}
+      {/* ======================= RESPONSIVE HEADER ======================= */}
       <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
-        
-        {/* 1. MOBILE CAROUSEL AD (First on Mobile, Auto-Docks to Bottom) */}
-        <div className={`lg:hidden w-full transition-all duration-300 z-[100] ${
-          isScrolled 
-            ? 'fixed bottom-0 left-0 right-0 bg-indigo-950 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] border-t border-indigo-800 pb-2' 
-            : 'relative bg-indigo-900 border-b border-indigo-800/50'
-        }`}>
-          <div className="w-full h-[60px] flex items-center justify-center bg-indigo-950/80 relative overflow-hidden">
-             <span className="text-[10px] font-bold text-indigo-300/60 uppercase tracking-widest">Mobile Carousel Ad</span>
-             <div className="absolute bottom-1.5 flex gap-1.5">
-               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
-               <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
-               <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
-             </div>
-          </div>
-        </div>
 
-        {/* 2. TOP ROW: Gen-Z Logo, Desktop Ad Space, Auth */}
+        {/* 1. TOP ROW: Gen-Z Logo, Desktop Ad Space, Auth */}
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
-          {/* GEN-Z STYLED LOGO (Full spell on all devices) */}
-          {/* NEW AMBIGRAM SVG LOGO */}
+          {/* GEN-Z STYLED LOGO */}
           <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
             <div className="cursor-pointer flex items-center h-8 sm:h-10 text-emerald-400 hover:text-emerald-300 transition-colors" title="Qozob">
-              <svg viewBox="0 0 380 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
+              {/* FIXED VIEWBOX TO PREVENT CROPPING THE 'B' */}
+              <svg viewBox="0 0 400 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
                 {/* q */}
                 <circle cx="40" cy="50" r="26" />
                 <path d="M66,50 V95" />
@@ -934,7 +908,7 @@ function QozobLanding() {
           </div>
         </div>
 
-        {/* 3. BOTTOM ROW: Dedicated Smart Search */}
+        {/* 2. BOTTOM ROW: Dedicated Smart Search */}
         <div className="bg-indigo-950 border-t border-indigo-800/50 px-4 py-3 flex items-center">
           <div className="w-full max-w-2xl mx-auto relative flex-1">
              <input 
@@ -1034,7 +1008,6 @@ function QozobLanding() {
           </div>
 
           {/* === DESKTOP VIEW: VERTICAL 50/50 SPLIT (Compact Height) === */}
-          {/* We use flex-col and divide the available h-full space equally */}
           <div className="hidden lg:flex flex-col gap-4 h-full">
             
             {/* Card 1: Top Pick Near You (Top 50%) */}
@@ -1126,7 +1099,6 @@ function QozobLanding() {
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
-          {/* Note: Map height adjusted slightly on mobile to guarantee List visibility */}
           <div className="bg-slate-300 rounded-3xl h-[45vh] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white group">
             
             {isFetchingDynamic && (
@@ -1362,11 +1334,14 @@ function QozobLanding() {
         </div>
       </main>
 
-      {/* ======================= MOBILE FIXED BOTTOM ADVERT ======================= */}
-      <div className="fixed bottom-0 left-0 w-full z-[100] bg-white border-t border-slate-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)] lg:hidden p-3 animate-in slide-in-from-bottom">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-           <div className="flex-1 bg-slate-100 rounded-lg text-center p-2 text-xs font-bold text-slate-500 border border-dashed border-slate-300">
-              ADVERTISEMENT SPACE
+      {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
+      <div className="fixed bottom-0 left-0 right-0 z-[100] bg-indigo-950 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] border-t border-indigo-800 pb-2 lg:hidden">
+        <div className="w-full h-[60px] flex items-center justify-center bg-indigo-950/80 relative overflow-hidden">
+           <span className="text-[10px] font-bold text-indigo-300/60 uppercase tracking-widest">Mobile Carousel Ad</span>
+           <div className="absolute bottom-1.5 flex gap-1.5">
+             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+             <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
+             <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
            </div>
         </div>
       </div>
@@ -1378,7 +1353,7 @@ function QozobLanding() {
             <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
             {/* NEW AMBIGRAM FOOTER LOGO */}
             <div className="h-6 text-emerald-400">
-              <svg viewBox="0 0 380 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 400 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="40" cy="50" r="26" />
                 <path d="M66,50 V95" />
                 <circle cx="120" cy="50" r="26" />
