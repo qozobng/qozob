@@ -239,7 +239,7 @@ function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string
 }
 
 // =========================================================================
-// MODALS (Fully Cleaned - No OTP)
+// MODALS
 // =========================================================================
 
 function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () => void }) {
@@ -294,7 +294,6 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
             onChange={(e) => setSuggestedPrice(e.target.value)} 
             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
             placeholder="e.g. 950" 
-            /* DELETE THE word `autoFocus` THAT WAS ON THIS LINE */
           />
           
           <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
@@ -402,7 +401,6 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
             onChange={(e) => setApplicantName(e.target.value)} 
             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
             placeholder="e.g. Adebayo Johnson" 
-            /* DELETE THE word `autoFocus` THAT WAS ON THIS LINE */
           />
 
           <label className="text-xs font-bold text-slate-500 uppercase mt-2">
@@ -742,6 +740,13 @@ function QozobLanding() {
   });
   const heroStation = sortedByPriceAndDistance[0];
 
+  // Determine the Nearest Station
+  const nearestStation = React.useMemo(() => {
+    const withDistance = mergedStations.filter(s => s.distance !== null && s.distance !== undefined);
+    if (withDistance.length === 0) return null;
+    return withDistance.sort((a, b) => parseFloat(a.distance as string) - parseFloat(b.distance as string))[0];
+  }, [mergedStations]);
+
   // Filtering for List View
   const filteredList = mergedStations.filter(s => {
     if (listFilter === "Priced") return s.price_pms !== null;
@@ -807,7 +812,7 @@ function QozobLanding() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative pb-24 lg:pb-0">
       
       {/* ======================= RESPONSIVE HEADER WITH DOCKING AD ======================= */}
       <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
@@ -832,12 +837,27 @@ function QozobLanding() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
           {/* GEN-Z STYLED LOGO (Full spell on all devices) */}
-          {/* UNIFIED MODERN LOGO */}
+          {/* NEW AMBIGRAM SVG LOGO */}
           <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
-            <h1 className="cursor-pointer flex items-baseline select-none font-black tracking-tighter text-emerald-400 text-3xl sm:text-4xl" title="Qozob">
-              Qozob
-              <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 bg-emerald-400 rounded-full animate-pulse ml-0.5 self-end mb-1.5 sm:mb-2"></div>
-            </h1>
+            <div className="cursor-pointer flex items-center h-8 sm:h-10 text-emerald-400 hover:text-emerald-300 transition-colors" title="Qozob">
+              <svg viewBox="0 0 380 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
+                {/* q */}
+                <circle cx="40" cy="50" r="26" />
+                <path d="M66,50 V95" />
+                {/* o */}
+                <circle cx="120" cy="50" r="26" />
+                {/* z */}
+                <path d="M170,24 H230 L170,76 H230" />
+                {/* o */}
+                <circle cx="280" cy="50" r="26" />
+                {/* b */}
+                <path d="M334,5 V50" />
+                <circle cx="360" cy="50" r="26" />
+                
+                {/* Pulsating dot perfectly centered inside the 'b' */}
+                <circle cx="360" cy="50" r="8" fill="currentColor" stroke="none" className="animate-pulse text-emerald-500" />
+              </svg>
+            </div>
           </div>
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
@@ -939,98 +959,169 @@ function QozobLanding() {
 
       <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
         
-        {/* ======================= HERO CARD ======================= */}
-        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col h-fit lg:h-full z-10">
-          {heroStation && (
-            <div className="bg-indigo-900 rounded-2xl lg:rounded-3xl p-4 lg:p-6 text-white shadow-xl relative overflow-hidden border border-indigo-700 h-full group hover:shadow-2xl transition-all flex flex-col justify-center">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 group-hover:opacity-30 transition-opacity"></div>
-              
-              {/* === MOBILE VIEW (Ultra-Compact Horizontal Layout) === */}
-              <div className="flex lg:hidden flex-col gap-2 relative z-10">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-1.5">
-                    <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
-                    <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
-                  </div>
-                  <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
-                    <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
-                  </div>
-                </div>
-                
-                <div className="flex justify-between items-center gap-3">
-                  <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                    <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
-                    <p className="text-indigo-200 text-[11px] truncate mt-0.5">
-                      {heroStation.distance}km • {heroStation.queue_status}
-                    </p>
+        {/* ======================= HERO CARDS SECTION ======================= */}
+        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-4 h-fit lg:h-full z-10">
+          
+          {/* === MOBILE VIEW: STACKED CARDS === */}
+          <div className="flex lg:hidden flex-col gap-3">
+            {/* 1. Mobile Top Pick */}
+            {heroStation && (
+              <div className="bg-indigo-900 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden border border-indigo-700">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
+                <div className="flex flex-col gap-2 relative z-10">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
+                      <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
+                    </div>
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
+                      <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
+                    </div>
                   </div>
                   
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
-                      {formatPrice(heroStation.price_pms, "text-[10px]")}
+                  <div className="flex justify-between items-center gap-3">
+                    <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                      <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
+                      <p className="text-indigo-200 text-[11px] truncate mt-0.5">
+                        {heroStation.distance}km • {heroStation.queue_status}
+                      </p>
                     </div>
-                    <a 
-                      href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="w-9 h-9 bg-emerald-400 hover:bg-emerald-300 text-indigo-950 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0"
-                    >
-                      <Navigation className="w-4 h-4 ml-[-1px]" />
+                    
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
+                        {formatPrice(heroStation.price_pms, "text-[10px]")}
+                      </div>
+                      <a href={getDirectionsUrl(heroStation.lat, heroStation.lng)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-emerald-400 hover:bg-emerald-300 text-indigo-950 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0">
+                        <Navigation className="w-4 h-4 ml-[-1px]" />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Mobile Nearest */}
+            {nearestStation && (
+              <div className="bg-indigo-900/90 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden border border-indigo-800">
+                <div className="flex flex-col gap-2 relative z-10">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-1.5">
+                      <Navigation className="text-blue-400 w-3.5 h-3.5" />
+                      <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Nearest</h3>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between items-center gap-3">
+                    <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                      <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-blue-300">{nearestStation.name}</h2>
+                      <p className="text-indigo-200 text-[11px] truncate mt-0.5">
+                        {nearestStation.distance}km • {nearestStation.queue_status}
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(nearestStation.updated_by_role) }}>
+                        {formatPrice(nearestStation.price_pms, "text-[10px]")}
+                      </div>
+                      <a href={getDirectionsUrl(nearestStation.lat, nearestStation.lng)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-blue-500 hover:bg-blue-400 text-white rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0">
+                        <Navigation className="w-4 h-4 ml-[-1px]" />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* === DESKTOP VIEW: VERTICAL 50/50 SPLIT (Compact Height) === */}
+          {/* We use flex-col and divide the available h-full space equally */}
+          <div className="hidden lg:flex flex-col gap-4 h-full">
+            
+            {/* Card 1: Top Pick Near You (Top 50%) */}
+            {heroStation && (
+              <div className="flex-1 bg-indigo-900 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden border border-indigo-700 flex flex-col justify-center group hover:shadow-2xl transition-all">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 group-hover:opacity-30 transition-opacity"></div>
+                
+                <div className="relative z-10 flex flex-col h-full">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
+                        <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
+                      </div>
+                      <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-emerald-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={heroStation.name}>
+                        {heroStation.name}
+                      </h2>
+                      <p className="text-indigo-200 text-[11px] mt-0.5">{heroStation.distance}km • {heroStation.queue_status}</p>
+                    </div>
+                    
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-2xl font-bold leading-none drop-shadow-md mb-1" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
+                        {formatPrice(heroStation.price_pms, "text-sm")}
+                      </div>
+                      {heroStation.accuracy_votes > 0 && (
+                        <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-amber-400">
+                          <Star className="w-2.5 h-2.5 fill-amber-400" /> {heroStation.pump_accuracy}/5
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-indigo-800/50">
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
+                      <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
+                    </div>
+                    <a href={getDirectionsUrl(heroStation.lat, heroStation.lng)} target="_blank" rel="noopener noreferrer" className="bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-bold py-1.5 px-4 text-xs rounded-lg flex items-center gap-1.5 transition-all active:scale-95 shadow-md">
+                      <Navigation className="w-3.5 h-3.5" /> Navigate
                     </a>
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* === DESKTOP VIEW (Original Large Vertical Layout) === */}
-              <div className="hidden lg:flex flex-col h-full relative z-10">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="text-emerald-400 w-5 h-5" />
-                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-widest">Top Pick Near You</h3>
-                </div>
+            {/* Card 2: Nearest to You (Bottom 50%) */}
+            {nearestStation && (
+              <div className="flex-1 bg-indigo-900/90 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden border border-indigo-800 flex flex-col justify-center group hover:shadow-2xl transition-all">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-10 -mr-10 -mt-10 group-hover:opacity-20 transition-opacity"></div>
                 
-                <h2 
-                  className="text-3xl font-bold mb-1 cursor-pointer hover:text-emerald-300 transition-colors w-fit" 
-                  onClick={() => { 
-                    setSelectedStation(heroStation); 
-                    window.scrollTo({ top: 0, behavior: 'smooth' }); 
-                  }} 
-                  title="Locate on Map"
-                >
-                  {heroStation.name}
-                </h2>
-
-                <p className="text-indigo-200 text-sm mb-2">
-                  {heroStation.distance}km away • {heroStation.queue_status} Queue
-                </p>
-                
-                {heroStation.accuracy_votes > 0 && (
-                  <div className="flex items-center gap-1 text-xs font-bold text-amber-400 mb-4">
-                    <Star className="w-4 h-4 fill-amber-400" /> {heroStation.pump_accuracy}/5 Integrity ({heroStation.accuracy_votes} reviews)
+                <div className="relative z-10 flex flex-col h-full">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Navigation className="text-blue-400 w-3.5 h-3.5" />
+                        <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Nearest</h3>
+                      </div>
+                      <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-blue-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={nearestStation.name}>
+                        {nearestStation.name}
+                      </h2>
+                      <p className="text-indigo-200 text-[11px] mt-0.5">{nearestStation.distance}km • {nearestStation.queue_status}</p>
+                    </div>
+                    
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-2xl font-bold leading-none drop-shadow-md mb-1" style={{ color: getPriceColor(nearestStation.updated_by_role) }}>
+                        {formatPrice(nearestStation.price_pms, "text-sm")}
+                      </div>
+                      {nearestStation.accuracy_votes > 0 && (
+                        <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-amber-400">
+                          <Star className="w-2.5 h-2.5 fill-amber-400" /> {nearestStation.pump_accuracy}/5
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-                
-                <div className="flex items-baseline gap-1 mb-1">
-                  <div className="text-5xl font-bold" style={{ color: getPriceColor(heroStation.updated_by_role), textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                    {formatPrice(heroStation.price_pms, "text-2xl")}
+                  
+                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-indigo-800/50">
+                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
+                      <Clock className="w-2.5 h-2.5" /> {timeAgo(nearestStation.last_updated)}
+                    </div>
+                    <a href={getDirectionsUrl(nearestStation.lat, nearestStation.lng)} target="_blank" rel="noopener noreferrer" className="bg-blue-500 hover:bg-blue-400 text-white font-bold py-1.5 px-4 text-xs rounded-lg flex items-center gap-1.5 transition-all active:scale-95 shadow-md">
+                      <Navigation className="w-3.5 h-3.5" /> Navigate
+                    </a>
                   </div>
-                  <span className="text-sm font-normal text-indigo-300">/ liter</span>
                 </div>
-                
-                <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300 mb-6 uppercase tracking-wider">
-                  <Clock className="w-3 h-3" /> Updated {timeAgo(heroStation.last_updated)}
-                </div>
-                
-                <a 
-                  href={getDirectionsUrl(heroStation.lat, heroStation.lng)} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="w-full bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg mt-auto"
-                >
-                  <Navigation className="w-5 h-5" /> Navigate Now
-                </a>
               </div>
-            </div>
-          )}
+            )}
+            
+          </div>
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
@@ -1271,18 +1362,35 @@ function QozobLanding() {
         </div>
       </main>
 
+      {/* ======================= MOBILE FIXED BOTTOM ADVERT ======================= */}
+      <div className="fixed bottom-0 left-0 w-full z-[100] bg-white border-t border-slate-200 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.1)] lg:hidden p-3 animate-in slide-in-from-bottom">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+           <div className="flex-1 bg-slate-100 rounded-lg text-center p-2 text-xs font-bold text-slate-500 border border-dashed border-slate-300">
+              ADVERTISEMENT SPACE
+           </div>
+        </div>
+      </div>
+
       {/* ======================= GLOBAL FOOTER ======================= */}
       <footer className="bg-slate-900 text-slate-400 pt-8 pb-28 lg:pb-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
             <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
-            {/* FOOTER LOGO */}
-            <span className="font-black text-emerald-400 tracking-tighter text-lg flex items-baseline">
-              Qozob
-              <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse ml-0.5 self-end mb-1"></div>
-            </span>
+            {/* NEW AMBIGRAM FOOTER LOGO */}
+            <div className="h-6 text-emerald-400">
+              <svg viewBox="0 0 380 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="40" cy="50" r="26" />
+                <path d="M66,50 V95" />
+                <circle cx="120" cy="50" r="26" />
+                <path d="M170,24 H230 L170,76 H230" />
+                <circle cx="280" cy="50" r="26" />
+                <path d="M334,5 V50" />
+                <circle cx="360" cy="50" r="26" />
+                <circle cx="360" cy="50" r="8" fill="currentColor" stroke="none" className="animate-pulse text-emerald-500" />
+              </svg>
+            </div>
             
-            <span className="text-slate-500">© {new Date().getFullYear()} All rights reserved.</span>
+            <span className="text-slate-500 ml-2">© {new Date().getFullYear()} All rights reserved.</span>
           </div>
           <div className="flex gap-6 font-bold text-xs flex-wrap justify-center">
             <a href="#" className="hover:text-emerald-400 transition-colors">About Us</a>
