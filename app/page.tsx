@@ -1,21 +1,34 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useCallback } from 'react';
+import React, { useState, useEffect, Suspense, useCallback, useMemo, useRef, memo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
-  X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings
+  X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
+  Share2, LocateFixed, CheckCircle2
 } from 'lucide-react';
 import { 
-  APIProvider, Map, AdvancedMarker, InfoWindow, 
+  APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
   useMap 
 } from '@vis.gl/react-google-maps';
 
 // --- AUTH INTEGRATION ---
 import { createClient } from '@/utils/supabase/client';
 
+// --- SHARED BRANDING ---
+import { BrandLogo } from '@/components/BrandLogo';
+
 // --- Map Visual Key ---
-const GOOGLE_MAPS_API_KEY = "AIzaSyBR1zxq9SGdcKUHgbLjvl1j0A50F1eG54o";
+// Prefer the env var (set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local / Vercel); the inline key is kept as a fallback.
+// Make sure this key is restricted to your domains (HTTP referrers) in Google Cloud Console.
+const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "AIzaSyBR1zxq9SGdcKUHgbLjvl1j0A50F1eG54o";
+
+// --- Tunables ---
+const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 }; // Lagos
+const REFETCH_DISTANCE_KM = 2.0;   // don't re-query an area within this distance of one already loaded
+const STALE_AFTER_HOURS = 48;      // prices older than this are flagged as possibly outdated
+const PRICE_SANITY_MIN = 300;      // soft bounds for PMS price typo detection (₦/L)
+const PRICE_SANITY_MAX = 3000;
 
 // =========================================================================
 // TYPES
@@ -39,12 +52,14 @@ interface Station {
   custom_logo_url: string | null;
 }
 
+type OnStationSaved = (stationId: string, patch: Record<string, any>, message: string) => void;
+
 // =========================================================================
 // HELPERS & UTILITIES
 // =========================================================================
 
-function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): string | null {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+/** Great-circle distance in km (numeric, for internal comparisons). */
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
@@ -52,8 +67,44 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
     Math.sin(dLat / 2) * Math.sin(dLat / 2) + 
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c; 
-  return d.toFixed(3); 
+  return R * c; 
+}
+
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number): string | null {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  return haversineKm(lat1, lon1, lat2, lon2).toFixed(3); 
+}
+
+/** "1.234km • " or "" when the distance is unknown (avoids rendering "nullkm"). */
+function distancePrefix(distance: string | null | undefined): string {
+  return distance ? `${distance}km • ` : '';
+}
+
+/** Epoch ms for a last_updated value, or 0 for "Never"/invalid. */
+function parseUpdatedTime(dateString: string | null | undefined): number {
+  if (!dateString || dateString === "Never") return 0;
+  const t = Date.parse(dateString);
+  return isNaN(t) ? 0 : t;
+}
+
+function isStale(dateString: string | null | undefined): boolean {
+  const t = parseUpdatedTime(dateString);
+  return t > 0 && Date.now() - t > STALE_AFTER_HOURS * 60 * 60 * 1000;
+}
+
+// When a station has several claims, show the most relevant one (pending > approved > anything else)
+const CLAIM_PRIORITY: Record<string, number> = { 'Pending Review': 3, 'Approved': 2 };
+function pickClaimStatus(current: string | undefined, incoming: string): string {
+  if (!current) return incoming;
+  return (CLAIM_PRIORITY[incoming] || 0) > (CLAIM_PRIORITY[current] || 0) ? incoming : current;
+}
+
+function useEscapeKey(onEscape: () => void) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onEscape(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onEscape]);
 }
 
 function timeAgo(dateString: string | null | undefined): string {
@@ -94,86 +145,15 @@ function formatPrice(price: number | string | null | undefined, decimalClass: st
   }
 }
 
-function getStationBrandInfo(name: string | null | undefined, customLogoUrl: string | null | undefined) {
-  const lowerName = name?.toLowerCase() || "";
-  let logoUrl = customLogoUrl || null; 
-  let color = "#10b981"; 
-  let text = name ? name.substring(0, 2).toUpperCase() : "GS";
-  
-  if (!logoUrl) {
-    if (lowerName.includes("nnpc")) { logoUrl = "/logos/nnpc.png"; color = "#00a94d"; }
-    else if (lowerName.includes("total")) { logoUrl = "/logos/total.png"; color = "#1e3a8a"; }
-    else if (lowerName.includes("mobil")) { logoUrl = "/logos/mobil.png"; color = "#2563eb"; }
-    else if (lowerName.includes("oando")) { logoUrl = "/logos/oando.png"; color = "#dc2626"; }
-    else if (lowerName.includes("conoil")) { logoUrl = "/logos/conoil.png"; color = "#eab308"; }
-    else if (lowerName.includes("ardova") || lowerName === "ap" || lowerName.startsWith("ap ") || lowerName.includes(" ap ") || lowerName.includes("a.p") || lowerName.includes("a p ")) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
-    else if (lowerName.includes("shell")) { logoUrl = "/logos/shell.png"; color = "#facc15"; }
-    else if (lowerName.includes("rainoil")) { logoUrl = "/logos/rainoil.png"; color = "#0ea5e9"; }
-    else if (lowerName.includes("bovas")) { logoUrl = "/logos/bovas.png"; color = "#f43f5e"; }
-    else if (lowerName.includes("mrs")) { logoUrl = "/logos/mrs.png"; color = "#712539"; }
-    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { logoUrl = "/logos/11.png"; color = "#0759ad"; }
-    else if (lowerName.includes("shafa")) { logoUrl = "/logos/shafa.png"; color = "#e63035"; }
-    else if (lowerName.includes("heyden")) { logoUrl = "/logos/heyden.png"; color = "#f76300"; }
-    else if (lowerName.includes("nipco")) { logoUrl = "/logos/nipco.png"; color = "#f50002"; }
-    else if (lowerName.includes("techno")) { logoUrl = "/logos/techno.png"; color = "#ee161f"; }
-    else if (lowerName.includes("enyo")) { logoUrl = "/logos/enyo.png"; color = "#313864"; }
-    else if (lowerName.includes("matrix")) { logoUrl = "/logos/matrix.png"; color = "#5dc0e5"; }
-    else if (lowerName.includes("fatgbems")) { logoUrl = "/logos/fatgbems.png"; color = "#a13227"; }
-    else if (lowerName.includes("forte")) { logoUrl = "/logos/forte.png"; color = "#a3bc01"; }
-    else if (lowerName.includes("petrocam")) { logoUrl = "/logos/petrocam.png"; color = "#f37021"; }
-    else if (lowerName.includes("eterna")) { logoUrl = "/logos/eterna.png"; color = "#005a8c"; }
-    else if (lowerName.includes("pinnacle")) { logoUrl = "/logos/pinnacle.png"; color = "#b12025"; }
-  }
-  return { logoUrl, color, text };
-}
+// Station brand detection (logo + colour) now lives in `lib/brands.ts` and is rendered via <BrandLogo />.
 
 // =========================================================================
 // MAP COMPONENTS
 // =========================================================================
 
-interface GasStationFetcherProps {
-  onStationsFound: (stations: any[]) => void;
-  userLoc: { lat: number; lng: number } | null;
-  searchCenter: { lat: number; lng: number } | null;
-}
-
-function GasStationFetcher({ onStationsFound, userLoc, searchCenter }: GasStationFetcherProps) {
-  const map = useMap();
-  const [initialPanDone, setInitialPanDone] = useState(false);
-
-  useEffect(() => {
-    if (!map) return;
-    let centerPoint = { lat: 6.5244, lng: 3.3792 };
-    
-    if (searchCenter) {
-      centerPoint = searchCenter;
-      map.panTo(centerPoint);
-      map.setZoom(14);
-    } else if (userLoc) {
-      centerPoint = userLoc;
-      if (!initialPanDone) {
-        map.panTo(centerPoint);
-        map.setZoom(14);
-        setInitialPanDone(true);
-      }
-    }
-    
-    const fetchStations = async () => {
-      try {
-        const res = await fetch(`/api/stations?lat=${centerPoint.lat}&lng=${centerPoint.lng}`);
-        const data = await res.json();
-        if (data.results) {
-          onStationsFound(data.results);
-        }
-      } catch (err) {
-        console.error("Error fetching secure stations:", err);
-      }
-    };
-    fetchStations();
-  }, [map, onStationsFound, userLoc, searchCenter, initialPanDone]);
-  
-  return null;
-}
+// NOTE: Station fetching used to live in a <GasStationFetcher> component that duplicated the
+// map-idle fetch and replaced the station list on every 50m GPS update. It now lives in
+// QozobLanding's single, deduplicated `fetchStationsAt`.
 
 function UserLocationMarker({ position }: { position: { lat: number, lng: number } | null }) {
   if (!position) return null;
@@ -187,92 +167,97 @@ function UserLocationMarker({ position }: { position: { lat: number, lng: number
   );
 }
 
-function StationMarker({ name, hasPrice, customLogoUrl }: { name: string, hasPrice: boolean, customLogoUrl?: string | null }) {
-  const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
-  return (
-    <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white transition-all duration-300 hover:scale-125 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
-      {logoUrl && (
-        <img 
-          src={logoUrl} 
-          alt={name} 
-          className="w-full h-full object-contain rounded-full p-0.5" 
-          onError={(e) => { 
-            e.currentTarget.style.display = 'none'; 
-            if (e.currentTarget.nextSibling) (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex'; 
-          }} 
-        />
-      )}
-      <div 
-        className="w-full h-full rounded-full items-center justify-center" 
-        style={{ backgroundColor: color, display: logoUrl ? 'none' : 'flex' }}
-      >
-         <span className="text-white font-black text-[10px] tracking-tighter leading-none">{text}</span>
-      </div>
-      <div className="absolute -bottom-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
-    </div>
-  );
+interface StationMarkerProps {
+  name: string;
+  hasPrice: boolean;
+  customLogoUrl?: string | null;
+  price?: number | null;
+  role?: string | null;
+  lastUpdated?: string | null;
 }
 
-function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string | null | undefined }) {
-  const { logoUrl, color, text } = getStationBrandInfo(name, customLogoUrl);
+// Memoised: with dozens of markers on screen, this avoids re-rendering every marker on unrelated state changes
+const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUrl, price, role, lastUpdated }: StationMarkerProps) {
+  const stale = isStale(lastUpdated);
+  const pillBg = getPriceColor(role);
+  const pillText = pillBg === '#FBBC05' ? '#1e1b4b' : '#ffffff'; // dark text on the yellow "community" colour for contrast
+
   return (
-    <div className="flex-shrink-0 w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden shadow-sm mr-3">
-      {logoUrl && (
-        <img 
-          src={logoUrl} 
-          alt={name} 
-          className="w-full h-full object-contain p-1"
-          onError={(e) => { 
-            e.currentTarget.style.display = 'none'; 
-            if (e.currentTarget.nextSibling) (e.currentTarget.nextSibling as HTMLElement).style.display = 'flex'; 
-          }}
-        />
-      )}
-      <div 
-        className="w-full h-full flex items-center justify-center"
-        style={{ backgroundColor: color, display: logoUrl ? 'none' : 'flex' }}
-      >
-        <span className="text-white font-black text-[10px] tracking-tighter leading-none">{text}</span>
+    <div className="relative flex flex-col items-center">
+      <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white overflow-hidden transition-all duration-300 hover:scale-125 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
+        <BrandLogo name={name} customLogoUrl={customLogoUrl} size={40} imgClassName="rounded-full p-0.5" />
       </div>
+      {hasPrice && price !== null && price !== undefined ? (
+        // PRICE PILL: lets users compare prices at a glance without tapping each station
+        <span
+          title={stale ? 'Price may be outdated' : undefined}
+          className={`relative z-20 -mt-1.5 px-1.5 py-0.5 rounded-md border border-white shadow-md text-[10px] font-black leading-none whitespace-nowrap ${stale ? 'opacity-60' : ''}`}
+          style={{ backgroundColor: pillBg, color: pillText }}
+        >
+          ₦{Math.round(Number(price)).toLocaleString()}
+        </span>
+      ) : (
+        <div className="w-0 h-0 -mt-px border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
+      )}
     </div>
   );
-}
+});
+
+const ListLogo = memo(function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string | null | undefined }) {
+  return (
+    <div className="flex-shrink-0 w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden shadow-sm mr-3">
+      <BrandLogo name={name} customLogoUrl={customLogoUrl} size={40} imgClassName="p-1" />
+    </div>
+  );
+});
 
 // =========================================================================
 // MODALS
 // =========================================================================
 
-function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () => void }) {
+function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onClose: () => void, onSaved: OnStationSaved }) {
   const supabase = createClient();
   
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [suggestedQueue, setSuggestedQueue] = useState("Moderate");
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
+  useEscapeKey(onClose);
 
   const handleSuggestPrice = async () => {
     if (!suggestedPrice || !station) return;
+
+    const priceNum = parseFloat(suggestedPrice);
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      return alert("Please enter a valid price.");
+    }
+    // Soft sanity check to catch typos (e.g. 95 or 95000) without blocking genuine outliers
+    if ((priceNum < PRICE_SANITY_MIN || priceNum > PRICE_SANITY_MAX) &&
+        !window.confirm(`₦${priceNum.toLocaleString()} looks unusual for PMS. Submit anyway?`)) {
+      return;
+    }
+
     setIsSubmittingPrice(true);
 
-    const { error } = await supabase.from('stations').upsert({
+    const payload = {
       station_id: station.id,
       name: station.name,
       address: station.address,
       lat: station.lat,
       lng: station.lng,
-      price_pms: parseFloat(suggestedPrice),
+      price_pms: priceNum,
       queue_status: suggestedQueue,
       last_updated: new Date().toISOString(), 
       updated_by_role: 'User', 
       verified: false
-    }, { onConflict: 'station_id' });
+    };
+    const { error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' });
 
     setIsSubmittingPrice(false);
     if (error) {
       alert("Error saving price: " + error.message);
     } else {
-      alert("Price updated successfully!");
+      onSaved(station.id, payload, "Price updated successfully! Thanks for helping the community.");
       onClose();
-      window.location.reload(); 
     }
   };
 
@@ -321,13 +306,14 @@ function PriceUpdateModal({ station, onClose }: { station: Station, onClose: () 
   );
 }
 
-function ClaimStationModal({ station, onClose }: { station: Station, onClose: () => void }) {
+function ClaimStationModal({ station, onClose, onSaved }: { station: Station, onClose: () => void, onSaved: (stationId: string, message: string) => void }) {
   const supabase = createClient();
   const [applicantName, setApplicantName] = useState("");
   const [cacNumber, setCacNumber] = useState("");
   const [phone, setPhone] = useState(""); 
   const [cacFile, setCacFile] = useState<File | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
+  useEscapeKey(onClose);
 
   const handleFinalSubmitClaim = async () => {
     if (!cacFile || !applicantName || !cacNumber || !phone) {
@@ -372,9 +358,8 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
       
       if (dbError) throw new Error(dbError.message);
 
-      alert("Claim submitted successfully! The station is now marked as 'Claim in Progress'.");
+      onSaved(station.id, "Claim submitted! The station is now marked as 'Claim in Progress'.");
       onClose();
-      window.location.reload();
     } catch (err: any) { 
       alert("Error: " + err.message); 
     } finally { 
@@ -448,11 +433,12 @@ function ClaimStationModal({ station, onClose }: { station: Station, onClose: ()
   );
 }
 
-function RateStationModal({ station, onClose }: { station: Station, onClose: () => void }) {
+function RateStationModal({ station, onClose, onSaved }: { station: Station, onClose: () => void, onSaved: OnStationSaved }) {
   const supabase = createClient();
   const [hoveredStar, setHoveredStar] = useState(0);
   const [selectedStar, setSelectedStar] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  useEscapeKey(onClose);
 
   const handleSubmitRating = async () => {
     if (selectedStar === 0 || !station) return;
@@ -463,7 +449,7 @@ function RateStationModal({ station, onClose }: { station: Station, onClose: () 
     const newVotes = currentVotes + 1;
     const newScore = ((currentScore * currentVotes) + selectedStar) / newVotes;
 
-    const { error } = await supabase.from('stations').upsert({
+    const payload = {
       station_id: station.id,
       name: station.name,
       address: station.address,
@@ -476,15 +462,15 @@ function RateStationModal({ station, onClose }: { station: Station, onClose: () 
       accuracy_votes: newVotes,
       last_updated: station.last_updated === "Never" ? new Date().toISOString() : station.last_updated,
       verified: station.verified || false
-    }, { onConflict: 'station_id' });
+    };
+    const { error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' });
 
     setIsSubmitting(false);
     if (error) {
       alert("Error saving rating: " + error.message);
     } else {
-      alert("Thank you! Your community rating has been recorded.");
+      onSaved(station.id, payload, "Thank you! Your community rating has been recorded.");
       onClose();
-      window.location.reload(); 
     }
   };
 
@@ -549,7 +535,7 @@ export default function QozobApp() {
 }
 
 function QozobLanding() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const searchParams = useSearchParams();
   const autoSelectId = searchParams.get('select');
@@ -559,13 +545,17 @@ function QozobLanding() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   const [googleStations, setGoogleStations] = useState<any[]>([]);
-  const [supabasePrices, setSupabasePrices] = useState<any[]>([]);
-  const [supabaseClaims, setSupabaseClaims] = useState<any[]>([]);
-  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  // Supabase rows + claim statuses keyed by station_id (O(1) lookups instead of Array.find per station per render)
+  const [dbRows, setDbRows] = useState<Map<string, any>>(() => new Map());
+  const [claimStatuses, setClaimStatuses] = useState<Map<string, string>>(() => new Map());
+  // Store the selected station by ID so the info window always shows the latest (live) data
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   
   const [userLoc, setUserLoc] = useState<{ lat: number, lng: number } | null>(null);
-  const [mapCenter, setMapCenter] = useState<{ lat: number, lng: number }>({ lat: 6.5244, lng: 3.3792 });
-  const [isFetchingDynamic, setIsFetchingDynamic] = useState(false);
+  const [pendingFetches, setPendingFetches] = useState(0);
+  const isFetchingDynamic = pendingFetches > 0;
+  const [isLive, setIsLive] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [listFilter, setListFilter] = useState("All");
   const [listSort, setListSort] = useState("Distance");
@@ -575,6 +565,23 @@ function QozobLanding() {
   const [showRateForm, setShowRateForm] = useState(false);
 
   const map = useMap('main-map');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch bookkeeping (refs, so they never trigger re-renders)
+  const fetchedCentersRef = useRef<{ lat: number; lng: number }[]>([]); // areas already loaded
+  const requestedIdsRef = useRef<Set<string>>(new Set());               // station IDs whose DB rows were requested
+  const fetchGenerationRef = useRef(0);                                  // bumps when we discard the default area
+  const initialLocHandledRef = useRef(false);
+  const initialPanDoneRef = useRef(false);
+  const deepLinkHandledRef = useRef(false);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+  }, []);
 
   // Sync Auth User
   useEffect(() => {
@@ -600,12 +607,15 @@ function QozobLanding() {
     window.location.reload();
   };
 
-  // Pan Map to Station when selected
+  // Close the account menu when clicking anywhere outside it
   useEffect(() => {
-    if (selectedStation && map && selectedStation.lat && selectedStation.lng) {
-      map.panTo({ lat: selectedStation.lat, lng: selectedStation.lng });
-    }
-  }, [selectedStation, map]);
+    if (!isMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isMenuOpen]);
 
   // Track User Geolocation
   useEffect(() => {
@@ -613,67 +623,140 @@ function QozobLanding() {
       const watchId = navigator.geolocation.watchPosition(
         (position) => {
           setUserLoc(prev => {
-            if (prev) {
-              const dist = getDistanceFromLatLonInKm(prev.lat, prev.lng, position.coords.latitude, position.coords.longitude);
-              if (dist !== null && parseFloat(dist) < 0.05) return prev; 
-            }
+            if (prev && haversineKm(prev.lat, prev.lng, position.coords.latitude, position.coords.longitude) < 0.05) return prev; 
             return { lat: position.coords.latitude, lng: position.coords.longitude };
           });
         },
         (err) => console.log("Location access denied.", err),
-        { enableHighAccuracy: true, maximumAge: 0 }
+        // A 10s cached fix is plenty for a fuel map and is much kinder to phone batteries than maximumAge: 0
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
       );
       return () => navigator.geolocation.clearWatch(watchId);
     }
   }, []);
 
-  // Fetch baseline DB data for pricing AND active claims
-  useEffect(() => {
-    async function fetchData() {
-      const { data: prices } = await supabase.from('stations').select('*');
-      if (prices) setSupabasePrices(prices);
-      
-      const { data: claims } = await supabase.from('station_claims').select('station_id, status');
-      if (claims) setSupabaseClaims(claims);
-    }
-    fetchData();
+  // Fetch DB pricing + claim data ONLY for the stations we're actually showing.
+  // (Previously the whole `stations` table was downloaded, which grows forever and is capped at 1000 rows by Supabase.)
+  const loadDbDataFor = useCallback(async (ids: string[]) => {
+    const missing = ids.filter(id => id && !requestedIdsRef.current.has(id));
+    if (missing.length === 0) return;
+    missing.forEach(id => requestedIdsRef.current.add(id));
+
+    const CHUNK_SIZE = 80; // keeps PostgREST URLs well under length limits
+    const chunks: string[][] = [];
+    for (let i = 0; i < missing.length; i += CHUNK_SIZE) chunks.push(missing.slice(i, i + CHUNK_SIZE));
+
+    await Promise.all(chunks.map(async (chunk) => {
+      const [{ data: rows, error: rowsError }, { data: claims }] = await Promise.all([
+        supabase.from('stations').select('*').in('station_id', chunk),
+        supabase.from('station_claims').select('station_id, status').in('station_id', chunk),
+      ]);
+
+      if (rowsError) {
+        console.error("Error loading station data:", rowsError.message);
+        chunk.forEach(id => requestedIdsRef.current.delete(id)); // allow a retry later
+      }
+      if (rows && rows.length > 0) {
+        setDbRows(prev => {
+          const next = new Map(prev);
+          rows.forEach((r: any) => next.set(r.station_id, r));
+          return next;
+        });
+      }
+      if (claims && claims.length > 0) {
+        setClaimStatuses(prev => {
+          const next = new Map(prev);
+          claims.forEach((c: any) => next.set(c.station_id, pickClaimStatus(next.get(c.station_id), c.status)));
+          return next;
+        });
+      }
+    }));
   }, [supabase]);
 
-  // Dynamic Map Fetching based on idle movement
-  const handleMapIdle = useCallback(async () => {
-    if (!map) return;
-    const center = map.getCenter();
-    if (!center) return;
-    
-    const lat = center.lat();
-    const lng = center.lng();
+  // Single entry point for loading stations around a point. Skips areas we've already loaded,
+  // so map pans, GPS updates while driving, and deep links never trigger duplicate API calls.
+  const fetchStationsAt = useCallback(async (lat: number, lng: number) => {
+    if (fetchedCentersRef.current.some(c => haversineKm(c.lat, c.lng, lat, lng) < REFETCH_DISTANCE_KM)) return;
+    const center = { lat, lng };
+    fetchedCentersRef.current.push(center);
+    const generation = fetchGenerationRef.current;
 
-    const dist = getDistanceFromLatLonInKm(mapCenter.lat, mapCenter.lng, lat, lng);
-    if (dist && parseFloat(dist) > 2.0) {
-      setMapCenter({ lat, lng });
-      setIsFetchingDynamic(true);
-      try {
-        const res = await fetch(`/api/stations?lat=${lat}&lng=${lng}`);
-        const data = await res.json();
-        if (data.results) {
-          setGoogleStations(prev => {
-            const existingIds = new Set(prev.map(p => p.place_id));
-            const newStations = data.results.filter((r: any) => !existingIds.has(r.place_id));
-            return [...prev, ...newStations];
-          });
-        }
-      } catch (err) {
-        console.error("Dynamic fetch error:", err);
-      } finally {
-        setIsFetchingDynamic(false);
+    setPendingFetches(n => n + 1);
+    try {
+      const res = await fetch(`/api/stations?lat=${lat.toFixed(4)}&lng=${lng.toFixed(4)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (generation !== fetchGenerationRef.current) return; // this area was discarded while loading
+      if (Array.isArray(data.results)) {
+        setGoogleStations(prev => {
+          const existingIds = new Set(prev.map(p => p.place_id));
+          const newStations = data.results.filter((r: any) => r.place_id && !existingIds.has(r.place_id));
+          return newStations.length > 0 ? [...prev, ...newStations] : prev;
+        });
+        loadDbDataFor(data.results.map((r: any) => r.place_id));
+      }
+    } catch (err) {
+      console.error("Station fetch error:", err);
+      fetchedCentersRef.current = fetchedCentersRef.current.filter(c => c !== center); // allow a retry
+    } finally {
+      setPendingFetches(n => Math.max(0, n - 1));
+    }
+  }, [loadDbDataFor]);
+
+  // LIVE PRICES: patch stations in place as the community updates them.
+  // Requires Realtime to be enabled for the `stations` table in Supabase (Database → Replication).
+  useEffect(() => {
+    const channel = supabase
+      .channel('qozob-live-stations')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stations' }, (payload) => {
+        const row = payload.new as any;
+        if (!row?.station_id || !requestedIdsRef.current.has(row.station_id)) return;
+        setDbRows(prev => {
+          const next = new Map(prev);
+          next.set(row.station_id, { ...prev.get(row.station_id), ...row });
+          return next;
+        });
+      })
+      .subscribe((status) => setIsLive(status === 'SUBSCRIBED'));
+
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  // Dynamic Map Fetching based on idle movement (the first idle also loads the default area)
+  const handleMapIdle = useCallback((ev: { map: google.maps.Map }) => {
+    const center = ev.map.getCenter();
+    if (!center) return;
+    fetchStationsAt(center.lat(), center.lng());
+  }, [fetchStationsAt]);
+
+  // When the user's location arrives, load their area (deduped as they move)
+  useEffect(() => {
+    if (!userLoc) return;
+    if (!initialLocHandledRef.current) {
+      initialLocHandledRef.current = true;
+      // Far from the default Lagos view (and not opening a shared link)? Drop the default-area results
+      // so "Top Pick" reflects stations near the user, matching the original behaviour.
+      if (!autoSelectId && haversineKm(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng, userLoc.lat, userLoc.lng) > 5) {
+        fetchGenerationRef.current += 1;
+        fetchedCentersRef.current = [];
+        setGoogleStations([]);
       }
     }
-  }, [map, mapCenter]);
+    fetchStationsAt(userLoc.lat, userLoc.lng);
+  }, [userLoc, autoSelectId, fetchStationsAt]);
 
-  // Merge Google Places + Supabase DB + Claim Status
-  const mergedStations: Station[] = googleStations.map(googlePlace => {
-    const dbData = supabasePrices.find(db => db.station_id === googlePlace.place_id);
-    const claimData = supabaseClaims.find(c => c.station_id === googlePlace.place_id);
+  // Pan to the user once, the first time both the map and their location are available
+  useEffect(() => {
+    if (!map || !userLoc || initialPanDoneRef.current || autoSelectId) return;
+    initialPanDoneRef.current = true;
+    map.panTo(userLoc);
+    map.setZoom(14);
+  }, [map, userLoc, autoSelectId]);
+
+  // Merge Google Places + Supabase DB + Claim Status (memoised; Map lookups are O(1))
+  const mergedStations: Station[] = useMemo(() => googleStations.map(googlePlace => {
+    const dbData = dbRows.get(googlePlace.place_id);
+    const claimStatus = claimStatuses.get(googlePlace.place_id);
     
     const statLat = typeof googlePlace.geometry?.location?.lat === 'function' ? googlePlace.geometry.location.lat() : googlePlace.geometry?.location?.lat;
     const statLng = typeof googlePlace.geometry?.location?.lng === 'function' ? googlePlace.geometry.location.lng() : googlePlace.geometry?.location?.lng;
@@ -682,8 +765,8 @@ function QozobLanding() {
     let computedClaimStatus = "None";
     if (dbData?.verified) {
       computedClaimStatus = "Claimed";
-    } else if (claimData) {
-      computedClaimStatus = claimData.status;
+    } else if (claimStatus) {
+      computedClaimStatus = claimStatus;
     }
 
     return {
@@ -703,56 +786,107 @@ function QozobLanding() {
       accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0,
       custom_logo_url: dbData ? dbData.custom_logo_url : null
     };
-  });
+  }), [googleStations, dbRows, claimStatuses, userLoc]);
 
-  // Auto-Select from URL parameters
+  const stationsById = useMemo(() => {
+    const byId = new Map<string, Station>();
+    mergedStations.forEach(s => byId.set(s.id, s));
+    return byId;
+  }, [mergedStations]);
+
+  // The selected station is always derived from the latest data (live updates show immediately)
+  const selectedStation = selectedId ? stationsById.get(selectedId) ?? null : null;
+  // Keeps the original call sites working: they pass a station object (or null)
+  const setSelectedStation = useCallback((station: Station | null) => setSelectedId(station ? station.id : null), []);
+
+  // Pan Map to Station when selected (depends on coordinates only, so live price updates don't re-pan)
+  const selectedLat = selectedStation?.lat;
+  const selectedLng = selectedStation?.lng;
   useEffect(() => {
-    if (autoSelectId && mergedStations.length > 0) {
-      const target = mergedStations.find(s => s.id === autoSelectId);
-      if (target) {
-        setSelectedStation(target);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+    if (map && selectedLat && selectedLng) {
+      map.panTo({ lat: selectedLat, lng: selectedLng });
     }
-  }, [autoSelectId, mergedStations]);
+  }, [map, selectedLat, selectedLng]);
 
-  // Determine the Best/Hero Station
-  const pricedStations = mergedStations.filter(s => s.price_pms !== null);
-  const sortedByPriceAndDistance = [...pricedStations].sort((a, b) => {
-    if (a.price_pms === b.price_pms) {
-      const distA = parseFloat(a.distance || "0");
-      const distB = parseFloat(b.distance || "0");
-      return distA - distB; 
+  // Auto-Select from URL parameters (runs once, as soon as the station is loaded)
+  useEffect(() => {
+    if (!autoSelectId || deepLinkHandledRef.current) return;
+    if (stationsById.has(autoSelectId)) {
+      deepLinkHandledRef.current = true;
+      setSelectedId(autoSelectId);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
-    const priceA = a.price_pms || 0;
-    const priceB = b.price_pms || 0;
-    return priceA - priceB;
-  });
-  const heroStation = sortedByPriceAndDistance[0];
+  }, [autoSelectId, stationsById]);
+
+  // Shared links can point anywhere in Nigeria: look the station up and load its area
+  useEffect(() => {
+    if (!autoSelectId || !map) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('stations').select('lat, lng').eq('station_id', autoSelectId).maybeSingle();
+      if (cancelled || !data?.lat || !data?.lng) return;
+      map.panTo({ lat: data.lat, lng: data.lng });
+      map.setZoom(15);
+      fetchStationsAt(data.lat, data.lng);
+    })();
+    return () => { cancelled = true; };
+  }, [autoSelectId, map, supabase, fetchStationsAt]);
+
+  // Determine the Best/Hero Station (+ area average for the savings badge)
+  const { heroStation, areaAvgPrice, pricedCount } = useMemo(() => {
+    const pricedStations = mergedStations.filter(s => s.price_pms !== null);
+    const sortedByPriceAndDistance = [...pricedStations].sort((a, b) => {
+      if (a.price_pms === b.price_pms) {
+        const distA = parseFloat(a.distance || "0");
+        const distB = parseFloat(b.distance || "0");
+        return distA - distB; 
+      }
+      const priceA = a.price_pms || 0;
+      const priceB = b.price_pms || 0;
+      return priceA - priceB;
+    });
+    const avg = pricedStations.length > 0
+      ? pricedStations.reduce((sum, s) => sum + Number(s.price_pms), 0) / pricedStations.length
+      : null;
+    return { heroStation: sortedByPriceAndDistance[0], areaAvgPrice: avg, pricedCount: pricedStations.length };
+  }, [mergedStations]);
+  const heroSavings = heroStation && areaAvgPrice !== null && pricedCount >= 3
+    ? Math.round(areaAvgPrice - Number(heroStation.price_pms))
+    : 0;
 
   // Determine the Nearest Station
-  const nearestStation = React.useMemo(() => {
+  const nearestStation = useMemo(() => {
     const withDistance = mergedStations.filter(s => s.distance !== null && s.distance !== undefined);
     if (withDistance.length === 0) return null;
     return withDistance.sort((a, b) => parseFloat(a.distance as string) - parseFloat(b.distance as string))[0];
   }, [mergedStations]);
 
-  // Filtering for List View
-  const filteredList = mergedStations.filter(s => {
-    if (listFilter === "Priced") return s.price_pms !== null;
-    if (listFilter === "No Queue") return s.queue_status === "No Queue";
-    if (listFilter === "Top Rated") return (s.pump_accuracy || 0) >= 4.0; 
-    return true;
-  });
+  // Filtering + Sorting for List View
+  const sortedAndFilteredList = useMemo(() => {
+    const filteredList = mergedStations.filter(s => {
+      if (listFilter === "Priced") return s.price_pms !== null;
+      if (listFilter === "No Queue") return s.queue_status === "No Queue";
+      if (listFilter === "Top Rated") return (s.pump_accuracy || 0) >= 4.0; 
+      return true;
+    });
 
-  // Sorting for List View
-  const sortedAndFilteredList = [...filteredList].sort((a, b) => {
-    if (listSort === "Distance") return (parseFloat(a.distance || "999") - parseFloat(b.distance || "999"));
-    if (listSort === "Price") return ((a.price_pms || 999999) - (b.price_pms || 999999));
-    if (listSort === "Rating") return ((b.pump_accuracy || 0) - (a.pump_accuracy || 0));
-    if (listSort === "Name") return (a.name || "").localeCompare(b.name || "");
-    return 0;
-  });
+    return [...filteredList].sort((a, b) => {
+      if (listSort === "Distance") return (parseFloat(a.distance || "999") - parseFloat(b.distance || "999"));
+      if (listSort === "Price") return ((a.price_pms || 999999) - (b.price_pms || 999999));
+      if (listSort === "Rating") return ((b.pump_accuracy || 0) - (a.pump_accuracy || 0));
+      if (listSort === "Recent") return parseUpdatedTime(b.last_updated) - parseUpdatedTime(a.last_updated);
+      if (listSort === "Name") return (a.name || "").localeCompare(b.name || "");
+      return 0;
+    });
+  }, [mergedStations, listFilter, listSort]);
+
+  // Unpriced stations, nearest first, for the "Needs Pricing Data" panel
+  const needsPricing = useMemo(() => (
+    mergedStations
+      .filter(s => !s.price_pms)
+      .sort((a, b) => parseFloat(a.distance || "999") - parseFloat(b.distance || "999"))
+      .slice(0, 4)
+  ), [mergedStations]);
 
   // Smart Search Geocoding
   const handleLocationSearch = (searchTerm: string) => {
@@ -801,6 +935,50 @@ function QozobLanding() {
     setShowClaimForm(true);
   };
 
+  // Patch local state after a successful write (replaces full page reloads)
+  const handleStationSaved = useCallback((stationId: string, patch: Record<string, any>, message: string) => {
+    requestedIdsRef.current.add(stationId);
+    setDbRows(prev => {
+      const next = new Map(prev);
+      next.set(stationId, { ...(prev.get(stationId) || { station_id: stationId }), ...patch });
+      return next;
+    });
+    showToast(message);
+  }, [showToast]);
+
+  const handleClaimSaved = useCallback((stationId: string, message: string) => {
+    setClaimStatuses(prev => {
+      const next = new Map(prev);
+      next.set(stationId, 'Pending Review');
+      return next;
+    });
+    showToast(message);
+  }, [showToast]);
+
+  // Share a station via the native share sheet (WhatsApp, SMS...) or copy the deep link
+  const handleShareStation = async (station: Station) => {
+    const url = `${window.location.origin}/?select=${encodeURIComponent(station.id)}`;
+    const priceText = station.price_pms !== null ? ` — PMS ₦${station.price_pms}/L` : '';
+    const text = `${station.name}${priceText}. Live fuel prices & queues on Qozob:`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Qozob', text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text} ${url}`);
+        showToast('Link copied to clipboard!');
+      }
+    } catch {
+      // User dismissed the share sheet — nothing to do
+    }
+  };
+
+  const handleLocateMe = () => {
+    if (!map) return;
+    if (!userLoc) return showToast('Enable location access to find stations near you.', 'error');
+    map.panTo(userLoc);
+    map.setZoom(14);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative pb-20 lg:pb-0">
       
@@ -844,9 +1022,11 @@ function QozobLanding() {
           {/* USER PROFILE & MENU */}
           <div className="flex-shrink-0 flex items-center">
             {user ? (
-              <div className="relative">
+              <div className="relative" ref={menuRef}>
                 <button 
                   onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                  aria-label="Account menu"
+                  aria-expanded={isMenuOpen}
                   className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 p-2 sm:px-4 sm:py-2 rounded-xl transition-all active:scale-95"
                 >
                   <Menu className="w-5 h-5 text-emerald-400" />
@@ -914,6 +1094,9 @@ function QozobLanding() {
              <input 
                 type="text" 
                 id="smart-search-input"
+                ref={searchInputRef}
+                aria-label="Search location"
+                enterKeyHint="search"
                 placeholder="Search streets, LGAs, or landmarks..." 
                 onKeyDown={(e) => { 
                   if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
@@ -922,7 +1105,7 @@ function QozobLanding() {
               />
               <Search className="w-4 h-4 absolute left-4 top-3 text-indigo-300" />
               <button 
-                onClick={() => handleLocationSearch((document.getElementById('smart-search-input') as HTMLInputElement).value)} 
+                onClick={() => handleLocationSearch(searchInputRef.current?.value || "")} 
                 className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors active:scale-95"
               >
                 Go
@@ -957,7 +1140,8 @@ function QozobLanding() {
                     <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
                       <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
                       <p className="text-indigo-200 text-[11px] truncate mt-0.5">
-                        {heroStation.distance}km • {heroStation.queue_status}
+                        {distancePrefix(heroStation.distance)}{heroStation.queue_status}
+                        {heroSavings > 0 && <span className="text-emerald-300 font-bold"> • ₦{heroSavings.toLocaleString()} below avg</span>}
                       </p>
                     </div>
                     
@@ -989,7 +1173,7 @@ function QozobLanding() {
                     <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
                       <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-blue-300">{nearestStation.name}</h2>
                       <p className="text-indigo-200 text-[11px] truncate mt-0.5">
-                        {nearestStation.distance}km • {nearestStation.queue_status}
+                        {distancePrefix(nearestStation.distance)}{nearestStation.queue_status}
                       </p>
                     </div>
                     
@@ -1025,7 +1209,7 @@ function QozobLanding() {
                       <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-emerald-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={heroStation.name}>
                         {heroStation.name}
                       </h2>
-                      <p className="text-indigo-200 text-[11px] mt-0.5">{heroStation.distance}km • {heroStation.queue_status}</p>
+                      <p className="text-indigo-200 text-[11px] mt-0.5">{distancePrefix(heroStation.distance)}{heroStation.queue_status}</p>
                     </div>
                     
                     <div className="text-right flex-shrink-0">
@@ -1035,6 +1219,11 @@ function QozobLanding() {
                       {heroStation.accuracy_votes > 0 && (
                         <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-amber-400">
                           <Star className="w-2.5 h-2.5 fill-amber-400" /> {heroStation.pump_accuracy}/5
+                        </div>
+                      )}
+                      {heroSavings > 0 && (
+                        <div className="text-[9px] font-bold text-emerald-300 mt-0.5" title="Compared with the average price of stations loaded on the map">
+                          ₦{heroSavings.toLocaleString()} below area avg
                         </div>
                       )}
                     </div>
@@ -1067,7 +1256,7 @@ function QozobLanding() {
                       <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-blue-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={nearestStation.name}>
                         {nearestStation.name}
                       </h2>
-                      <p className="text-indigo-200 text-[11px] mt-0.5">{nearestStation.distance}km • {nearestStation.queue_status}</p>
+                      <p className="text-indigo-200 text-[11px] mt-0.5">{distancePrefix(nearestStation.distance)}{nearestStation.queue_status}</p>
                     </div>
                     
                     <div className="text-right flex-shrink-0">
@@ -1107,7 +1296,28 @@ function QozobLanding() {
               </div>
             )}
 
-            <Map 
+            {/* LIVE INDICATOR: shown while the realtime price channel is connected */}
+            {isLive && (
+              <div className="absolute top-4 left-4 z-40 bg-white/90 backdrop-blur text-indigo-950 text-[10px] font-black px-2.5 py-1 rounded-full shadow-md flex items-center gap-1.5 uppercase tracking-widest pointer-events-none" title="Prices update live as the community reports them">
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+                </span>
+                Live
+              </div>
+            )}
+
+            {/* LOCATE ME BUTTON */}
+            <button
+              onClick={handleLocateMe}
+              className="absolute bottom-6 left-4 z-40 bg-white hover:bg-indigo-50 text-indigo-900 p-2.5 rounded-full shadow-lg border border-slate-200 transition-all active:scale-95"
+              aria-label="Center map on my location"
+              title="My location"
+            >
+              <LocateFixed className="w-5 h-5" />
+            </button>
+
+            <GoogleMap 
               id="main-map" 
               defaultZoom={13} 
               defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
@@ -1119,14 +1329,20 @@ function QozobLanding() {
               fullscreenControl={false} 
               gestureHandling={'greedy'} 
               onClick={() => setSelectedStation(null)} 
-              onIdle={(e) => handleMapIdle()}
+              onIdle={handleMapIdle}
             >
-              <GasStationFetcher onStationsFound={setGoogleStations} userLoc={userLoc} searchCenter={null} />
               <UserLocationMarker position={userLoc} />
               
               {mergedStations.map((station) => (
                 <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
-                  <StationMarker name={station.name} hasPrice={station.price_pms !== null} customLogoUrl={station.custom_logo_url} />
+                  <StationMarker 
+                    name={station.name} 
+                    hasPrice={station.price_pms !== null} 
+                    customLogoUrl={station.custom_logo_url} 
+                    price={station.price_pms} 
+                    role={station.updated_by_role} 
+                    lastUpdated={station.last_updated} 
+                  />
                 </AdvancedMarker>
               ))}
 
@@ -1137,11 +1353,20 @@ function QozobLanding() {
                     <button 
                       onClick={() => setSelectedStation(null)} 
                       className="absolute top-1 right-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full p-1.5 transition-colors z-10"
+                      aria-label="Close"
                     >
                       <X className="w-4 h-4" />
                     </button>
+                    <button 
+                      onClick={() => handleShareStation(selectedStation)} 
+                      className="absolute top-1 right-9 text-slate-400 hover:text-indigo-700 bg-slate-100 hover:bg-indigo-100 rounded-full p-1.5 transition-colors z-10"
+                      aria-label="Share station"
+                      title="Share this station"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
                     
-                    <div className="flex justify-between items-start mb-1 pr-8">
+                    <div className="flex justify-between items-start mb-1 pr-16">
                       <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{selectedStation.name}</h3>
                       {selectedStation.verified && (
                         <span title="Verified Official Price" className="flex-shrink-0 ml-1">
@@ -1176,6 +1401,9 @@ function QozobLanding() {
                         {selectedStation.price_pms && (
                           <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
                             <Clock className="w-3 h-3" /> {timeAgo(selectedStation.last_updated)}
+                            {isStale(selectedStation.last_updated) && (
+                              <span className="text-amber-500 normal-case tracking-normal ml-1">• may be outdated</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1230,7 +1458,7 @@ function QozobLanding() {
                   </div>
                 </InfoWindow>
               )}
-            </Map>
+            </GoogleMap>
           </div>
         </div>
 
@@ -1303,6 +1531,14 @@ function QozobLanding() {
                   </div>
                 </div>
               ))}
+              {sortedAndFilteredList.length === 0 && (
+                <div className="col-span-full text-center py-10 text-slate-400">
+                  <Droplet className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                  <p className="text-sm font-bold">
+                    {isFetchingDynamic ? "Finding stations near you..." : mergedStations.length === 0 ? "No stations loaded yet. Try moving the map." : "No stations match this filter."}
+                  </p>
+                </div>
+              )}
             </div>
         </div>
 
@@ -1313,7 +1549,7 @@ function QozobLanding() {
               <Droplet className="text-emerald-500"/> Needs Pricing Data
             </h2>
             <div className="flex flex-col gap-3">
-              {mergedStations.filter(s => !s.price_pms).slice(0, 4).map((station) => (
+              {needsPricing.map((station) => (
                 <div 
                   key={station.id} 
                   onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
@@ -1376,9 +1612,21 @@ function QozobLanding() {
         </div>
       </footer>
 
-      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} />}
-      {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} />}
-      {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} />}
+      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} />}
+      {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} onSaved={handleClaimSaved} />}
+      {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} onSaved={handleStationSaved} />}
+
+      {/* ======================= TOAST NOTIFICATION ======================= */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-[90vw] ${toast.type === 'success' ? 'bg-indigo-950 text-emerald-300 border border-emerald-500/30' : 'bg-red-600 text-white'}`}
+        >
+          {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 flex-shrink-0" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -62,21 +62,22 @@ export default function AdminDashboard() {
       return;
     }
 
-    // 2. Fetch stations for the physical address text
-    const { data: stationsData, error: stationsError } = await supabase
-      .from('stations')
-      .select('station_id, address');
+    // 2. Fetch stations for the physical address text (only the ones referenced by claims)
+    const claimStationIds = Array.from(new Set((claimsData || []).map(c => c.station_id).filter(Boolean)));
+    const { data: stationsData, error: stationsError } = claimStationIds.length > 0
+      ? await supabase.from('stations').select('station_id, address').in('station_id', claimStationIds)
+      : { data: [], error: null };
 
     if (stationsError) {
       console.warn("Could not fetch stations for address matching:", stationsError.message);
     }
 
     // 3. Merge the address text back into the claims data for the UI
+    const addressById = new Map((stationsData || []).map(s => [s.station_id, s.address]));
     const mergedClaims = (claimsData || []).map(claim => {
-      const matchedStation = (stationsData || []).find(s => s.station_id === claim.station_id);
       return {
         ...claim,
-        address: matchedStation?.address || "Address unavailable"
+        address: addressById.get(claim.station_id) || "Address unavailable"
       };
     });
 
@@ -103,10 +104,11 @@ export default function AdminDashboard() {
       return;
     }
 
-    // 2. Give the station official 'Owner' status and Verify it
+    // 2. Give the station official 'Owner' status, Verify it, and link it to the claimant
+    //    (the manager dashboard loads stations by manager_id)
     const { error: stationError } = await supabase
       .from('stations')
-      .update({ verified: true, updated_by_role: 'Owner' })
+      .update({ verified: true, updated_by_role: 'Owner', ...(claim.user_id ? { manager_id: claim.user_id } : {}) })
       .eq('station_id', claim.station_id);
 
     if (stationError) {

@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Provides animate-in / fade-in / zoom-in-95 / slide-in-from-* utilities already used by modals, menus and toasts */
+@import "tw-animate-css";
 
 :root {
   --background: #ffffff;
@@ -8,8 +10,21 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  /* Was var(--font-geist-sans), which is never defined in this project — point at the Space Grotesk font from layout.tsx */
+  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Floating background blobs on the login/signup pages (classes were used but never defined) */
+  --animate-blob: blob 7s infinite;
+  @keyframes blob {
+    0%, 100% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.9); }
+  }
+}
+
+@utility animation-delay-2000 {
+  animation-delay: 2s;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,4 +38,13 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Respect users who prefer less motion (pulsing markers, blobs, pings) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

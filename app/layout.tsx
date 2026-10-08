@@ -6,6 +6,7 @@ import './globals.css';
 const spaceGrotesk = Space_Grotesk({ 
   subsets: ['latin'],
   display: 'swap',
+  variable: '--font-space-grotesk', // used by Tailwind's `font-sans` (see globals.css)
 });
 
 // Setup Viewport and Theme Color (Matches your Indigo-900 header)
@@ -99,13 +100,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Warm up connections to the map + data origins before React asks for them */}
+        <link rel="preconnect" href="https://maps.googleapis.com" />
+        <link rel="preconnect" href="https://maps.gstatic.com" crossOrigin="anonymous" />
+        {process.env.NEXT_PUBLIC_SUPABASE_URL && (
+          <link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} crossOrigin="anonymous" />
+        )}
         {/* Inject JSON-LD Schema directly into the head */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${spaceGrotesk.className} antialiased`}>
+      <body className={`${spaceGrotesk.className} ${spaceGrotesk.variable} antialiased`}>
         {children}
       </body>
     </html>

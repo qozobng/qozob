@@ -8,6 +8,7 @@ import {
   LayoutGrid, List, FileDown, FileUp, AlertCircle, Menu, Settings, Map as MapIcon, Clock
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import { BrandLogo } from '@/components/BrandLogo';
 
 // =========================================================================
 // TYPES
@@ -30,27 +31,7 @@ interface Station {
 // HELPERS 
 // =========================================================================
 
-function getStationBrandInfo(name: string | null | undefined, customLogoUrl: string | null | undefined) {
-  const lowerName = name?.toLowerCase() || "";
-  let logoUrl = customLogoUrl || null; 
-  let color = "#10b981"; 
-  let text = name ? name.substring(0, 2).toUpperCase() : "GS";
-  
-  if (!logoUrl) {
-    if (lowerName.includes("nnpc")) { logoUrl = "/logos/nnpc.png"; color = "#00a94d"; }
-    else if (lowerName.includes("total")) { logoUrl = "/logos/total.png"; color = "#1e3a8a"; }
-    else if (lowerName.includes("mobil")) { logoUrl = "/logos/mobil.png"; color = "#2563eb"; }
-    else if (lowerName.includes("oando")) { logoUrl = "/logos/oando.png"; color = "#dc2626"; }
-    else if (lowerName.includes("conoil")) { logoUrl = "/logos/conoil.png"; color = "#eab308"; }
-    else if (lowerName.includes("ardova") || lowerName === "ap" || lowerName.startsWith("ap ")) { logoUrl = "/logos/ap-brand.png"; color = "#ea580c"; }
-    else if (lowerName.includes("shell")) { logoUrl = "/logos/shell.png"; color = "#facc15"; }
-    else if (lowerName.includes("rainoil")) { logoUrl = "/logos/rainoil.png"; color = "#0ea5e9"; }
-    else if (lowerName.includes("bovas")) { logoUrl = "/logos/bovas.png"; color = "#f43f5e"; }
-    else if (lowerName.includes("mrs")) { logoUrl = "/logos/mrs.png"; color = "#712539"; }
-    else if (lowerName.includes("11plc") || /\b11\b/.test(lowerName)) { logoUrl = "/logos/11.png"; color = "#0759ad"; }
-  }
-  return { logoUrl, color, text };
-}
+// Station brand detection is shared with the public map (see lib/brands.ts) so logos always match.
 
 function generateStationCode(stationId: string) {
   if (!stationId) return "QZB-XXXX";
@@ -116,20 +97,28 @@ export default function DashboardPage() {
       
       setUser(user);
 
-      // 1. Fetch Verified owned stations
-      const { data: verifiedStations } = await supabase
-        .from('stations')
-        .select('*')
-        .eq('manager_id', user.id);
+      // 1. Fetch Verified owned stations + 2. this user's Pending Claims — in parallel.
+      // Claims are filtered in the query (by user id, email or phone) rather than downloading
+      // every user's claims to the browser and filtering client-side.
+      const phone = user.user_metadata?.full_phone;
+      const claimFilters = [`user_id.eq.${user.id}`];
+      if (user.email) claimFilters.push(`official_email.eq."${user.email}"`);
+      if (phone) claimFilters.push(`phone_number.eq."${phone}"`);
 
-      // 2. Fetch Pending Claims based on user email or phone
-      const { data: pendingClaims } = await supabase
-        .from('station_claims')
-        .select('*')
-        .eq('status', 'Pending Review'); 
+      const [{ data: verifiedStations }, { data: pendingClaims }] = await Promise.all([
+        supabase
+          .from('stations')
+          .select('*')
+          .eq('manager_id', user.id),
+        supabase
+          .from('station_claims')
+          .select('*')
+          .eq('status', 'Pending Review')
+          .or(claimFilters.join(',')),
+      ]);
       
       const userClaims = (pendingClaims || []).filter(
-        c => c.official_email === user.email || c.phone_number === user.user_metadata?.full_phone
+        c => c.user_id === user.id || c.official_email === user.email || c.phone_number === phone
       );
 
       // Merge verified stations and pending claims into one view
@@ -218,8 +207,9 @@ export default function DashboardPage() {
       alert("Error saving updates: " + error.message); 
     } else {
       alert("Station details updated successfully! Live on map.");
+      const savedId = editingStation.station_id;
       setEditingStation(null);
-      setStations(stations.map(s => s.station_id === editingStation.station_id ? {
+      setStations(prev => prev.map(s => s.station_id === savedId ? {
         ...s, 
         name: editName, 
         address: editAddress, 
@@ -241,14 +231,18 @@ export default function DashboardPage() {
       s.price_pms || "" 
     ]);
     
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
+    // Use a Blob (not a data: URI) — encodeURI doesn't escape '#', which silently truncated the file.
+    // The BOM makes Excel open the UTF-8 file correctly.
+    const csvBody = [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csvBody], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `Qozob_Bulk_Template_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -264,7 +258,10 @@ export default function DashboardPage() {
         const data = parseCSV(text);
         let successCount = 0; 
         let errorCount = 0;
+        const timestamp = new Date().toISOString();
 
+        // Build the list of valid updates first
+        const updates: { systemId: string; name: string; address: string; price: number | null }[] = [];
         for (let i = 1; i < data.length; i++) {
           const row = data[i];
           if (row.length < 5 || !row[0]) continue; 
@@ -273,22 +270,27 @@ export default function DashboardPage() {
           const newName = row[2].trim();
           const newAddress = row[3].trim();
           const newPriceRaw = row[4].trim();
-          const newPrice = newPriceRaw ? parseFloat(newPriceRaw) : null;
+          const newPrice = newPriceRaw ? parseFloat(newPriceRaw.replace(/[₦,\s]/g, '')) : null;
 
-          const { error } = await supabase.from('stations').update({
-              name: newName, 
-              address: newAddress, 
-              price_pms: newPrice, 
-              updated_by_role: 'Owner', 
-              verified: true, 
-              last_updated: new Date().toISOString()
-          }).eq('station_id', systemId).eq('manager_id', user.id);
+          if (newPrice !== null && !Number.isFinite(newPrice)) { errorCount++; continue; } // e.g. "abc"
+          updates.push({ systemId, name: newName, address: newAddress, price: newPrice });
+        }
 
-          if (error) {
-            errorCount++; 
-          } else {
-            successCount++;
-          }
+        // Run in parallel batches (much faster than one-at-a-time, without flooding the API)
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+          const batch = updates.slice(i, i + BATCH_SIZE);
+          const results = await Promise.all(batch.map(u =>
+            supabase.from('stations').update({
+                name: u.name, 
+                address: u.address, 
+                price_pms: u.price, 
+                updated_by_role: 'Owner', 
+                verified: true, 
+                last_updated: timestamp
+            }).eq('station_id', u.systemId).eq('manager_id', user.id)
+          ));
+          results.forEach(({ error }) => { if (error) errorCount++; else successCount++; });
         }
         alert(`Bulk Update Complete!\n\nSuccessfully updated: ${successCount} stations.\nFailed: ${errorCount} stations.`);
         window.location.reload();
@@ -418,7 +420,6 @@ export default function DashboardPage() {
         ) : (
           <div className={viewMode === 'card' ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-4"}>
             {stations.map(station => {
-              const { logoUrl, color, text } = getStationBrandInfo(station.name, station.custom_logo_url);
               const stationCode = generateStationCode(station.station_id);
               const isPending = station.claim_status === 'Pending Review';
 
@@ -431,13 +432,7 @@ export default function DashboardPage() {
                   
                   <div className={`flex items-center gap-4 ${viewMode === 'card' ? 'mb-4 mt-2' : 'flex-1 pt-4 lg:pt-0'}`}>
                     <div className={`w-16 h-16 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden flex-shrink-0 shadow-sm relative group ${isPending ? 'opacity-50' : ''}`}>
-                      {logoUrl ? (
-                        <img src={logoUrl} alt={station.name} className="w-full h-full object-contain p-1" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: color }}>
-                          <span className="text-white font-black text-xl tracking-tighter leading-none">{text}</span>
-                        </div>
-                      )}
+                      <BrandLogo name={station.name} customLogoUrl={station.custom_logo_url} size={64} imgClassName="p-1" textClassName="text-xl" />
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1">

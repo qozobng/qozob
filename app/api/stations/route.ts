@@ -6,6 +6,10 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Station *locations* for an area change rarely (prices are loaded separately by the client),
+// so let Vercel's CDN serve repeat requests for the same coordinates without invoking this function.
+const CACHE_HEADERS = { 'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=86400' };
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get('lat');
@@ -17,6 +21,10 @@ export async function GET(request: Request) {
 
   const latNum = parseFloat(lat);
   const lngNum = parseFloat(lng);
+
+  if (!Number.isFinite(latNum) || !Number.isFinite(lngNum) || Math.abs(latNum) > 90 || Math.abs(lngNum) > 180) {
+    return NextResponse.json({ error: 'Invalid coordinates' }, { status: 400 });
+  }
 
   // =========================================================================
   // STEP 1: CHECK SUPABASE FIRST (COST: $0.00)
@@ -36,6 +44,8 @@ export async function GET(request: Request) {
       .lte('lng', lngNum + lngOffset)
       .limit(150); // Increased limit to ensure no stations are hidden in dense areas
 
+    if (dbError) console.error("Supabase cache query error:", dbError.message);
+
     // If we have stations saved in this area, return them instantly!
     if (cachedStations && cachedStations.length > 2) {
       console.log(`🤑 CACHE HIT: Found ${cachedStations.length} stations in Supabase. Bypassing Google API.`);
@@ -53,7 +63,7 @@ export async function GET(request: Request) {
         }
       }));
 
-      return NextResponse.json({ results: formattedResults });
+      return NextResponse.json({ results: formattedResults }, { headers: CACHE_HEADERS });
     }
   } catch (err) {
     console.error("Supabase cache check failed, falling back to Google:", err);
@@ -107,8 +117,11 @@ export async function GET(request: Request) {
       fetch(textUrl, { method: 'POST', headers, body: JSON.stringify(textBody) })
     ]);
     
-    const nearbyData = await nearbyRes.json();
-    const textData = await textRes.json();
+    // Parse both bodies in parallel (a failed body parse shouldn't sink the other request)
+    const [nearbyData, textData] = await Promise.all([
+      nearbyRes.json().catch(() => ({})),
+      textRes.json().catch(() => ({})),
+    ]);
     
     if (nearbyData.error) console.error("Nearby API Error:", nearbyData.error.message);
     if (textData.error) console.error("Text API Error:", textData.error.message);
@@ -117,8 +130,10 @@ export async function GET(request: Request) {
     const combinedPlaces = [...(nearbyData.places || []), ...(textData.places || [])];
 
     // Deduplicate! Remove any station found in both searches using its unique 'id'
+    // (and skip malformed places with no id or coordinates)
     const uniqueStationsMap = new Map();
     combinedPlaces.forEach((place: any) => {
+      if (!place?.id || place.location?.latitude == null || place.location?.longitude == null) return;
       if (!uniqueStationsMap.has(place.id)) {
         uniqueStationsMap.set(place.id, place);
       }
@@ -173,7 +188,11 @@ export async function GET(request: Request) {
       }
     }
     
-    return NextResponse.json({ results: formattedResults });
+    // Only cache non-empty results so a transient Google failure isn't pinned at the CDN
+    return NextResponse.json(
+      { results: formattedResults },
+      formattedResults.length > 0 ? { headers: CACHE_HEADERS } : undefined
+    );
   } catch (error) {
     console.error("Backend fetch error:", error);
     return NextResponse.json({ error: 'Failed to fetch stations from Google' }, { status: 500 });

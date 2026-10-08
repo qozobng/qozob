@@ -18,7 +18,7 @@ function LoginContent() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState(() => searchParams.get('error') || "");
 
   const redirectTarget = searchParams.get('redirect');
   const stationId = searchParams.get('stationId');

@@ -30,7 +30,8 @@ export default function AdminClaimsDashboard() {
 
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/approve-claim', {
+      // Route lives at app/admin/approve-claim/route.ts → URL is /admin/approve-claim
+      const res = await fetch('/admin/approve-claim', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -43,6 +44,7 @@ export default function AdminClaimsDashboard() {
       });
 
       const result = await res.json();
+      if (res.status === 403) throw new Error("You are not authorised as an admin. Ask the owner to add your email to ADMIN_EMAILS.");
       if (!result.success) throw new Error(result.error);
       
       alert(`Claim successfully ${status}!`);

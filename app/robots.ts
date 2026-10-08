@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/user-dashboard/', '/admin/', '/api/'], // Hide secure routes from Google
+      disallow: ['/user-dashboard/', '/admin/', '/api/', '/dashboard/', '/auth/'], // Hide secure routes from Google
     },
     sitemap: 'https://www.qozob.com/sitemap.xml',
   };
