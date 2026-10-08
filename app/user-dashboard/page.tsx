@@ -18,6 +18,7 @@ import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { EmailUpdatesCard } from '@/components/EmailUpdatesCard';
 
 interface RatedStationItem {
   station_id: string;
@@ -627,6 +628,9 @@ function UserDashboardContent() {
               </div>
               <ThemeToggle variant="segmented" />
             </div>
+
+            {/* EMAIL UPDATES (mailing list) */}
+            <EmailUpdatesCard />
 
             {/* ROLE UPGRADE CARD */}
             <div className="bg-surface border border-line rounded-xl overflow-hidden shadow-xs">

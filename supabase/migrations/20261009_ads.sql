@@ -176,3 +176,4 @@ commit;
 select 'ads table' as item, (to_regclass('public.ads') is not null)::text as ok
 union all select 'ad_stats_daily table', (to_regclass('public.ad_stats_daily') is not null)::text
 union all select 'ad_creatives bucket public', coalesce((select public::text from storage.buckets where id = 'ad_creatives'), 'missing');
+

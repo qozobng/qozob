@@ -7,6 +7,7 @@ import { Loader2, Lock, Mail, User, Building2, ArrowRight, CheckCircle2, AlertCi
 import Link from 'next/link';
 import { AuthShell } from '@/components/AuthShell';
 import { ui, cx } from '@/lib/ui';
+import { MAILING_CONSENT_TEXT } from '@/lib/mailingConsent';
 
 const ROLE_OPTIONS = [
   {
@@ -53,6 +54,7 @@ export default function SignupPage() {
   const [address, setAddress] = useState("");
   const [state, setState] = useState("");
   const [country, setCountry] = useState("Nigeria");
+  const [wantsEmails, setWantsEmails] = useState(false); // must start unticked (NDPA consent rules)
 
   // Manager Only Fields
   const [companyName, setCompanyName] = useState("");
@@ -112,7 +114,23 @@ export default function SignupPage() {
         }
       }
 
-      setSuccessMsg("Account created. Taking you to sign in…");
+      // 3. Optional email updates (only if they ticked the box). Never blocks sign-up.
+      if (wantsEmails) {
+        try {
+          await fetch('/api/mailing/subscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email, consent: true, source: 'signup',
+              fullName: [firstName, lastName].filter(Boolean).join(' '), state,
+            }),
+          });
+        } catch { /* ignore: they can subscribe later from their dashboard */ }
+      }
+
+      setSuccessMsg(wantsEmails
+        ? "Account created. Check your inbox to confirm email updates. Taking you to sign in…"
+        : "Account created. Taking you to sign in…");
       setTimeout(() => router.push('/login'), 2500);
 
     } catch (err: any) {
@@ -299,6 +317,17 @@ export default function SignupPage() {
         </Section>
 
         <div className="space-y-3">
+          <label className="flex items-start gap-3 rounded-xl border border-line bg-surface-2 p-3 text-sm text-fg cursor-pointer">
+            <input
+              type="checkbox"
+              checked={wantsEmails}
+              onChange={(e) => setWantsEmails(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 rounded accent-[var(--primary)]"
+            />
+            <span>
+              {MAILING_CONSENT_TEXT} <span className="text-fg-muted">(Optional)</span>
+            </span>
+          </label>
           <button type="submit" disabled={loading} className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full')}>
             {loading ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : 'Create account'}
           </button>

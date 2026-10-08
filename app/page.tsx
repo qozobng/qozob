@@ -21,6 +21,7 @@ import { getRole, hasRequestedManager } from '@/lib/roles';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
+import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
 
@@ -1600,6 +1601,9 @@ function QozobLanding() {
 
       {/* ======================= GLOBAL FOOTER ======================= */}
       <footer className="bg-brand-grad text-on-brand-muted pt-10 pb-28 lg:pb-10 text-sm mt-8 border-t border-brand-line w-full">
+        <div className="max-w-xl mx-auto px-4 mb-8">
+          <SubscribeForm tone="brand" source="website" />
+        </div>
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-5">
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
             <span className="inline-flex items-center gap-2"><Droplet className="w-4 h-4 text-brand-accent fill-brand-accent" aria-hidden /><Wordmark tone="brand" size="md" /></span>

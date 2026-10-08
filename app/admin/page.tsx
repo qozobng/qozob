@@ -6,7 +6,7 @@ import {
   ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, 
   ExternalLink, RefreshCw, MapPin, UserPlus, Loader2, Building2, 
   TrendingUp, Fuel, AlertTriangle, Search, Filter, Download, ArrowUpRight,
-  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight, Megaphone
+  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight, Megaphone, Mail
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -19,11 +19,12 @@ import { RatingDistribution } from '@/components/analytics/RatingDistribution';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { AdsManager } from '@/components/admin/AdsManager';
+import { MailingManager } from '@/components/admin/MailingManager';
 
 const supabase = createClient();
 
 type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
-type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads';
+type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads' | 'mailing';
 
 interface StationRecord {
   station_id: string;
@@ -542,6 +543,11 @@ export default function AdminDashboard() {
           <button role="tab" aria-selected={activeTab === 'ads'} onClick={() => setActiveTab('ads')} className={tabClass(activeTab === 'ads')}>
             <Megaphone className="w-4 h-4" aria-hidden />
             <span>Adverts</span>
+          </button>
+
+          <button role="tab" aria-selected={activeTab === 'mailing'} onClick={() => setActiveTab('mailing')} className={tabClass(activeTab === 'mailing')}>
+            <Mail className="w-4 h-4" aria-hidden />
+            <span>Mailing</span>
           </button>
         </div>
       </nav>
@@ -1109,6 +1115,7 @@ export default function AdminDashboard() {
         {/* TAB: ADVERTS */}
         {/* =================================================================== */}
         {activeTab === 'ads' && <AdsManager />}
+        {activeTab === 'mailing' && <MailingManager />}
 
       </main>
 

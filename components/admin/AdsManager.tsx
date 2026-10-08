@@ -450,3 +450,4 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
     </div>
   );
 }
+
