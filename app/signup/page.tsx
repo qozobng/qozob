@@ -332,7 +332,7 @@ export default function SignupPage() {
             {loading ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : 'Create account'}
           </button>
           <p className="text-center text-xs text-fg-subtle">
-            By creating an account, you agree to our{' '}
+            By creating an account, you confirm you are 13 or older (with a parent&apos;s or guardian&apos;s permission if you are under 18) and agree to our{' '}
             <Link href="/terms" className="font-medium text-fg-muted underline underline-offset-2 hover:text-fg">Terms</Link> and{' '}
             <Link href="/privacy" className="font-medium text-fg-muted underline underline-offset-2 hover:text-fg">Privacy Policy</Link>.
           </p>

@@ -32,9 +32,10 @@ export function LegalPage({ title, intro, children }: { title: string; intro: st
       </main>
 
       <footer className="border-t border-line py-8 text-center text-xs text-fg-subtle">
-        <div className="flex justify-center gap-6 mb-2 text-sm font-medium text-fg-muted">
+        <div className="flex justify-center flex-wrap gap-x-6 gap-y-2 mb-2 text-sm font-medium text-fg-muted">
           <Link href="/privacy" className="hover:text-fg transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-fg transition-colors">Terms</Link>
+          <Link href="/rewards/rules" className="hover:text-fg transition-colors">Rewards rules</Link>
           <a href={`mailto:${SITE.contactEmail}`} className="hover:text-fg transition-colors">Contact</a>
         </div>
         © {new Date().getFullYear()} {SITE.name}. All rights reserved.
