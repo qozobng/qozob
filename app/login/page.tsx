@@ -6,7 +6,7 @@ import { createClient } from '@/utils/supabase/client';
 import { Loader2, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
-import { homePathFor } from '@/lib/roles';
+import { landingPathFor, safeNext } from '@/lib/roles';
 import { AuthShell, GoogleGlyph } from '@/components/AuthShell';
 import { ui, cx } from '@/lib/ui';
 
@@ -27,6 +27,9 @@ function LoginContent() {
 
   const redirectTarget = searchParams.get('redirect');
   const stationId = searchParams.get('stationId');
+  // Where the guest was heading (e.g. directions to a station), validated as a same-site path
+  const next = safeNext(searchParams.get('next'), '');
+  const nextQuery = next ? `?next=${encodeURIComponent(next)}` : '';
 
   const routeUser = (user: User) => {
     // If they came from clicking "Claim" on the map, send them back to the map with auto-select
@@ -37,9 +40,9 @@ function LoginContent() {
     } else if (redirectTarget === 'rewards') {
       router.push('/user-dashboard?tab=rewards');
     } else {
-      // Admin → /admin, Manager (or awaiting approval) → /dashboard, everyone else → /user-dashboard.
+      // An explicit ?next wins; otherwise Admin → /admin and everyone else → the homepage map.
       // Uses the trusted app_metadata role, not the user-editable user_metadata.
-      router.push(homePathFor(user));
+      router.push(landingPathFor(user, next));
     }
   };
 
@@ -67,10 +70,15 @@ function LoginContent() {
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
     setErrorMsg("");
+    const params = new URLSearchParams();
+    if (redirectTarget) params.set('redirect', redirectTarget);
+    if (stationId) params.set('stationId', stationId);
+    if (next) params.set('next', next);
+    const qs = params.toString();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback${redirectTarget ? `?redirect=${redirectTarget}&stationId=${stationId}` : ''}`
+        redirectTo: `${window.location.origin}/auth/callback${qs ? `?${qs}` : ''}`
       }
     });
     if (error) {
@@ -162,7 +170,7 @@ function LoginContent() {
 
       <p className="mt-8 text-center text-sm text-fg-muted">
         New to Qozob?{' '}
-        <Link href="/signup" className={cx(ui.link, 'inline-flex items-center gap-1')}>
+        <Link href={`/signup${nextQuery}`} className={cx(ui.link, 'inline-flex items-center gap-1')}>
           Create an account <ArrowRight className="w-3.5 h-3.5" aria-hidden />
         </Link>
       </p>

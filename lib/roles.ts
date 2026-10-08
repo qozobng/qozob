@@ -24,12 +24,30 @@ export function hasRequestedManager(user: User | null | undefined): boolean {
   return getRole(user) === 'User' && user?.user_metadata?.role === 'Manager';
 }
 
-/** Where a user should land after signing in. Pending managers go to the manager portal to see their claims. */
+/**
+ * Where a user should land after signing in: admins go to the admin dashboard, everyone else
+ * (fuel buyers, station managers, pending managers) to the homepage map. Dashboards stay one tap
+ * away in the account menu.
+ */
 export function homePathFor(user: User | null | undefined): string {
-  const role = getRole(user);
-  if (role === 'Admin') return '/admin';
-  if (role === 'Manager' || hasRequestedManager(user)) return '/dashboard';
-  return '/user-dashboard';
+  return getRole(user) === 'Admin' ? '/admin' : '/';
+}
+
+/**
+ * Validates a "return to" path from the URL (?next=...). Only same-site paths are allowed, so the
+ * parameter can never be used to bounce people to another website (open-redirect protection).
+ */
+export function safeNext(raw: string | null | undefined, fallback = '/'): string {
+  const v = String(raw || '').trim();
+  if (!v || !v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\')) return fallback;
+  if (/^\/(auth|login|signup|welcome)(\/|\?|$)/.test(v)) return fallback; // avoid loops
+  return v;
+}
+
+/** Final destination after sign-in / verification: an explicit ?next wins, otherwise the role's home. */
+export function landingPathFor(user: User | null | undefined, next?: string | null): string {
+  const target = safeNext(next, '');
+  return target || homePathFor(user);
 }
 
 /** Turns a stored CAC document reference (old public URL or new storage path) into a storage path. */

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Loader2, Lock, Mail, User, Building2, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, Check } from 'lucide-react';
+import { Loader2, Lock, Mail, User, Building2, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, Check, MailCheck, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
-import { AuthShell } from '@/components/AuthShell';
+import { AuthShell, GoogleGlyph } from '@/components/AuthShell';
+import { safeNext } from '@/lib/roles';
 import { ui, cx } from '@/lib/ui';
 import { MAILING_CONSENT_TEXT } from '@/lib/mailingConsent';
 import { PhoneField } from '@/components/PhoneField';
@@ -35,15 +36,63 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function SignupPage() {
-  const router = useRouter();
+function SignupContent() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
 
   const [role, setRole] = useState<'User' | 'Manager'>('User');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+
+  // Where to return after verification (e.g. the station they wanted directions to)
+  const next = safeNext(searchParams.get('next'));
+  const nextQuery = next !== '/' ? `?next=${encodeURIComponent(next)}` : '';
+
+  // "Check your inbox" screen
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [resendIn, setResendIn] = useState(0);
+  const [resendNote, setResendNote] = useState('');
+  const [resending, setResending] = useState(false);
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const confirmRedirect = () => `${window.location.origin}/auth/callback?flow=signup&next=${encodeURIComponent(next)}`;
+
+  const handleGoogle = async () => {
+    setGoogleLoading(true);
+    setErrorMsg('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+    });
+    if (error) {
+      setErrorMsg(error.message);
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!sentTo || resendIn > 0) return;
+    setResending(true);
+    setResendNote('');
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: sentTo,
+      options: { emailRedirectTo: confirmRedirect() },
+    });
+    setResending(false);
+    if (error) {
+      setResendNote(error.message);
+    } else {
+      setResendNote('Sent! A fresh link is on its way.');
+      setResendIn(60);
+    }
+  };
 
   // Form Fields
   const [firstName, setFirstName] = useState("");
@@ -88,6 +137,7 @@ export default function SignupPage() {
         email,
         password,
         options: {
+          emailRedirectTo: confirmRedirect(),
           data: {
             role: role,
             first_name: firstName,
@@ -139,10 +189,20 @@ export default function SignupPage() {
         } catch { /* ignore: they can subscribe later from their dashboard */ }
       }
 
-      setSuccessMsg(wantsEmails
-        ? "Account created. Check your inbox to confirm email updates. Taking you to sign in…"
-        : "Account created. Taking you to sign in…");
-      setTimeout(() => router.push('/login'), 2500);
+      // Supabase returns a user with no identities when the email is already registered
+      if (authData.user && Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+        setErrorMsg('This email already has a Qozob account. Please sign in instead.');
+        return;
+      }
+
+      // Email confirmation switched off in Supabase → already signed in
+      if (authData.session) {
+        window.location.assign(`/welcome?next=${encodeURIComponent(next)}`);
+        return;
+      }
+      setSentTo(email);
+      setResendIn(60);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
@@ -150,6 +210,57 @@ export default function SignupPage() {
       setLoading(false);
     }
   };
+
+  if (sentTo) {
+    return (
+      <AuthShell title="Check your inbox 📬" subtitle="One last step: confirm your email to switch on your account.">
+        <div className="rounded-2xl border border-line bg-surface-2 p-5 text-center">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent-soft text-on-accent-soft">
+            <MailCheck className="h-7 w-7" aria-hidden />
+          </span>
+          <p className="mt-4 text-sm text-fg-muted">We sent a confirmation link to</p>
+          <p className="mt-1 break-all text-base font-semibold text-fg">{sentTo}</p>
+          <p className="mt-4 text-sm text-fg-muted">
+            Tap the button in that email and we&apos;ll bring you straight back to Qozob. It works on any device.
+          </p>
+        </div>
+
+        <ul className="mt-5 space-y-2 text-sm text-fg-muted">
+          <li className="flex gap-2"><CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" aria-hidden />Can&apos;t find it? Check your Spam or Promotions folder.</li>
+          <li className="flex gap-2"><CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-primary" aria-hidden />The email comes from Qozob and may take a minute to arrive.</li>
+        </ul>
+
+        {resendNote && (
+          <p role="status" className="mt-4 text-center text-sm font-medium text-fg">{resendNote}</p>
+        )}
+
+        <div className="mt-6 space-y-3">
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resending || resendIn > 0}
+            className={cx(ui.btn, ui.btnLg, ui.btnSecondary, 'w-full gap-2')}
+          >
+            {resending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
+            {resendIn > 0 ? `Resend email in ${resendIn}s` : 'Resend confirmation email'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setSentTo(null); setResendNote(''); }}
+            className={cx(ui.btn, ui.btnLg, ui.btnGhost, 'w-full')}
+          >
+            Wrong email? Start again
+          </button>
+        </div>
+
+        <p className="mt-8 text-center text-sm text-fg-muted">
+          <Link href={next} className={cx(ui.link, 'inline-flex items-center gap-1')}>
+            Keep browsing the map <ArrowRight className="w-3.5 h-3.5" aria-hidden />
+          </Link>
+        </p>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -163,12 +274,24 @@ export default function SignupPage() {
           <span>{errorMsg}</span>
         </div>
       )}
-      {successMsg && (
-        <div role="status" className={cx(ui.alertSuccess, 'mb-6')}>
-          <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
-          <span>{successMsg}</span>
-        </div>
-      )}
+
+      {/* ONE-TAP GOOGLE SIGN-UP (fuel buyers) */}
+      <button
+        type="button"
+        onClick={handleGoogle}
+        disabled={googleLoading || loading}
+        className={cx(ui.btn, ui.btnLg, ui.btnSecondary, 'w-full gap-3 shadow-sm')}
+      >
+        {googleLoading ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : <GoogleGlyph />}
+        Sign up with Google
+      </button>
+      <p className="mt-2 text-center text-xs text-fg-subtle">Fastest way in. No password to remember.</p>
+
+      <div className="flex items-center gap-4 my-7" aria-hidden>
+        <div className="h-px bg-line flex-1" />
+        <span className="text-xs font-medium text-fg-subtle">or sign up with email</span>
+        <div className="h-px bg-line flex-1" />
+      </div>
 
       <form onSubmit={handleSignup} className="space-y-8">
 
@@ -352,10 +475,23 @@ export default function SignupPage() {
 
       <p className="mt-8 text-center text-sm text-fg-muted">
         Already have an account?{' '}
-        <Link href="/login" className={cx(ui.link, 'inline-flex items-center gap-1')}>
+        <Link href={`/login${nextQuery}`} className={cx(ui.link, 'inline-flex items-center gap-1')}>
           Sign in <ArrowRight className="w-3.5 h-3.5" aria-hidden />
         </Link>
       </p>
     </AuthShell>
+  );
+}
+
+// useSearchParams needs a Suspense boundary for static builds
+export default function SignupPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-canvas">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" aria-label="Loading" />
+      </div>
+    }>
+      <SignupContent />
+    </Suspense>
   );
 }

@@ -1,30 +1,37 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { homePathFor } from '@/lib/roles';
+import { landingPathFor } from '@/lib/roles';
 
 // =========================================================================
-// OAUTH CALLBACK (Google sign-in)
-// The login page sends Google OAuth back to /auth/callback, but this route didn't exist,
-// so Google sign-in ended on a 404. This exchanges the one-time code for a session cookie
-// and routes the user exactly like the email/password login does.
+// AUTH CALLBACK (Google sign-in + default email-confirmation links)
+// Exchanges the one-time code for a session cookie, then routes the person:
+//   • brand-new accounts (first Google sign-in, or confirming their email) → /welcome
+//   • everyone else → ?next (where they were) or their home (admins: /admin, others: the map)
 //
-// Make sure  https://www.qozob.com/auth/callback  (and http://localhost:3000/auth/callback for dev)
-// are listed under Supabase → Authentication → URL Configuration → Redirect URLs.
+// Make sure  https://www.qozob.com/**  (and http://localhost:3000/** for dev) are listed under
+// Supabase → Authentication → URL Configuration → Redirect URLs.
 // =========================================================================
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
   const redirectTarget = searchParams.get('redirect');
   const stationId = searchParams.get('stationId');
+  const flow = searchParams.get('flow');            // 'signup' when coming from a confirmation email
+  const next = searchParams.get('next');
+  const linkError = searchParams.get('error_code') || searchParams.get('error');
+
+  // Expired / already-used confirmation links come back with an error instead of a code
+  if (!code && linkError) {
+    return NextResponse.redirect(`${origin}/welcome?error=${encodeURIComponent(linkError)}`);
+  }
 
   if (code) {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error && data.user) {
-      // Same routing rules as LoginContent.routeUser in app/login/page.tsx
-      // (trusted app_metadata role — user_metadata is user-editable and never trusted)
-      let path = homePathFor(data.user);
+      // Legacy targets kept for old links (trusted app_metadata role decides admin access)
+      let path = landingPathFor(data.user, next);
       if (redirectTarget === 'claim' && stationId && stationId !== 'null' && stationId !== 'undefined') {
         path = `/?select=${encodeURIComponent(stationId)}`;
       } else if (redirectTarget === 'admin') {
@@ -32,12 +39,25 @@ export async function GET(request: Request) {
       } else if (redirectTarget === 'rewards') {
         path = '/user-dashboard?tab=rewards';
       }
+
+      const created = Date.parse(data.user.created_at || '');
+      const lastSignIn = Date.parse(data.user.last_sign_in_at || '');
+      const firstSignIn = Number.isFinite(created) && Number.isFinite(lastSignIn) && Math.abs(lastSignIn - created) < 120_000;
+      const confirmedAt = Date.parse(data.user.email_confirmed_at || '');
+      const confirmedJustNow = Number.isFinite(confirmedAt) && Date.now() - confirmedAt < 120_000;
+      if (flow === 'signup' || firstSignIn || confirmedJustNow) {
+        return NextResponse.redirect(`${origin}/welcome?next=${encodeURIComponent(path)}`);
+      }
       return NextResponse.redirect(`${origin}${path}`);
     }
 
-    console.error('OAuth code exchange failed:', error?.message);
+    console.error('Auth code exchange failed:', error?.message);
+    // A confirmation link opened in a different browser can't create a session here, but the email
+    // IS confirmed by then, so ask the person to sign in once instead of showing an error.
+    if (flow) {
+      return NextResponse.redirect(`${origin}/welcome?status=signin${next ? `&next=${encodeURIComponent(next)}` : ''}`);
+    }
   }
 
-  return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Google sign-in failed. Please try again.')}`);
+  return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent('Sign-in did not complete. Please try again.')}`);
 }
-

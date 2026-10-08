@@ -17,7 +17,7 @@ import { createClient } from '@/utils/supabase/client';
 
 // --- SHARED BRANDING ---
 import { BrandLogo } from '@/components/BrandLogo';
-import { getRole, hasRequestedManager } from '@/lib/roles';
+import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
@@ -646,12 +646,31 @@ function QozobLanding() {
   // The role comes from app_metadata (set only by an admin / the database). user_metadata.role is
   // user-editable, so it only tells us someone has *asked* to be a Manager.
   useEffect(() => {
+    // Expired / already-used email links come back as  /#error=access_denied&error_code=otp_expired
+    if (typeof window !== 'undefined' && /(^|[#&])(error_code|error)=/.test(window.location.hash)) {
+      const h = new URLSearchParams(window.location.hash.slice(1));
+      const code = h.get('error_code') || h.get('error') || 'invalid_link';
+      router.replace(`/welcome?error=${encodeURIComponent(code)}`);
+      return;
+    }
+
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
       if (user) {
         setUserRole(getRole(user));
         setRequestedManager(hasRequestedManager(user));
+        // Station owners who signed up land here now (not /dashboard), so file their
+        // Manager-access request from the map. Safe to repeat; guarded once per session.
+        if (hasRequestedManager(user)) {
+          try {
+            const key = `qz_mgr_req_${user.id}`;
+            if (!sessionStorage.getItem(key)) {
+              sessionStorage.setItem(key, '1');
+              ensureManagerRequestFiled(supabase, user).catch(() => sessionStorage.removeItem(key));
+            }
+          } catch { /* storage blocked: the dashboards still file it */ }
+        }
       }
     };
     fetchUser();
@@ -663,7 +682,7 @@ function QozobLanding() {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabase]);
+  }, [supabase, router]);
 
   // Handle Logout
   const handleSignOut = async () => {
