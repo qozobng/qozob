@@ -74,7 +74,15 @@ export default function AdminClaimsDashboard() {
 
   return (
     <div className="max-w-6xl mx-auto p-8 font-sans">
-      <h1 className="text-3xl font-black text-indigo-950 mb-8">Admin: Pending Station Claims</h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-black text-indigo-950">Pending Station Claims</h1>
+        <a 
+          href="/admin" 
+          className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl transition-colors"
+        >
+          ← Full Admin Command Center
+        </a>
+      </div>
       
       {claims.length === 0 ? (
         <p className="text-slate-500">No pending claims to review.</p>
