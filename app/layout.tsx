@@ -13,8 +13,8 @@ const jakarta = Plus_Jakarta_Sans({
 // Browser / phone status-bar colour follows the light or dark theme
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#3B0F80' },
-    { media: '(prefers-color-scheme: dark)', color: '#110A22' },
+    { media: '(prefers-color-scheme: light)', color: '#312E81' },
+    { media: '(prefers-color-scheme: dark)', color: '#0E0C26' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -30,11 +30,11 @@ export const metadata: Metadata = {
     default: 'Qozob | Live Fuel Prices & Station Queues in Nigeria',
     template: '%s | Qozob',
   },
-  description: 'Find the cheapest PMS prices, check live queue status, and rate pump accuracy at filling stations across Nigeria. Community-driven fuel updates.',
+  description: 'Find the cheapest petrol (PMS) prices, check live queue status and rate pump accuracy at filling stations across Nigeria. Built for every Nigerian: drivers, generator users, homes and businesses. Diesel, kerosene, CNG and LPG coming soon.',
   keywords: [
     'fuel prices Nigeria', 'PMS price today', 'cheapest petrol near me', 
     'filling station queue', 'pump accuracy', 'NNPC fuel price', 
-    'Lagos fuel price', 'Qozob'
+    'Lagos fuel price', 'diesel price Nigeria', 'kerosene price', 'CNG price Nigeria', 'LPG gas price', 'generator fuel', 'Qozob'
   ],
   authors: [{ name: 'Qozob Team' }],
   creator: 'Qozob',
@@ -91,7 +91,7 @@ export default function RootLayout({
     '@type': 'WebApplication',
     name: 'Qozob',
     url: 'https://www.qozob.com',
-    description: 'Crowdsourced gas station price tracking and queue monitoring platform in Nigeria.',
+    description: 'Community-powered fuel price tracking and queue monitoring for every Nigerian: petrol today, with diesel, kerosene, CNG and LPG coming soon.',
     applicationCategory: 'UtilityApplication',
     operatingSystem: 'All',
     offers: {

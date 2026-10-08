@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
   return (
     <LegalPage
       title="Privacy Policy"
-      intro={`${SITE.name} (${SITE.domain}) helps drivers in ${SITE.country} find fuel stations, compare live pump prices and share updates with the community. This policy explains, in plain language, what information we collect, why, and the choices you have.`}
+      intro={`${SITE.name} (${SITE.domain}) helps people across ${SITE.country} (drivers, generator users, households and businesses) find fuel stations, compare live pump prices and share updates with the community. This policy explains, in plain language, what information we collect, why, and the choices you have.`}
     >
       <section>
         <h2>1. Information we collect</h2>

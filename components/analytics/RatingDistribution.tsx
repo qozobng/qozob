@@ -16,7 +16,7 @@ export function RatingDistribution({
   totalVotes,
   distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
   title = "Pump accuracy",
-  subtitle = "Ratings from drivers who bought fuel here",
+  subtitle = "Ratings from people who bought fuel here",
 }: RatingDistributionProps) {
   const safeAvg = Math.max(0, Math.min(5, Number(averageRating) || 0));
   const stars = [5, 4, 3, 2, 1];

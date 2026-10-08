@@ -648,7 +648,7 @@ export default function AdminDashboard() {
 
               <DonutChart
                 title="Queue status"
-                subtitle="Latest reports from drivers"
+                subtitle="Latest reports from the community"
                 data={analytics.queueDonut}
                 centerLabel={analytics.totalStations.toLocaleString()}
                 centerSub="Outlets"
@@ -658,7 +658,7 @@ export default function AdminDashboard() {
                 averageRating={analytics.avgAccuracy}
                 totalVotes={analytics.totalVotes}
                 title="Pump accuracy"
-                subtitle="Average driver rating across all stations"
+                subtitle="Average community rating across all stations"
               />
             </div>
 

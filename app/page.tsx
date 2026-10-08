@@ -147,6 +147,11 @@ function getPriceColor(role: string | null | undefined): string {
   return `var(--src-${priceSource(role)})`;
 }
 
+/** Brighter price colours for the indigo-filled hero cards (see --hero-* in globals.css). */
+function getHeroPriceColor(role: string | null | undefined): string {
+  return `var(--hero-${priceSource(role)})`;
+}
+
 function formatPrice(price: number | string | null | undefined, decimalClass: string): React.ReactNode {
   if (price === null || price === undefined) return "---";
   const numPrice = Number(price);
@@ -1026,32 +1031,35 @@ function QozobLanding() {
     map.setZoom(14);
   };
 
-  // Hero cards (best price / nearest), on surface tokens so the source-coloured price always has
-  // AA contrast in light and dark mode.
+  // Hero cards (best price / nearest): always colour-filled with the brand indigo, in light AND
+  // dark mode (dark mode uses a brighter indigo so the cards still stand out from the page).
   // Mobile/tablet: one compact row each (~76px), so the whole map + a peek of the list fit on landing.
   const renderHeroCompact = (station: Station, kind: 'best' | 'nearest') => {
     const isBest = kind === 'best';
     return (
-      <div className={cx(ui.card, 'lg:hidden relative overflow-hidden pl-4 pr-3 py-2.5 flex items-center gap-3')}>
-        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1.5', isBest ? 'bg-accent-solid' : 'bg-primary')} />
+      <div className={cx(
+        'lg:hidden relative overflow-hidden rounded-2xl pl-4 pr-3 py-2.5 flex items-center gap-3 text-on-hero border border-hero-line/40 shadow-lg shadow-[rgb(var(--shadow-color)/0.18)]',
+        isBest ? 'bg-hero-1' : 'bg-hero-2'
+      )}>
+        {isBest && <span aria-hidden className="pointer-events-none absolute -top-10 -right-8 h-28 w-28 rounded-full bg-brand-accent opacity-20 blur-3xl" />}
         <button
           type="button"
-          className="min-w-0 flex-1 text-left rounded-md"
+          className="relative min-w-0 flex-1 text-left rounded-md"
           onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
           title={station.name}
         >
           <span className="flex items-center gap-1 text-xs font-semibold whitespace-nowrap">
-            <span className={isBest ? 'text-accent' : 'text-primary'}>{isBest ? 'Best price nearby' : 'Nearest station'}</span>
+            <span className={isBest ? 'text-brand-accent' : 'text-brand-info'}>{isBest ? 'Best price nearby' : 'Nearest station'}</span>
             <span aria-hidden>{isBest ? '🔥' : '📍'}</span>
-            <span className="font-medium text-fg-subtle truncate">· {timeAgo(station.last_updated)}</span>
+            <span className="font-medium text-on-hero-muted truncate">· {timeAgo(station.last_updated)}</span>
           </span>
-          <span className="block text-[15px] font-semibold text-fg leading-snug truncate mt-0.5">{station.name}</span>
-          <span className="block text-xs text-fg-muted truncate">
+          <span className="block text-[15px] font-bold text-on-hero leading-snug truncate mt-0.5">{station.name}</span>
+          <span className="block text-xs text-on-hero-muted truncate">
             {distancePrefix(station.distance)}{station.queue_status}
-            {isBest && heroSavings > 0 && <span className="font-semibold text-accent"> · ₦{heroSavings.toLocaleString()} below avg</span>}
+            {isBest && heroSavings > 0 && <span className="font-semibold text-brand-accent"> · ₦{heroSavings.toLocaleString()} below avg</span>}
           </span>
         </button>
-        <div className="shrink-0 text-xl font-bold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
+        <div className="relative shrink-0 text-xl font-extrabold tabular leading-none" style={{ color: getHeroPriceColor(station.updated_by_role) }}>
           {formatPrice(station.price_pms, "text-xs")}
         </div>
         <a
@@ -1061,8 +1069,8 @@ function QozobLanding() {
           aria-label={`Directions to ${station.name}`}
           title="Directions"
           className={cx(
-            'shrink-0 h-10 w-10 rounded-full flex items-center justify-center shadow-sm transition-transform active:scale-95',
-            isBest ? 'bg-accent-solid text-on-accent hover:bg-accent-hover' : 'bg-primary text-on-primary hover:bg-primary-hover'
+            'relative shrink-0 h-10 w-10 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95',
+            isBest ? 'bg-accent-solid text-[#1E1B4B] hover:bg-accent-hover' : 'bg-brand-info text-[#1E1B4B] hover:brightness-110'
           )}
         >
           <Navigation className="w-4 h-4" aria-hidden />
@@ -1075,45 +1083,48 @@ function QozobLanding() {
   const renderHeroCard = (station: Station, kind: 'best' | 'nearest') => {
     const isBest = kind === 'best';
     return (
-      <div className={cx(ui.card, 'hidden relative overflow-hidden p-5 lg:flex-1 lg:flex flex-col gap-3')}>
-        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1.5', isBest ? 'bg-accent-solid' : 'bg-primary')} />
-        <div className="flex items-center justify-between gap-3">
-          <span className={cx('inline-flex items-center gap-1.5 text-sm font-semibold', isBest ? 'text-accent' : 'text-primary')}>
+      <div className={cx(
+        'hidden relative overflow-hidden rounded-3xl p-5 lg:flex-1 lg:flex flex-col justify-center gap-3 text-on-hero border border-hero-line/40 shadow-xl shadow-[rgb(var(--shadow-color)/0.2)] transition-shadow hover:shadow-2xl',
+        isBest ? 'bg-hero-1' : 'bg-hero-2'
+      )}>
+        {isBest && <span aria-hidden className="pointer-events-none absolute -top-12 -right-10 h-40 w-40 rounded-full bg-brand-accent opacity-20 blur-3xl" />}
+        <div className="relative flex items-center justify-between gap-3">
+          <span className={cx('inline-flex items-center gap-1.5 text-sm font-bold', isBest ? 'text-brand-accent' : 'text-brand-info')}>
             {isBest ? 'Best price nearby' : 'Nearest station'} <span aria-hidden>{isBest ? '🔥' : '📍'}</span>
           </span>
-          <span className="inline-flex items-center gap-1 text-xs text-fg-subtle">
+          <span className="inline-flex items-center gap-1 text-xs text-on-hero-muted">
             <Clock className="w-3 h-3" aria-hidden /> {timeAgo(station.last_updated)}
           </span>
         </div>
 
-        <div className="flex items-start justify-between gap-3">
+        <div className="relative flex items-start justify-between gap-3">
           <button
             type="button"
             className="min-w-0 text-left group rounded-md"
             onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             title={station.name}
           >
-            <span className="block text-lg font-semibold text-fg leading-snug truncate group-hover:underline underline-offset-4">{station.name}</span>
-            <span className="block text-sm text-fg-muted truncate mt-0.5">{distancePrefix(station.distance)}{station.queue_status}</span>
+            <span className="block text-lg font-bold text-on-hero leading-snug truncate group-hover:underline underline-offset-4">{station.name}</span>
+            <span className="block text-sm text-on-hero-muted truncate mt-0.5">{distancePrefix(station.distance)}{station.queue_status}</span>
           </button>
           <div className="text-right shrink-0">
-            <div className="text-3xl font-bold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
+            <div className="text-3xl font-extrabold tabular leading-none" style={{ color: getHeroPriceColor(station.updated_by_role) }}>
               {formatPrice(station.price_pms, "text-sm")}
             </div>
-            <span className="mt-1.5 block text-xs text-fg-subtle">{PRICE_SOURCE_LABEL[priceSource(station.updated_by_role)]} price</span>
+            <span className="mt-1.5 block text-xs text-on-hero-muted">{PRICE_SOURCE_LABEL[priceSource(station.updated_by_role)]} price</span>
           </div>
         </div>
 
-        <div className="mt-auto flex items-center justify-between gap-3">
+        <div className="relative flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {isBest && heroSavings > 0 && (
-              <span className="inline-flex items-center rounded-full bg-accent-soft text-on-accent-soft border border-accent-line px-2.5 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
+              <span className="inline-flex items-center rounded-full bg-brand-accent/15 text-brand-accent border border-brand-accent/30 px-2.5 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
                 ₦{heroSavings.toLocaleString()} below avg
               </span>
             )}
             {station.accuracy_votes > 0 && (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-muted" title="Pump accuracy rating">
-                <Star className="w-3.5 h-3.5 fill-star text-star" aria-hidden /> {station.pump_accuracy}/5
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-on-hero-muted" title="Pump accuracy rating">
+                <Star className="w-3.5 h-3.5 fill-[#FBBF24] text-[#FBBF24]" aria-hidden /> {station.pump_accuracy}/5
               </span>
             )}
           </div>
@@ -1121,7 +1132,10 @@ function QozobLanding() {
             href={getDirectionsUrl(station.lat, station.lng)}
             target="_blank"
             rel="noopener noreferrer"
-            className={cx(ui.btn, ui.btnSm, isBest ? ui.btnAccent : ui.btnPrimary, 'shrink-0 h-9 px-4')}
+            className={cx(
+              ui.btn, 'shrink-0 h-9 px-4 text-xs shadow-lg',
+              isBest ? 'bg-accent-solid text-[#1E1B4B] hover:bg-accent-hover' : 'bg-brand-info text-[#1E1B4B] hover:brightness-110'
+            )}
           >
             <Navigation className="w-3.5 h-3.5" aria-hidden /> Directions
           </a>
@@ -1233,7 +1247,7 @@ function QozobLanding() {
         </div>
 
         {/* 2. BOTTOM ROW: Location search */}
-        <div className="border-t border-brand-line px-4 py-2 sm:py-3">
+        <div className="bg-brand-2 border-t border-brand-line/60 px-4 py-2 sm:py-3">
           <div className="w-full max-w-2xl mx-auto relative">
              <input 
                 type="text" 
@@ -1245,7 +1259,7 @@ function QozobLanding() {
                 onKeyDown={(e) => { 
                   if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
                 }}
-                className="w-full h-10 sm:h-11 bg-brand-2 border border-brand-line rounded-full pl-10 pr-24 text-sm text-on-brand placeholder:text-on-brand-muted outline-none focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
+                className="w-full h-10 sm:h-11 bg-white/10 border border-white/20 rounded-full pl-10 pr-24 text-sm font-medium text-white caret-[#34D399] placeholder:text-on-brand-muted outline-none focus:bg-white/15 focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
               />
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-brand-muted pointer-events-none" aria-hidden />
               <button 
@@ -1551,7 +1565,7 @@ function QozobLanding() {
         <div className="order-4 lg:order-4 lg:col-start-3 h-fit">
           <section className={cx(ui.card, 'p-5 sm:p-6')} aria-labelledby="needs-price-heading">
             <h2 id="needs-price-heading" className={ui.h2}>Help fill the gaps <span aria-hidden>🙌</span></h2>
-            <p className="text-sm text-fg-muted mt-0.5 mb-4">No price here yet. Drop one and help other drivers.</p>
+            <p className="text-sm text-fg-muted mt-0.5 mb-4">No price here yet. Drop one and help other Nigerians.</p>
             <div className="flex flex-col gap-2">
               {needsPricing.map((station) => (
                 <button 

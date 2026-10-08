@@ -2,7 +2,7 @@
 // SHARED UI CLASS RECIPES
 // One place for the look of inputs, buttons and cards, built on the design tokens
 // in app/globals.css. Every pairing here meets WCAG AA in light and dark mode.
-// Style: playful-modern — soft 16–24px cards, pill buttons, Plus Jakarta Sans.
+// Style: friendly-modern — soft 16–24px cards, pill buttons, Plus Jakarta Sans, indigo + emerald.
 // =========================================================================
 
 export const ui = {

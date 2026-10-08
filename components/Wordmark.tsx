@@ -3,9 +3,9 @@ import React from 'react';
 /**
  * The original Qozob logo: the stroked "qozob" ambigram with the pulsating dot inside the "b".
  * Shapes are exactly the original artwork; only the colour adapts to where it sits.
- * tone="brand"   → mint strokes for grape brand surfaces (header, footer, sidebars)
- * tone="surface" → grape strokes for card / page surfaces (lavender in dark mode)
- * The dot is always mint and pulses (paused for users who prefer reduced motion).
+ * tone="brand"   → emerald strokes for indigo brand surfaces (header, footer, sidebars)
+ * tone="surface" → indigo strokes for card / page surfaces (emerald in dark mode)
+ * The dot is always emerald and pulses (paused for users who prefer reduced motion).
  */
 export function Wordmark({
   tone = 'surface',
@@ -48,7 +48,7 @@ export function Wordmark({
         <path d="M334,5 V50" />
         <circle cx="360" cy="50" r="26" />
         {/* Pulsating dot perfectly centred inside the 'b' */}
-        <circle cx="360" cy="50" r="8" stroke="none" className="animate-pulse" style={{ fill: 'var(--accent-solid)' }} />
+        <circle cx="360" cy="50" r="8" stroke="none" className="animate-pulse" style={{ fill: 'var(--logo-dot)' }} />
       </svg>
     </span>
   );

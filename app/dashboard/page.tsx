@@ -630,7 +630,7 @@ export default function DashboardPage() {
           <StatCard
             title="Queue Alerts"
             value={managerAnalytics.queueAlertCount}
-            subtitle={managerAnalytics.queueAlertCount === 0 ? 'Smooth traffic across all stations' : 'High driver wait time reported'}
+            subtitle={managerAnalytics.queueAlertCount === 0 ? 'Smooth traffic across all stations' : 'Long customer wait times reported'}
             icon={AlertCircle}
             badge={managerAnalytics.queueAlertCount > 0 ? { text: 'Queues Active', variant: 'warning' } : { text: 'Optimal', variant: 'positive' }}
             colorTheme={managerAnalytics.queueAlertCount > 0 ? 'rose' : 'emerald'}

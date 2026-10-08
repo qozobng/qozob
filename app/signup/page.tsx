@@ -12,8 +12,8 @@ const ROLE_OPTIONS = [
   {
     value: 'User' as const,
     icon: User,
-    title: 'Driver',
-    text: 'Find fair prices, report what you pay and rate stations.',
+    title: 'Fuel buyer',
+    text: 'For drivers, generator users, homes and businesses. Find fair prices, report what you pay and rate stations.',
   },
   {
     value: 'Manager' as const,

@@ -6,14 +6,14 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { SITE } from '@/lib/site';
 
 const BENEFITS = [
-  { icon: Gauge, emoji: '⛽', title: 'Live pump prices', text: 'Real prices from drivers, station owners and the Qozob team.' },
+  { icon: Gauge, emoji: '⛽', title: 'Live pump prices', text: 'Real prices from the community, station owners and the Qozob team.' },
   { icon: Clock3, emoji: '⏱️', title: 'Skip the queue', text: 'See if there is a queue, or no fuel, before you set off.' },
   { icon: ShieldCheck, emoji: '✅', title: 'Stations you can trust', text: 'Verified owners and community pump-accuracy ratings.' },
 ];
 
 /**
  * Split-screen layout shared by Sign in and Create account.
- * Left: grape brand panel (headline, benefits, sample price card). Right: the form.
+ * Left: indigo brand panel (headline, benefits, sample price card). Right: the form.
  * On mobile the brand panel collapses into a compact header.
  */
 export function AuthShell({
@@ -31,9 +31,9 @@ export function AuthShell({
     <div className="min-h-screen grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] bg-canvas">
       {/* ===================== BRAND PANEL (desktop) ===================== */}
       <aside className="hidden lg:flex relative flex-col justify-between overflow-hidden bg-brand-grad text-on-brand p-10 xl:p-14">
-        {/* Soft mint + lilac glow blobs for a fresh, friendly feel */}
+        {/* Soft emerald + indigo glow blobs for a fresh, friendly feel */}
         <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-80 w-80 rounded-full bg-brand-accent opacity-25 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute bottom-10 -left-28 h-72 w-72 rounded-full bg-[#C084FC] opacity-25 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute bottom-10 -left-28 h-72 w-72 rounded-full bg-[#818CF8] opacity-25 blur-3xl" />
 
         <Link href="/" className="relative w-fit rounded-md" aria-label="Qozob home">
           <Wordmark tone="brand" size="lg" />
@@ -41,13 +41,13 @@ export function AuthShell({
 
         <div className="relative max-w-md">
           <p className="inline-flex items-center gap-2 rounded-full bg-on-brand/10 border border-on-brand/15 px-3 py-1 text-xs font-semibold text-brand-accent mb-5">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand-accent animate-pulse" aria-hidden /> Made for Nigerian drivers
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-accent animate-pulse" aria-hidden /> Made for Nigerians
           </p>
           <h2 className="text-4xl xl:text-[46px] font-extrabold tracking-tight leading-[1.08] text-on-brand">
             Find cheaper fuel near you <span aria-hidden>👋</span>
           </h2>
           <p className="mt-4 text-base leading-relaxed text-on-brand-muted">
-            Live PMS prices, queue updates and trusted stations, all shared by people like you.
+            Petrol prices today, with diesel, kerosene, CNG and LPG coming soon. Queue updates and trusted stations, shared by people like you.
           </p>
 
           <ul className="mt-10 space-y-4">

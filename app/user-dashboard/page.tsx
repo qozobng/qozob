@@ -273,7 +273,7 @@ function UserDashboardContent() {
             <p className="text-sm font-medium text-on-brand truncate mt-0.5">{user?.email}</p>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand-accent/15 text-brand-accent px-2 py-0.5 text-xs font-semibold">
               {currentRole === 'Manager' ? <ShieldCheck className="w-3 h-3" aria-hidden /> : <UserIcon className="w-3 h-3" aria-hidden />}
-              <span>{currentRole === 'User' ? 'Driver' : currentRole}</span>
+              <span>{currentRole === 'User' ? 'Community member' : currentRole}</span>
             </div>
           </div>
 
@@ -477,7 +477,7 @@ function UserDashboardContent() {
             <div>
               <h2 className="text-2xl sm:text-3xl font-semibold text-fg">My ratings</h2>
               <p className="text-fg-muted text-xs sm:text-sm mt-0.5">
-                Pump accuracy ratings you have shared with other drivers.
+                Pump accuracy ratings you have shared with the community.
               </p>
             </div>
 
@@ -665,9 +665,9 @@ function UserDashboardContent() {
                       </div>
                       {selectedRole === 'User' && <CheckCircle2 className="w-5 h-5 text-success" />}
                     </div>
-                    <h4 className="font-semibold text-fg text-sm mb-0.5">Everyday Driver / Motorist</h4>
+                    <h4 className="font-semibold text-fg text-sm mb-0.5">Everyday fuel buyer</h4>
                     <p className="text-xs text-fg-muted leading-relaxed">
-                      Find competitive prices, avoid congested queues, and rate pump calibration accuracy.
+                      For drivers, generator users, homes and businesses: find fair prices, avoid queues and rate pump accuracy.
                     </p>
                   </label>
 
