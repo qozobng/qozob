@@ -176,3 +176,4 @@ export function LgaOverlay({ prizeLabel = '\u20A610k' }: { prizeLabel?: string }
     </div>
   );
 }
+

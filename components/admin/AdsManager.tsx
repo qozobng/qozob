@@ -40,7 +40,12 @@ interface AdRow {
   impressions: number;
   clicks: number;
   created_at: string;
+  arcon_ref?: string | null;
+  advertiser_confirmed?: boolean;
 }
+
+const ARCON_MISSING_WARNING =
+  'This advert has no ARCON approval number. Under the ARCON Act 2022, adverts shown in Nigeria must be vetted by the Advertising Standards Panel before they appear. Show it anyway?';
 
 interface StatRow { ad_id: string; day: string; impressions: number; clicks: number }
 
@@ -155,6 +160,7 @@ export function AdsManager() {
 
   // ---- Actions ----
   const toggleActive = async (ad: AdRow) => {
+    if (!ad.is_active && !ad.arcon_ref && !window.confirm(ARCON_MISSING_WARNING)) return;
     setBusyId(ad.id);
     const { error } = await supabase.from('ads').update({ is_active: !ad.is_active }).eq('id', ad.id);
     setBusyId(null);
@@ -233,6 +239,9 @@ export function AdsManager() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold text-fg truncate">{ad.title}</p>
                       <span className={cx('inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold', STATUS_CLASS[st])}>{st}</span>
+                      {ad.arcon_ref
+                        ? <span className="inline-flex items-center rounded-full border border-success-line bg-success-soft text-on-success-soft px-2 py-0.5 text-xs font-semibold" title="ARCON approval number">ARCON {ad.arcon_ref}</span>
+                        : <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft text-on-warning-soft px-2 py-0.5 text-xs font-semibold">No ARCON ref</span>}
                     </div>
                     <p className="text-xs text-fg-muted mt-1">
                       {ad.advertiser ? `${ad.advertiser} · ` : ''}{PLACEMENT_LABEL[ad.placement]} · weight {ad.weight} · order {ad.sort_order}
@@ -282,6 +291,8 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
   const [weight, setWeight] = useState(ad?.weight || 5);
   const [sortOrder, setSortOrder] = useState(ad?.sort_order || 0);
   const [isActive, setIsActive] = useState(ad?.is_active ?? true);
+  const [arconRef, setArconRef] = useState(ad?.arcon_ref || '');
+  const [advertiserConfirmed, setAdvertiserConfirmed] = useState(ad?.advertiser_confirmed ?? false);
   const [files, setFiles] = useState<{ desktop?: File; mobile?: File }>({});
   const [previews, setPreviews] = useState<{ desktop?: string; mobile?: string }>({ desktop: ad?.desktop_image_url || undefined, mobile: ad?.mobile_image_url || undefined });
   const [warnings, setWarnings] = useState<{ desktop?: string; mobile?: string }>({});
@@ -325,6 +336,9 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
     const e = fromLocalInput(endsAt);
     if (!s) return setErr('Choose a start date.');
     if (e && new Date(e) <= new Date(s)) return setErr('The end date must be after the start date.');
+    const ref = arconRef.trim();
+    if (ref && (ref.length < 3 || ref.length > 80)) return setErr('The ARCON approval number should be 3 to 80 characters.');
+    if (isActive && !ref && !window.confirm(ARCON_MISSING_WARNING)) return;
 
     setSaving(true);
     try {
@@ -350,6 +364,8 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
         weight,
         sort_order: sortOrder,
         is_active: isActive,
+        arcon_ref: arconRef.trim() || null,
+        advertiser_confirmed: advertiserConfirmed,
         ...(uploaded.desktop ? { desktop_image_url: uploaded.desktop.url, desktop_image_path: uploaded.desktop.path } : {}),
         ...(uploaded.mobile ? { mobile_image_url: uploaded.mobile.url, mobile_image_path: uploaded.mobile.path } : {}),
       };
@@ -406,6 +422,15 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
             <label className={ui.label} htmlFor="ad-link">Link when tapped (optional)</label>
             <input id="ad-link" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} className={ui.input} placeholder="https://" inputMode="url" />
           </div>
+          <div>
+            <label className={ui.label} htmlFor="ad-arcon">ARCON approval number</label>
+            <input id="ad-arcon" value={arconRef} onChange={e => setArconRef(e.target.value)} maxLength={80} className={ui.input} placeholder="From the advertiser's ASP vetting certificate" autoComplete="off" />
+            <p className={ui.hint}>Ask the advertiser for their Advertising Standards Panel (ARCON) approval and keep a copy on file.</p>
+          </div>
+          <label className="sm:self-center flex items-start gap-3 text-sm text-fg rounded-xl border border-line p-3">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 accent-primary" checked={advertiserConfirmed} onChange={e => setAdvertiserConfirmed(e.target.checked)} />
+            <span>The advertiser has confirmed in writing that this advert is truthful, lawful and approved where required, and that they are responsible for its content.</span>
+          </label>
           <div className="sm:col-span-2">
             <label className={ui.label} htmlFor="ad-placement">Where to show it</label>
             <select id="ad-placement" value={placement} onChange={e => setPlacement(e.target.value as Placement)} className={ui.select}>

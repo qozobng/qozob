@@ -128,3 +128,4 @@ export async function recordPriceReport(
   if (error) return null;   // rewards not set up yet, or not signed in: the price itself is already saved
   return data as ReportResult;
 }
+

@@ -48,6 +48,17 @@ create table if not exists public.ads (
   constraint ads_dates check (ends_at is null or ends_at > starts_at)
 );
 
+-- ARCON compliance: every advert shown in Nigeria must be vetted by the Advertising Standards Panel
+-- (ARCON Act 2022). Keep the approval number and whether the advertiser confirmed the advert is lawful.
+alter table public.ads add column if not exists arcon_ref text;
+alter table public.ads add column if not exists advertiser_confirmed boolean not null default false;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'ads_arcon_ref_len' and conrelid = 'public.ads'::regclass) then
+    alter table public.ads add constraint ads_arcon_ref_len check (arcon_ref is null or char_length(arcon_ref) between 3 and 80);
+  end if;
+end $$;
+
 create index if not exists ads_live_idx on public.ads (is_active, starts_at, ends_at);
 
 alter table public.ads enable row level security;

@@ -171,3 +171,4 @@ export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { set
     </div>
   );
 }
+
