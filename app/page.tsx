@@ -20,6 +20,7 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager } from '@/lib/roles';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
+import { AdCarousel } from '@/components/AdCarousel';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
 
@@ -1165,10 +1166,8 @@ function QozobLanding() {
           </button>
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
-          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] border border-dashed border-brand-line rounded-2xl items-center justify-center mx-4">
-            <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">
-              Advertisement
-            </span>
+          <div className="hidden lg:flex flex-1 justify-center mx-4 min-w-0">
+            <AdCarousel placement="desktop_header" />
           </div>
 
           {/* THEME + USER PROFILE & MENU */}
@@ -1594,13 +1593,8 @@ function QozobLanding() {
 
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
       <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand-grad border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
-        <div className="w-full h-[60px] flex items-center justify-center relative overflow-hidden">
-           <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">Advertisement</span>
-           <div className="absolute bottom-1.5 flex gap-1.5" aria-hidden>
-             <div className="w-1.5 h-1.5 rounded-full bg-brand-accent"></div>
-             <div className="w-1.5 h-1.5 rounded-full bg-on-brand-muted/40"></div>
-             <div className="w-1.5 h-1.5 rounded-full bg-on-brand-muted/40"></div>
-           </div>
+        <div className="px-2 pt-1">
+          <AdCarousel placement="mobile_bottom" />
         </div>
       </div>
 

@@ -6,7 +6,7 @@ import {
   ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, 
   ExternalLink, RefreshCw, MapPin, UserPlus, Loader2, Building2, 
   TrendingUp, Fuel, AlertTriangle, Search, Filter, Download, ArrowUpRight,
-  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight
+  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight, Megaphone
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -18,11 +18,12 @@ import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
 import { RatingDistribution } from '@/components/analytics/RatingDistribution';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { AdsManager } from '@/components/admin/AdsManager';
 
 const supabase = createClient();
 
 type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
-type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations';
+type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads';
 
 interface StationRecord {
   station_id: string;
@@ -536,6 +537,11 @@ export default function AdminDashboard() {
             <Building2 className="w-4 h-4" aria-hidden />
             <span>Stations</span>
             <span className={countClass(activeTab === 'stations')}>{stations.length}</span>
+          </button>
+
+          <button role="tab" aria-selected={activeTab === 'ads'} onClick={() => setActiveTab('ads')} className={tabClass(activeTab === 'ads')}>
+            <Megaphone className="w-4 h-4" aria-hidden />
+            <span>Adverts</span>
           </button>
         </div>
       </nav>
@@ -1098,6 +1104,11 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
+
+        {/* =================================================================== */}
+        {/* TAB: ADVERTS */}
+        {/* =================================================================== */}
+        {activeTab === 'ads' && <AdsManager />}
 
       </main>
 
