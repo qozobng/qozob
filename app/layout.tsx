@@ -1,17 +1,21 @@
 import type { Metadata, Viewport } from 'next';
-import { Space_Grotesk } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
+import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
-// Load the modern, Gen-Z friendly "Space Grotesk" font globally
-const spaceGrotesk = Space_Grotesk({ 
+// Inter: clean, highly legible, the standard typeface for professional data-driven apps
+const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-space-grotesk', // used by Tailwind's `font-sans` (see globals.css)
+  variable: '--font-inter', // used by Tailwind's `font-sans` (see globals.css)
 });
 
-// Setup Viewport and Theme Color (Matches your Indigo-900 header)
+// Browser / phone status-bar colour follows the light or dark theme
 export const viewport: Viewport = {
-  themeColor: '#312e81',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#0F1B2D' },
+    { media: '(prefers-color-scheme: dark)', color: '#0A101C' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
@@ -98,8 +102,10 @@ export default function RootLayout({
   };
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Sets light/dark BEFORE the page paints, so there is no white flash in dark mode */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {/* Warm up connections to the map + data origins before React asks for them */}
         <link rel="preconnect" href="https://maps.googleapis.com" />
         <link rel="preconnect" href="https://maps.gstatic.com" crossOrigin="anonymous" />
@@ -112,7 +118,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${spaceGrotesk.className} ${spaceGrotesk.variable} antialiased`}>
+      <body className={`${inter.className} ${inter.variable} antialiased bg-canvas text-fg`}>
         {children}
       </body>
     </html>

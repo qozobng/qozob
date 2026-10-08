@@ -16,6 +16,8 @@ import {
 import { StatCard } from '@/components/analytics/StatCard';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
+import { Wordmark } from '@/components/Wordmark';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface RatedStationItem {
   station_id: string;
@@ -221,125 +223,104 @@ function UserDashboardContent() {
         value: bestPriceNearby,
         formattedValue: `₦${bestPriceNearby}/L`,
         secondaryLabel: `Save ₦${savingsEstimate.spreadPerLiter}/L`,
-        color: '#10b981',
+        color: 'var(--chart-pos)',
       },
       {
         label: 'National Average',
         value: nationalAvgPrice,
         formattedValue: `₦${nationalAvgPrice}/L`,
         secondaryLabel: 'Benchmark',
-        color: '#312e81',
+        color: 'var(--chart-1)',
       },
       {
         label: 'High Price Station',
         value: nationalAvgPrice + 45,
         formattedValue: `₦${nationalAvgPrice + 45}/L`,
         secondaryLabel: `Overpaying ₦${savingsEstimate.spreadPerLiter + 45}/L`,
-        color: '#f59e0b',
+        color: 'var(--chart-warn)',
       },
     ];
   }, [bestPriceNearby, nationalAvgPrice, savingsEstimate]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center w-full bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      <div className="min-h-screen flex items-center justify-center w-full bg-surface-2">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
       </div>
     );
   }
 
+  const sideTab = (active: boolean) =>
+    `w-full flex items-center justify-between gap-3 px-3 h-10 rounded-lg text-sm font-medium transition-colors ${
+      active ? 'bg-accent-solid text-on-accent' : 'text-on-brand-muted hover:bg-on-brand/5 hover:text-on-brand'
+    }`;
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans flex flex-col md:flex-row w-full pb-10">
+    <div className="min-h-screen bg-canvas text-fg font-sans flex flex-col md:flex-row w-full pb-10">
       
       {/* ======================= SIDEBAR NAVIGATION ======================= */}
-      <aside className="w-full md:w-64 bg-indigo-950 text-white flex flex-col md:min-h-screen shadow-xl z-10 shrink-0 border-r border-indigo-900">
-        <div className="p-6">
-          <h1 
-            className="text-2xl font-black tracking-tight text-emerald-400 cursor-pointer mb-6" 
-            onClick={() => router.push('/')}
-          >
-            Qozob.
-          </h1>
+      <aside className="w-full md:w-64 bg-brand text-on-brand flex flex-col md:min-h-screen z-10 shrink-0 md:border-r border-brand-line">
+        <div className="p-5 md:p-6">
+          <div className="flex items-center justify-between mb-6">
+            <button type="button" onClick={() => router.push('/')} aria-label="Qozob home" className="rounded-md">
+              <Wordmark tone="brand" size="md" />
+            </button>
+            <ThemeToggle tone="brand" />
+          </div>
           
-          <div className="bg-white/5 rounded-2xl p-4 border border-white/10 mb-6">
-            <span className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider block mb-1">Signed In</span>
-            <p className="text-xs font-bold text-white truncate">{user?.email}</p>
-            <div className="mt-2.5 inline-flex items-center gap-1.5 bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border border-emerald-500/30">
-              {currentRole === 'Manager' ? <ShieldCheck className="w-3 h-3" /> : <UserIcon className="w-3 h-3" />}
-              <span>{currentRole}</span>
+          <div className="rounded-lg p-3.5 border border-brand-line bg-brand-2 mb-6">
+            <span className="text-xs font-medium text-on-brand-muted block">Signed in as</span>
+            <p className="text-sm font-medium text-on-brand truncate mt-0.5">{user?.email}</p>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand-accent/15 text-brand-accent px-2 py-0.5 text-xs font-semibold">
+              {currentRole === 'Manager' ? <ShieldCheck className="w-3 h-3" aria-hidden /> : <UserIcon className="w-3 h-3" aria-hidden />}
+              <span>{currentRole === 'User' ? 'Driver' : currentRole}</span>
             </div>
           </div>
 
-          <nav className="flex flex-col gap-1.5">
-            <button 
-              onClick={() => setActiveTab('overview')} 
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'overview' ? 'bg-emerald-500 text-indigo-950 shadow-xs' : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Compass className="w-4 h-4" />
-              <span>Overview & Savings</span>
+          <nav className="flex flex-col gap-1" aria-label="Dashboard sections">
+            <button onClick={() => setActiveTab('overview')} className={sideTab(activeTab === 'overview')} aria-current={activeTab === 'overview' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Compass className="w-4 h-4" aria-hidden /> Overview</span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('contributions')} 
-              className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'contributions' ? 'bg-emerald-500 text-indigo-950 shadow-xs' : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Star className="w-4 h-4" />
-                <span>Pump Ratings</span>
-              </div>
+            <button onClick={() => setActiveTab('contributions')} className={sideTab(activeTab === 'contributions')} aria-current={activeTab === 'contributions' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Star className="w-4 h-4" aria-hidden /> My ratings</span>
               {userRatings.length > 0 && (
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === 'contributions' ? 'bg-indigo-950 text-white' : 'bg-white/10 text-emerald-300'}`}>
+                <span className={`min-w-5 h-5 px-1.5 inline-flex items-center justify-center rounded-full text-xs font-semibold tabular ${activeTab === 'contributions' ? 'bg-brand text-on-brand' : 'bg-brand-accent text-brand'}`}>
                   {userRatings.length}
                 </span>
               )}
             </button>
 
-            <button 
-              onClick={() => setActiveTab('watchlist')} 
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'watchlist' ? 'bg-emerald-500 text-indigo-950 shadow-xs' : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Bookmark className="w-4 h-4" />
-              <span>Favorite Stations</span>
+            <button onClick={() => setActiveTab('watchlist')} className={sideTab(activeTab === 'watchlist')} aria-current={activeTab === 'watchlist' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Bookmark className="w-4 h-4" aria-hidden /> Saved stations</span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('settings')} 
-              className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all ${
-                activeTab === 'settings' ? 'bg-emerald-500 text-indigo-950 shadow-xs' : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <Settings className="w-4 h-4" />
-              <span>Account Settings</span>
+            <button onClick={() => setActiveTab('settings')} className={sideTab(activeTab === 'settings')} aria-current={activeTab === 'settings' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Settings className="w-4 h-4" aria-hidden /> Settings</span>
             </button>
           </nav>
         </div>
 
-        <div className="mt-auto p-6 flex flex-col gap-2 border-t border-indigo-900/60">
+        <div className="mt-auto p-5 md:p-6 flex flex-col gap-1.5 border-t border-brand-line">
           {(currentRole === 'Manager' || currentRole === 'Admin' || isPending) && (
             <button 
               onClick={() => router.push('/dashboard')} 
-              className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black text-indigo-950 bg-emerald-400 hover:bg-emerald-300 transition-colors w-full shadow-sm"
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-on-accent bg-accent-solid hover:bg-accent-hover transition-colors w-full"
             >
-              <ShieldCheck className="w-4 h-4" /> Manager Portal
+              <ShieldCheck className="w-4 h-4" aria-hidden /> Station dashboard
             </button>
           )}
           <button 
             onClick={() => router.push('/')} 
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-indigo-200 hover:bg-white/5 hover:text-white transition-colors w-full"
+            className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-medium text-on-brand-muted hover:bg-on-brand/5 hover:text-on-brand transition-colors w-full"
           >
-            <MapIcon className="w-4 h-4" /> Live Map
+            <MapIcon className="w-4 h-4" aria-hidden /> Back to map
           </button>
           <button 
             onClick={handleSignOut} 
-            className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-rose-300 hover:bg-rose-500/10 transition-colors w-full"
+            className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-medium text-brand-danger hover:bg-on-brand/5 transition-colors w-full"
           >
-            <LogOut className="w-4 h-4" /> Sign Out
+            <LogOut className="w-4 h-4" aria-hidden /> Sign out
           </button>
         </div>
       </aside>
@@ -351,9 +332,9 @@ function UserDashboardContent() {
         {activeTab === 'overview' && (
           <div className="max-w-5xl flex flex-col gap-6 animate-in fade-in duration-300">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-indigo-950">Driver Intelligence</h2>
-              <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-                Track personal fuel savings, community reputation score, and verified pump accuracy reports.
+              <h2 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">Overview</h2>
+              <p className="text-fg-muted text-sm mt-1">
+                Your savings, contributions and the stations you rate.
               </p>
             </div>
 
@@ -362,7 +343,7 @@ function UserDashboardContent() {
               <StatCard
                 title="Community Rank"
                 value={userRank.title.split(' (')[0]}
-                subtitle={`${userRank.points} Scout Reputation Points`}
+                subtitle={`${userRank.points} contribution points`}
                 icon={Sparkles}
                 badge={{ text: 'Level Up', variant: 'positive' }}
                 colorTheme="indigo"
@@ -411,32 +392,32 @@ function UserDashboardContent() {
               </div>
 
               {/* Monthly Savings Calculator Card */}
-              <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+              <div className="bg-surface rounded-xl p-6 border border-line shadow-xs flex flex-col justify-between">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Refill Impact</span>
-                  <h4 className="text-base font-black text-indigo-950 mt-1">Smart Routing Payoff</h4>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  <span className="text-xs uppercase font-semibold text-fg-subtle tracking-wider">Refill Impact</span>
+                  <h4 className="text-base font-semibold text-fg mt-1">Smart Routing Payoff</h4>
+                  <p className="text-xs text-fg-muted mt-1 leading-relaxed">
                     By checking Qozob before refueling, you avoid stations with high markups or long queues.
                   </p>
                 </div>
 
-                <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 my-4 text-xs">
+                <div className="bg-success-soft rounded-xl p-4 border border-success-line my-4 text-xs">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-bold text-emerald-900">Savings per 50L Tank</span>
-                    <span className="font-black text-emerald-700 text-sm">₦{savingsEstimate.savingsPerTank50L.toLocaleString()}</span>
+                    <span className="font-semibold text-success">Savings per 50L Tank</span>
+                    <span className="font-semibold text-success text-sm">₦{savingsEstimate.savingsPerTank50L.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-emerald-200/60">
-                    <span className="font-bold text-emerald-900">4 Refills / Month</span>
-                    <span className="font-black text-emerald-700 text-sm">₦{savingsEstimate.monthlySavings.toLocaleString()}</span>
+                  <div className="flex justify-between items-center pt-2 border-t border-success-line">
+                    <span className="font-semibold text-success">4 Refills / Month</span>
+                    <span className="font-semibold text-success text-sm">₦{savingsEstimate.monthlySavings.toLocaleString()}</span>
                   </div>
                 </div>
 
                 <button
                   onClick={() => router.push('/')}
-                  className="w-full bg-indigo-950 hover:bg-indigo-900 text-white font-bold py-2.5 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                  className="w-full bg-primary hover:bg-primary-hover text-on-primary font-semibold py-2.5 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs"
                 >
-                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Find Cheapest Stations Near Me</span>
+                  <MapPin className="w-3.5 h-3.5" aria-hidden />
+                  <span>Find cheaper stations near me</span>
                 </button>
               </div>
             </div>
@@ -445,10 +426,10 @@ function UserDashboardContent() {
             {favoriteStations.length > 0 && (
               <div className="mt-2">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-black text-slate-800">Favorite Stations Quick-Watch</h3>
+                  <h3 className="text-lg font-semibold text-fg">Saved stations</h3>
                   <button 
                     onClick={() => setActiveTab('watchlist')}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                    className="text-xs font-semibold text-accent hover:text-fg"
                   >
                     View All ({favoriteStations.length})
                   </button>
@@ -456,28 +437,28 @@ function UserDashboardContent() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {favoriteStations.slice(0, 3).map((fav, i) => (
-                    <div key={i} className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+                    <div key={i} className="bg-surface rounded-xl p-4 border border-line shadow-xs flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start gap-2 mb-1">
-                          <h4 className="font-bold text-indigo-950 text-sm truncate">{fav.name}</h4>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                            fav.queue_status === 'No Queue' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                          <h4 className="font-semibold text-fg text-sm truncate">{fav.name}</h4>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                            fav.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
                           }`}>
                             {fav.queue_status || 'Smooth'}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 truncate mb-3">{fav.address}</p>
+                        <p className="text-xs text-fg-muted truncate mb-3">{fav.address}</p>
                       </div>
 
-                      <div className="flex justify-between items-center pt-3 border-t border-slate-100">
-                        <span className="text-lg font-black text-indigo-950 font-mono">
+                      <div className="flex justify-between items-center pt-3 border-t border-line">
+                        <span className="text-lg font-semibold text-fg font-mono">
                           {fav.price_pms ? `₦${fav.price_pms}` : 'Unset'}
                         </span>
                         <a
                           href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fav.name)}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
+                          className="text-xs font-semibold text-on-success-soft bg-success-soft hover:bg-success-soft px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
                         >
                           <Navigation className="w-3 h-3" /> Go
                         </a>
@@ -494,31 +475,31 @@ function UserDashboardContent() {
         {activeTab === 'contributions' && (
           <div className="max-w-4xl flex flex-col gap-6 animate-in fade-in duration-300">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-indigo-950">Pump Integrity & Meter Reviews</h2>
-              <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-                History of pump meter fairness ratings you have contributed to the driver community.
+              <h2 className="text-2xl sm:text-3xl font-semibold text-fg">My ratings</h2>
+              <p className="text-fg-muted text-xs sm:text-sm mt-0.5">
+                Pump accuracy ratings you have shared with other drivers.
               </p>
             </div>
 
             {userRatings.length === 0 ? (
-              <div className="bg-white border border-slate-200/80 rounded-3xl p-12 text-center shadow-xs">
-                <Star className="w-14 h-14 text-slate-300 mx-auto mb-3" />
-                <h4 className="text-base font-black text-indigo-950 mb-1">No ratings submitted yet</h4>
-                <p className="text-slate-500 text-xs max-w-sm mx-auto mb-5">
+              <div className="bg-surface border border-line rounded-xl p-12 text-center shadow-xs">
+                <Star className="w-14 h-14 text-fg-subtle mx-auto mb-3" />
+                <h4 className="text-base font-semibold text-fg mb-1">No ratings submitted yet</h4>
+                <p className="text-fg-muted text-xs max-w-sm mx-auto mb-5">
                   When you visit a filling station, rate their meter calibration accuracy directly from the station detail card on the map.
                 </p>
                 <button 
                   onClick={() => router.push('/')} 
-                  className="bg-indigo-950 hover:bg-indigo-900 text-white font-bold py-2.5 px-5 rounded-xl text-xs transition-colors shadow-sm"
+                  className="bg-primary hover:bg-primary-hover text-on-primary font-semibold py-2.5 px-5 rounded-lg text-xs transition-colors shadow-sm"
                 >
-                  Explore Stations on Map
+                  Explore the map
                 </button>
               </div>
             ) : (
-              <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
+              <div className="bg-surface rounded-xl shadow-xs border border-line overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                    <thead className="bg-surface-2 text-fg-muted font-semibold uppercase text-xs tracking-wider border-b border-line">
                       <tr>
                         <th className="px-6 py-4">Station</th>
                         <th className="px-6 py-4">Your Rating</th>
@@ -527,38 +508,38 @@ function UserDashboardContent() {
                         <th className="px-6 py-4 text-right">Action</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-line">
                       {userRatings.map((rating, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                        <tr key={idx} className="hover:bg-surface-2 transition-colors">
                           <td className="px-6 py-4">
-                            <span className="font-bold text-slate-900 block">{rating.station_name}</span>
-                            <span className="text-[11px] text-slate-500 truncate max-w-xs block">{rating.address}</span>
+                            <span className="font-semibold text-fg block">{rating.station_name}</span>
+                            <span className="text-xs text-fg-muted truncate max-w-xs block">{rating.address}</span>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="flex items-center gap-1 text-amber-500">
+                            <div className="flex items-center gap-1 text-warning">
                               {[1, 2, 3, 4, 5].map((s) => (
                                 <Star
                                   key={s}
                                   className={`w-3.5 h-3.5 ${
-                                    s <= rating.stars ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
+                                    s <= rating.stars ? 'fill-star text-star' : 'text-line-strong'
                                   }`}
                                 />
                               ))}
-                              <span className="ml-1 text-xs font-black text-slate-700">{rating.stars}.0</span>
+                              <span className="ml-1 text-xs font-semibold text-fg">{rating.stars}.0</span>
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="font-mono font-bold text-slate-800">
+                            <span className="font-mono font-semibold text-fg">
                               {rating.price_pms ? `₦${rating.price_pms}` : '—'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-slate-400">
+                          <td className="px-6 py-4 text-fg-subtle">
                             {new Date(rating.created_at).toLocaleDateString()}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <button
                               onClick={() => router.push(`/?select=${rating.station_id}`)}
-                              className="text-indigo-600 hover:text-indigo-800 font-bold text-xs"
+                              className="text-accent hover:text-fg font-semibold text-xs"
                             >
                               View on Map
                             </button>
@@ -577,41 +558,41 @@ function UserDashboardContent() {
         {activeTab === 'watchlist' && (
           <div className="max-w-4xl flex flex-col gap-6 animate-in fade-in duration-300">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-indigo-950">Favorite Stations Watchlist</h2>
-              <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-                Quick-access monitors for your everyday commuting and neighborhood filling stations.
+              <h2 className="text-2xl sm:text-3xl font-semibold text-fg">Saved stations</h2>
+              <p className="text-fg-muted text-xs sm:text-sm mt-0.5">
+                Quick access to the stations you use most.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {favoriteStations.map((station, i) => (
-                <div key={i} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+                <div key={i} className="bg-surface rounded-xl p-5 border border-line shadow-xs flex flex-col justify-between">
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-1.5">
-                      <h4 className="font-black text-indigo-950 text-base leading-tight">{station.name}</h4>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                        station.queue_status === 'No Queue' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                      <h4 className="font-semibold text-fg text-base leading-tight">{station.name}</h4>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                        station.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
                       }`}>
                         {station.queue_status || 'Smooth'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mb-4">{station.address}</p>
+                    <p className="text-xs text-fg-muted mb-4">{station.address}</p>
                   </div>
 
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex justify-between items-center mb-4">
+                  <div className="bg-surface-2 rounded-xl p-4 border border-line flex justify-between items-center mb-4">
                     <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Official Price</span>
-                      <span className="text-2xl font-black text-indigo-950 font-mono">
+                      <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Official Price</span>
+                      <span className="text-2xl font-semibold text-fg font-mono">
                         {station.price_pms ? `₦${station.price_pms}` : 'Unset'}
                       </span>
                     </div>
-                    <Fuel className="w-6 h-6 text-emerald-400" />
+                    <Fuel className="w-6 h-6 text-fg-subtle" aria-hidden />
                   </div>
 
                   <div className="flex gap-2">
                     <button
                       onClick={() => router.push(`/?select=${station.station_id}`)}
-                      className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl text-xs transition-colors"
+                      className="flex-1 bg-accent-soft hover:bg-surface-2 text-on-accent-soft font-semibold py-2.5 rounded-lg text-xs transition-colors"
                     >
                       Focus Map
                     </button>
@@ -619,9 +600,9 @@ function UserDashboardContent() {
                       href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(station.name)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5"
+                      className="bg-success-soft hover:bg-success-soft text-on-success-soft font-semibold px-4 py-2.5 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
                     >
-                      <Navigation className="w-3.5 h-3.5 text-emerald-600" /> Navigate
+                      <Navigation className="w-3.5 h-3.5 text-success" /> Navigate
                     </a>
                   </div>
                 </div>
@@ -634,18 +615,27 @@ function UserDashboardContent() {
         {activeTab === 'settings' && (
           <div className="max-w-3xl flex flex-col gap-6 animate-in fade-in duration-300">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-black text-indigo-950">Account Settings</h2>
-              <p className="text-slate-500 text-xs sm:text-sm mt-0.5">Manage credentials, permissions and station manager status.</p>
+              <h2 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">Settings</h2>
+              <p className="text-fg-muted text-xs sm:text-sm mt-0.5">Appearance, account access and station owner status.</p>
+            </div>
+
+            {/* APPEARANCE */}
+            <div className="bg-surface border border-line rounded-xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold text-fg">Appearance</h3>
+                <p className="text-sm text-fg-muted mt-0.5">Choose light or dark, or let Qozob follow your device.</p>
+              </div>
+              <ThemeToggle variant="segmented" />
             </div>
 
             {/* ROLE UPGRADE CARD */}
-            <div className="bg-white border border-slate-200/80 rounded-3xl overflow-hidden shadow-xs">
-              <div className="bg-indigo-50 p-6 border-b border-indigo-100">
-                <h3 className="text-base font-black text-indigo-950 flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-indigo-600" />
-                  <span>Platform Permissions & Roles</span>
+            <div className="bg-surface border border-line rounded-xl overflow-hidden shadow-xs">
+              <div className="bg-accent-soft p-6 border-b border-accent-line">
+                <h3 className="text-base font-semibold text-fg flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-accent" />
+                  <span>Account type</span>
                 </h3>
-                <p className="text-xs text-indigo-800 mt-1">
+                <p className="text-xs text-fg mt-1">
                   {canChangeRole
                     ? "Station owners and filling station operators can request Manager rights to publish official prices."
                     : "Your manager credentials have been verified by the Qozob administration."}
@@ -657,8 +647,8 @@ function UserDashboardContent() {
                   
                   {/* Everyday User */}
                   <label 
-                    className={`flex-1 relative flex flex-col p-5 cursor-pointer rounded-2xl border-2 transition-all ${
-                      selectedRole === 'User' ? 'border-emerald-500 bg-emerald-50/50 shadow-xs' : 'border-slate-200 bg-white hover:border-slate-300'
+                    className={`flex-1 relative flex flex-col p-5 cursor-pointer rounded-xl border-2 transition-all ${
+                      selectedRole === 'User' ? 'border-success bg-success-soft shadow-xs' : 'border-line bg-surface hover:border-line-strong'
                     }`}
                   >
                     <input 
@@ -670,21 +660,21 @@ function UserDashboardContent() {
                       className="sr-only" 
                     />
                     <div className="flex justify-between items-start mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === 'User' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                      <div className={`p-2 rounded-lg ${selectedRole === 'User' ? 'bg-success-soft text-on-success-soft' : 'bg-surface-2 text-fg-subtle'}`}>
                         <UserIcon className="w-5 h-5" />
                       </div>
-                      {selectedRole === 'User' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                      {selectedRole === 'User' && <CheckCircle2 className="w-5 h-5 text-success" />}
                     </div>
-                    <h4 className="font-black text-indigo-950 text-sm mb-0.5">Everyday Driver / Motorist</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <h4 className="font-semibold text-fg text-sm mb-0.5">Everyday Driver / Motorist</h4>
+                    <p className="text-xs text-fg-muted leading-relaxed">
                       Find competitive prices, avoid congested queues, and rate pump calibration accuracy.
                     </p>
                   </label>
 
                   {/* Station Manager */}
                   <label 
-                    className={`flex-1 relative flex flex-col p-5 cursor-pointer rounded-2xl border-2 transition-all ${
-                      selectedRole === 'Manager' ? 'border-indigo-600 bg-indigo-50/50 shadow-xs' : 'border-slate-200 bg-white hover:border-slate-300'
+                    className={`flex-1 relative flex flex-col p-5 cursor-pointer rounded-xl border-2 transition-all ${
+                      selectedRole === 'Manager' ? 'border-primary bg-accent-soft shadow-xs' : 'border-line bg-surface hover:border-line-strong'
                     }`}
                   >
                     <input 
@@ -696,13 +686,13 @@ function UserDashboardContent() {
                       className="sr-only" 
                     />
                     <div className="flex justify-between items-start mb-3">
-                      <div className={`p-2 rounded-xl ${selectedRole === 'Manager' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-400'}`}>
+                      <div className={`p-2 rounded-lg ${selectedRole === 'Manager' ? 'bg-accent-soft text-on-accent-soft' : 'bg-surface-2 text-fg-subtle'}`}>
                         <ShieldCheck className="w-5 h-5" />
                       </div>
-                      {selectedRole === 'Manager' && <CheckCircle2 className="w-5 h-5 text-indigo-600" />}
+                      {selectedRole === 'Manager' && <CheckCircle2 className="w-5 h-5 text-accent" />}
                     </div>
-                    <h4 className="font-black text-indigo-950 text-sm mb-0.5">Retail Station Manager</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed">
+                    <h4 className="font-semibold text-fg text-sm mb-0.5">Retail Station Manager</h4>
+                    <p className="text-xs text-fg-muted leading-relaxed">
                       Publish official PMS prices, verify CAC registration, and manage fleet branding.
                     </p>
                   </label>
@@ -710,11 +700,11 @@ function UserDashboardContent() {
 
                 {/* Status Box */}
                 {isPending && (
-                  <div className="mb-6 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 text-xs">
-                    <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="mb-6 flex items-start gap-3 bg-warning-soft border border-warning-line text-on-warning-soft rounded-xl p-4 text-xs">
+                    <Clock className="w-4 h-4 text-warning shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold">Manager Request Awaiting Approval</p>
-                      <p className="text-amber-800 mt-0.5">
+                      <p className="font-semibold">Manager Request Awaiting Approval</p>
+                      <p className="text-warning mt-0.5">
                         Submitted on {new Date(roleRequest!.created_at).toLocaleDateString()}. You will receive full manager privileges as soon as your claim is audited.
                       </p>
                     </div>
@@ -725,7 +715,7 @@ function UserDashboardContent() {
                   <button
                     onClick={handleUpdateRole}
                     disabled={isUpdatingRole}
-                    className="w-full bg-indigo-950 hover:bg-indigo-900 text-white font-black py-3 rounded-xl text-xs transition-colors shadow-sm disabled:opacity-50"
+                    className="w-full bg-primary hover:bg-primary-hover text-on-primary font-semibold py-3 rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50"
                   >
                     {isUpdatingRole ? 'Submitting Application...' : selectedRole === 'Manager' ? 'Submit Manager Access Request' : 'Withdraw Manager Request'}
                   </button>
@@ -744,8 +734,8 @@ function UserDashboardContent() {
 export default function UserDashboard() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      <div className="min-h-screen flex items-center justify-center bg-surface-2">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
       </div>
     }>
       <UserDashboardContent />

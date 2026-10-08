@@ -1,46 +1,264 @@
 @import "tailwindcss";
-/* Provides animate-in / fade-in / zoom-in-95 / slide-in-from-* utilities already used by modals, menus and toasts */
+/* Provides animate-in / fade-in / zoom-in-95 / slide-in-from-* utilities used by modals, menus and toasts */
 @import "tw-animate-css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Dark mode is driven by a `.dark` class on <html> (set before first paint by the script in layout.tsx),
+   so it can follow the device setting OR the user's manual choice. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* =====================================================================================
+   QOZOB DESIGN TOKENS — "Midnight & Champagne"
+   Every text/background pair below meets WCAG AA (4.5:1 for text, 3:1 for icons/large text)
+   in BOTH modes. Components use these tokens (bg-surface, text-fg, bg-primary …) instead of
+   raw Tailwind colours, so nothing can blend into its background when the theme changes.
+   ===================================================================================== */
+/* `.theme-light` pins a subtree to the light palette (used for markers and info windows,
+   which sit on the always-light Google map). */
+:root, .theme-light {
+  color-scheme: light;
+
+  /* Surfaces */
+  --canvas: #F7F5F0;          /* app background (warm ivory) */
+  --surface: #FFFFFF;         /* cards, modals, inputs */
+  --surface-2: #F2EFE8;       /* subtle fills, secondary buttons */
+  --surface-3: #E8E3D8;       /* hover / pressed fills */
+  --line: #E2DCCF;            /* hairline borders */
+  --line-strong: #C9C0AE;     /* input borders, dividers that must be seen */
+
+  /* Text */
+  --fg: #0E1525;              /* primary text            16.9:1 on surface */
+  --fg-muted: #474E60;        /* secondary text           8.4:1 on surface */
+  --fg-subtle: #5E6576;       /* captions, placeholders   5.9:1 on surface */
+
+  /* Primary action (buttons, selected states) */
+  --primary: #0F1B2D;
+  --primary-hover: #1D2B45;
+  --on-primary: #F7F5F0;
+
+  /* Brand surfaces (header, footer, sidebars, hero cards) — navy in both modes */
+  --brand: #0F1B2D;
+  --brand-2: #16243A;
+  --brand-line: #2A3956;
+  --on-brand: #F7F5F0;        /* 16.1:1 on brand */
+  --on-brand-muted: #B7C0D1;  /* 9.1:1 on brand */
+  --brand-accent: #D4B47A;    /* champagne on navy, 8.7:1 */
+  --brand-info: #9DB8F5;
+  --brand-danger: #FCA5A5;
+
+  /* Champagne accent */
+  --accent: #8A6A35;          /* accent text / links on light, 5.0:1 */
+  --accent-solid: #D4B47A;    /* champagne buttons */
+  --accent-hover: #E2C68F;
+  --on-accent: #0F1B2D;       /* 8.7:1 on champagne */
+  --accent-soft: #F4ECDD;
+  --on-accent-soft: #5C4520;  /* 7.6:1 */
+  --accent-line: #E3D3B4;
+
+  /* Status */
+  --success: #0F7B5F;  --success-soft: #E3F3EC;  --on-success-soft: #0B5E48;  --success-line: #B8DFCF;
+  --warning: #9A5B00;  --warning-soft: #FBF0DC;  --on-warning-soft: #6E4100;  --warning-line: #EED3A3;
+  --danger:  #B42318;  --danger-soft:  #FDECEA;  --on-danger-soft:  #8F1C13;  --danger-line:  #F5C2BC;
+  --info:    #1D4ED8;  --info-soft:    #E8EEFC;  --on-info-soft:    #1E3A8A;  --info-line:    #C3D3F7;
+  --on-solid: #FFFFFF;        /* text on solid success/danger/info fills */
+  --star: #B7791F;            /* rating stars, 3.6:1 (icon) */
+
+  /* Who reported a price (text on cards) */
+  --src-community: #B45309;
+  --src-owner: #1D4ED8;
+  --src-rep: #0F7B5F;
+
+  /* Charts */
+  --chart-1: #1F3A5F;
+  --chart-2: #B08D57;
+  --chart-pos: #0F7B5F;
+  --chart-warn: #C27C0E;
+  --chart-neg: #B42318;
+  --chart-neutral: #B9B3A6;
+  --chart-track: #EFEBE3;
+
+  --overlay: rgba(8, 12, 22, 0.6);
+  --shadow-color: 15 27 45;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --canvas: #0A101C;
+  --surface: #121A2A;
+  --surface-2: #18223A;
+  --surface-3: #212C47;
+  --line: #26314A;
+  --line-strong: #3A4868;
+
+  --fg: #F5F1E8;              /* 15.6:1 on surface */
+  --fg-muted: #B3BBCB;        /* 9.0:1 */
+  --fg-subtle: #959EB1;       /* 6.3:1 */
+
+  --primary: #D4B47A;         /* champagne becomes the action colour on dark */
+  --primary-hover: #E2C68F;
+  --on-primary: #0A101C;      /* 9.7:1 */
+
+  --brand: #0D1526;
+  --brand-2: #131D33;
+  --brand-line: #26314A;
+  --on-brand: #F5F1E8;
+  --on-brand-muted: #B3BBCB;
+  --brand-accent: #D4B47A;
+  --brand-info: #9DB8F5;
+  --brand-danger: #FCA5A5;
+
+  --accent: #D4B47A;
+  --accent-solid: #D4B47A;
+  --accent-hover: #E2C68F;
+  --on-accent: #0A101C;
+  --accent-soft: #2A2618;
+  --on-accent-soft: #E9D3A6;
+  --accent-line: #4A4128;
+
+  --success: #34D399;  --success-soft: #0F2A22;  --on-success-soft: #A7F3D0;  --success-line: #1F4D3E;
+  --warning: #F5B544;  --warning-soft: #2E2410;  --on-warning-soft: #FCD9A0;  --warning-line: #5A4520;
+  --danger:  #F87171;  --danger-soft:  #3A1517;  --on-danger-soft:  #FECACA;  --danger-line:  #6B2A2D;
+  --info:    #8AB0FF;  --info-soft:    #15213D;  --on-info-soft:    #C7D7FE;  --info-line:    #2B3F6B;
+  --on-solid: #0A101C;
+  --star: #F5B544;
+
+  --src-community: #F5B544;
+  --src-owner: #8AB0FF;
+  --src-rep: #34D399;
+
+  --chart-1: #8AA6D6;
+  --chart-2: #D4B47A;
+  --chart-pos: #34D399;
+  --chart-warn: #F5B544;
+  --chart-neg: #F87171;
+  --chart-neutral: #4A5672;
+  --chart-track: #1C2640;
+
+  --overlay: rgba(2, 4, 10, 0.72);
+  --shadow-color: 0 0 0;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  /* Was var(--font-geist-sans), which is never defined in this project — point at the Space Grotesk font from layout.tsx */
-  --font-sans: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+  --color-brand-line: var(--brand-line);
+  --color-on-brand: var(--on-brand);
+  --color-on-brand-muted: var(--on-brand-muted);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-info: var(--brand-info);
+  --color-brand-danger: var(--brand-danger);
+
+  --color-accent: var(--accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent-soft: var(--on-accent-soft);
+  --color-accent-line: var(--accent-line);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-on-success-soft: var(--on-success-soft);
+  --color-success-line: var(--success-line);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-on-warning-soft: var(--on-warning-soft);
+  --color-warning-line: var(--warning-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger-soft: var(--on-danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-on-info-soft: var(--on-info-soft);
+  --color-info-line: var(--info-line);
+  --color-on-solid: var(--on-solid);
+  --color-star: var(--star);
+
+  --color-background: var(--canvas);
+  --color-foreground: var(--fg);
+
+  /* Inter, loaded in layout.tsx */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Floating background blobs on the login/signup pages (classes were used but never defined) */
-  --animate-blob: blob 7s infinite;
-  @keyframes blob {
-    0%, 100% { transform: translate(0px, 0px) scale(1); }
-    33% { transform: translate(30px, -50px) scale(1.1); }
-    66% { transform: translate(-20px, 20px) scale(0.9); }
-  }
+  /* Moderate, professional rounding (8–12px) */
+  --radius-md: 0.5rem;   /* 8px  */
+  --radius-lg: 0.625rem; /* 10px */
+  --radius-xl: 0.75rem;  /* 12px */
+  --radius-2xl: 0.875rem;
+  --radius-3xl: 1rem;
 }
 
-@utility animation-delay-2000 {
-  animation-delay: 2s;
+/* Prices and figures line up neatly */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--canvas);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-feature-settings: "cv11" 1, "ss01" 1;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Respect users who prefer less motion (pulsing markers, blobs, pings) */
+/* Visible, on-brand keyboard focus everywhere */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-solid);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-solid);
+  color: var(--on-accent);
+}
+
+/* Native form controls (select menus, date pickers) follow the theme */
+select, input, textarea {
+  color: var(--fg);
+}
+select option {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+/* Google Maps info windows keep their white chrome in both modes; give them a neutral frame */
+.gm-style .gm-style-iw-c {
+  border-radius: 12px !important;
+  padding: 0 !important;
+  box-shadow: 0 10px 30px rgb(var(--shadow-color) / 0.18) !important;
+}
+.gm-style .gm-style-iw-d {
+  overflow: auto !important;
+}
+
+/* Smooth theme switching without animating every element on first paint */
+.theme-transition, .theme-transition * {
+  transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease !important;
+}
+
+/* Respect users who prefer less motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

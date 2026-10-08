@@ -16,6 +16,8 @@ import { StatCard } from '@/components/analytics/StatCard';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
 import { RatingDistribution } from '@/components/analytics/RatingDistribution';
+import { Wordmark } from '@/components/Wordmark';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const supabase = createClient();
 
@@ -317,7 +319,7 @@ export default function AdminDashboard() {
           value: avg,
           formattedValue: `₦${avg}/L`,
           secondaryLabel: `${data.count} stations`,
-          color: avg <= 900 ? '#10b981' : avg <= 940 ? '#312e81' : '#f59e0b',
+          color: avg <= 900 ? 'var(--chart-pos)' : avg <= 940 ? 'var(--chart-1)' : 'var(--chart-warn)',
         };
       })
       .sort((a, b) => a.value - b.value)
@@ -325,18 +327,18 @@ export default function AdminDashboard() {
 
     // Price spread distribution (Buckets)
     const priceBuckets: BarItem[] = [
-      { label: '< ₦890', value: prices.filter(p => p < 890).length, color: '#10b981' },
-      { label: '₦890 - ₦920', value: prices.filter(p => p >= 890 && p < 920).length, color: '#047857' },
-      { label: '₦920 - ₦950', value: prices.filter(p => p >= 920 && p < 950).length, color: '#312e81' },
-      { label: '₦950 - ₦980', value: prices.filter(p => p >= 950 && p < 980).length, color: '#f59e0b' },
-      { label: '> ₦980', value: prices.filter(p => p >= 980).length, color: '#dc2626' },
+      { label: '< ₦890', value: prices.filter(p => p < 890).length, color: 'var(--chart-pos)' },
+      { label: '₦890 - ₦920', value: prices.filter(p => p >= 890 && p < 920).length, color: 'var(--chart-pos)' },
+      { label: '₦920 - ₦950', value: prices.filter(p => p >= 920 && p < 950).length, color: 'var(--chart-1)' },
+      { label: '₦950 - ₦980', value: prices.filter(p => p >= 950 && p < 980).length, color: 'var(--chart-warn)' },
+      { label: '> ₦980', value: prices.filter(p => p >= 980).length, color: 'var(--chart-neg)' },
     ];
 
     // Ownership Donut
     const ownershipDonut: DonutSegment[] = [
-      { label: 'Claimed & Managed', value: claimedCount, color: '#10b981' },
-      { label: 'Verified by Rep', value: Math.max(0, verifiedCount - claimedCount), color: '#312e81' },
-      { label: 'Community Sourced', value: Math.max(0, totalStations - verifiedCount), color: '#cbd5e1' },
+      { label: 'Claimed & Managed', value: claimedCount, color: 'var(--chart-pos)' },
+      { label: 'Verified by Rep', value: Math.max(0, verifiedCount - claimedCount), color: 'var(--chart-1)' },
+      { label: 'Community Sourced', value: Math.max(0, totalStations - verifiedCount), color: 'var(--chart-neutral)' },
     ];
 
     // Queue Donut
@@ -346,10 +348,10 @@ export default function AdminDashboard() {
     const other = Math.max(0, totalStations - noQueue - moderate - severe);
 
     const queueDonut: DonutSegment[] = [
-      { label: 'No Queue (Smooth)', value: noQueue, color: '#10b981' },
-      { label: 'Moderate Queue', value: moderate, color: '#f59e0b' },
-      { label: 'Severe Queue', value: severe, color: '#dc2626' },
-      { label: 'Unknown / Closed', value: other, color: '#94a3b8' },
+      { label: 'No Queue (Smooth)', value: noQueue, color: 'var(--chart-pos)' },
+      { label: 'Moderate Queue', value: moderate, color: 'var(--chart-warn)' },
+      { label: 'Severe Queue', value: severe, color: 'var(--chart-neg)' },
+      { label: 'Unknown / Closed', value: other, color: 'var(--chart-neutral)' },
     ];
 
     return {
@@ -402,25 +404,25 @@ export default function AdminDashboard() {
   // =========================================================================
   if (authState !== 'admin') {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-100">
-          <div className="w-16 h-16 bg-indigo-900 rounded-full flex items-center justify-center mb-6 mx-auto shadow-inner">
+      <div className="min-h-screen bg-surface-2 flex items-center justify-center p-4">
+        <div className="bg-surface p-8 rounded-xl shadow-lg max-w-sm w-full border border-line">
+          <div className="w-16 h-16 bg-brand rounded-full flex items-center justify-center mb-6 mx-auto shadow-inner">
             {authState === 'checking' ? (
-              <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+              <Loader2 className="w-8 h-8 text-brand-accent animate-spin" />
             ) : (
-              <Lock className="w-8 h-8 text-emerald-400" />
+              <Lock className="w-8 h-8 text-brand-accent" />
             )}
           </div>
-          <h1 className="text-2xl font-black text-center text-indigo-950 mb-2">Admin Portal</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-center text-fg mb-2">Admin sign in</h1>
 
           {authState === 'checking' && (
-            <p className="text-center text-slate-500 text-sm">Verifying database permissions...</p>
+            <p className="text-center text-fg-muted text-sm">Checking your access…</p>
           )}
 
           {authState === 'signed-out' && (
             <>
-              <p className="text-center text-slate-500 text-sm mb-6">Sign in with your verified Qozob admin account to access command controls.</p>
-              <Link href="/login?redirect=admin" className="block w-full text-center bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all shadow-md hover:shadow-lg">
+              <p className="text-center text-fg-muted text-sm mb-6">Sign in with your Qozob admin account to continue.</p>
+              <Link href="/login?redirect=admin" className="block w-full text-center bg-primary hover:bg-primary-hover text-on-primary font-semibold py-4 rounded-lg transition-all shadow-md hover:shadow-lg">
                 Sign In
               </Link>
             </>
@@ -428,15 +430,15 @@ export default function AdminDashboard() {
 
           {authState === 'not-admin' && (
             <>
-              <p className="text-center text-slate-500 text-sm mb-2">
-                <strong className="text-slate-700">{adminEmail}</strong> is not an authorized administrator.
+              <p className="text-center text-fg-muted text-sm mb-2">
+                <strong className="text-fg">{adminEmail}</strong> is not an authorized administrator.
               </p>
-              <p className="text-center text-slate-400 text-xs mb-6">Admin permissions are governed at the database level.</p>
+              <p className="text-center text-fg-subtle text-xs mb-6">Admin permissions are governed at the database level.</p>
               <div className="flex flex-col gap-2">
-                <button onClick={handleLogout} className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-3 rounded-xl transition-all">
+                <button onClick={handleLogout} className="w-full bg-primary hover:bg-primary-hover text-on-primary font-semibold py-3 rounded-lg transition-all">
                   Sign in with another account
                 </button>
-                <Link href="/" className="w-full text-center text-sm font-bold text-slate-500 hover:text-indigo-700 py-2">Return to Map</Link>
+                <Link href="/" className="w-full text-center text-sm font-semibold text-fg-muted hover:text-fg py-2">Back to map</Link>
               </div>
             </>
           )}
@@ -448,126 +450,92 @@ export default function AdminDashboard() {
   // =========================================================================
   // PRODUCTION ADMIN DASHBOARD UI
   // =========================================================================
+  const tabClass = (active: boolean) =>
+    `relative flex items-center gap-2 px-3.5 h-10 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
+      active ? 'bg-accent-solid text-on-accent' : 'text-on-brand-muted hover:bg-on-brand/5 hover:text-on-brand'
+    }`;
+  const countClass = (active: boolean) =>
+    `min-w-5 h-5 px-1.5 inline-flex items-center justify-center rounded-full text-xs font-semibold tabular ${
+      active ? 'bg-brand text-on-brand' : 'bg-brand-accent text-brand'
+    }`;
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-16">
+    <div className="min-h-screen bg-canvas font-sans text-fg pb-16">
       
       {/* Top Navbar */}
-      <nav className="bg-indigo-950 text-white sticky top-0 z-50 border-b border-indigo-900 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl">
-              <ShieldCheck className="w-6 h-6 text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black tracking-tight text-white leading-none">Qozob Admin</h1>
-                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-500/30 uppercase tracking-widest">
-                  Verified Active
-                </span>
-              </div>
-              <span className="text-[11px] text-indigo-300 font-medium">National Operations Command</span>
+      <nav className="bg-brand text-on-brand sticky top-0 z-50 border-b border-brand-line">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link href="/" aria-label="Qozob home" className="rounded-md shrink-0">
+              <Wordmark tone="brand" size="md" />
+            </Link>
+            <span className="h-6 w-px bg-brand-line hidden sm:block" aria-hidden />
+            <div className="hidden sm:block min-w-0">
+              <p className="text-sm font-semibold text-on-brand leading-tight">Admin</p>
+              <p className="text-xs text-on-brand-muted leading-tight">Platform operations</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2">
             <Link
               href="/"
               target="_blank"
-              className="hidden md:flex items-center gap-1.5 text-xs font-bold text-indigo-200 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-2 rounded-xl transition-colors border border-white/10"
+              className="hidden md:inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium text-on-brand-muted hover:text-on-brand hover:bg-on-brand/5 border border-on-brand/15 transition-colors"
             >
-              <span>Public Map</span>
-              <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
+              Public map
+              <ArrowUpRight className="w-3.5 h-3.5" aria-hidden />
             </Link>
 
             <button
               onClick={fetchData}
               disabled={isLoading}
-              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white px-3.5 py-2 rounded-xl font-bold text-xs transition-colors border border-white/10 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium text-on-brand border border-on-brand/15 bg-on-brand/5 hover:bg-on-brand/10 transition-colors disabled:opacity-60"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh Data</span>
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} aria-hidden />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
 
-            <div className="h-6 w-px bg-indigo-900 hidden sm:block" />
+            <ThemeToggle tone="brand" />
 
-            <div className="flex items-center gap-2">
-              <span className="hidden lg:inline text-xs font-bold text-indigo-200 truncate max-w-[180px]">
-                {adminEmail}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-1.5 text-indigo-300 hover:text-rose-200 hover:bg-rose-500/10 p-2 sm:px-3 sm:py-2 rounded-xl text-xs font-bold transition-colors"
-                title="Sign out"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Exit</span>
-              </button>
-            </div>
+            <span className="h-6 w-px bg-brand-line hidden sm:block" aria-hidden />
+
+            <span className="hidden lg:inline text-sm text-on-brand-muted truncate max-w-[180px]">
+              {adminEmail}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-on-brand-muted hover:text-on-brand hover:bg-on-brand/5 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" aria-hidden />
+              <span className="hidden sm:inline">Sign out</span>
+            </button>
           </div>
         </div>
 
         {/* Tab Navigation Bar */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-2 overflow-x-auto border-t border-indigo-900/60 pt-1 pb-2">
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-              activeTab === 'analytics'
-                ? 'bg-emerald-500 text-indigo-950 shadow-sm'
-                : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Overview & Analytics</span>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1.5 overflow-x-auto border-t border-brand-line py-2" role="tablist">
+          <button role="tab" aria-selected={activeTab === 'analytics'} onClick={() => setActiveTab('analytics')} className={tabClass(activeTab === 'analytics')}>
+            <BarChart3 className="w-4 h-4" aria-hidden />
+            <span>Overview</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('claims')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-              activeTab === 'claims'
-                ? 'bg-emerald-500 text-indigo-950 shadow-sm'
-                : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>Station Claims</span>
-            {pendingClaims.length > 0 && (
-              <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
-                activeTab === 'claims' ? 'bg-indigo-950 text-white' : 'bg-amber-400 text-indigo-950'
-              }`}>
-                {pendingClaims.length}
-              </span>
-            )}
+          <button role="tab" aria-selected={activeTab === 'claims'} onClick={() => setActiveTab('claims')} className={tabClass(activeTab === 'claims')}>
+            <FileText className="w-4 h-4" aria-hidden />
+            <span>Station claims</span>
+            {pendingClaims.length > 0 && <span className={countClass(activeTab === 'claims')}>{pendingClaims.length}</span>}
           </button>
 
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-              activeTab === 'requests'
-                ? 'bg-emerald-500 text-indigo-950 shadow-sm'
-                : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Manager Requests</span>
-            {pendingRequests.length > 0 && (
-              <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
-                activeTab === 'requests' ? 'bg-indigo-950 text-white' : 'bg-indigo-400 text-indigo-950'
-              }`}>
-                {pendingRequests.length}
-              </span>
-            )}
+          <button role="tab" aria-selected={activeTab === 'requests'} onClick={() => setActiveTab('requests')} className={tabClass(activeTab === 'requests')}>
+            <UserPlus className="w-4 h-4" aria-hidden />
+            <span>Manager requests</span>
+            {pendingRequests.length > 0 && <span className={countClass(activeTab === 'requests')}>{pendingRequests.length}</span>}
           </button>
 
-          <button
-            onClick={() => setActiveTab('stations')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-              activeTab === 'stations'
-                ? 'bg-emerald-500 text-indigo-950 shadow-sm'
-                : 'text-indigo-200 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Station Directory ({stations.length})</span>
+          <button role="tab" aria-selected={activeTab === 'stations'} onClick={() => setActiveTab('stations')} className={tabClass(activeTab === 'stations')}>
+            <Building2 className="w-4 h-4" aria-hidden />
+            <span>Stations</span>
+            <span className={countClass(activeTab === 'stations')}>{stations.length}</span>
           </button>
         </div>
       </nav>
@@ -584,13 +552,13 @@ export default function AdminDashboard() {
             {/* Header Title */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black text-indigo-950">Platform Intelligence</h2>
-                <p className="text-slate-500 text-xs sm:text-sm">Real-time telemetry across stations, prices, queue health and verification queues.</p>
+                <h2 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">Overview</h2>
+                <p className="text-fg-muted text-sm mt-1">Stations, prices, queues and items waiting for review.</p>
               </div>
 
               {(pendingClaims.length > 0 || pendingRequests.length > 0) && (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-800 px-3.5 py-2 rounded-xl text-xs font-bold">
-                  <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <div className="flex items-center gap-2 bg-warning-soft border border-warning-line text-on-warning-soft px-3.5 py-2 rounded-lg text-xs font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
                   <span>{pendingClaims.length + pendingRequests.length} items require review</span>
                 </div>
               )}
@@ -651,8 +619,8 @@ export default function AdminDashboard() {
             {/* Analytics Row 1: Brand Comparison + Price Buckets */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <BarChart
-                title="Brand PMS Price Benchmark (₦/Litre)"
-                subtitle="Average PMS price per retail brand across tracked Nigerian stations"
+                title="Average PMS price by brand (₦/L)"
+                subtitle="Across all tracked stations"
                 data={analytics.brandBars}
                 layout="horizontal"
                 valuePrefix=""
@@ -660,8 +628,8 @@ export default function AdminDashboard() {
               />
 
               <BarChart
-                title="PMS Price Spread Distribution"
-                subtitle="Number of filling stations within each price bracket"
+                title="Price ranges"
+                subtitle="Number of stations in each price band"
                 data={analytics.priceBuckets}
                 layout="vertical"
                 valueSuffix=" stations"
@@ -671,16 +639,16 @@ export default function AdminDashboard() {
             {/* Analytics Row 2: Ownership Donut + Queue Donut + Pump Rating */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <DonutChart
-                title="Station Ownership Breakdown"
-                subtitle="Manager claims vs verified rep vs community"
+                title="Who reports prices"
+                subtitle="Station owners, Qozob reps and the community"
                 data={analytics.ownershipDonut}
                 centerLabel={analytics.totalStations.toLocaleString()}
                 centerSub="Stations"
               />
 
               <DonutChart
-                title="Operational Queue Status"
-                subtitle="Live driver wait times and queue states"
+                title="Queue status"
+                subtitle="Latest reports from drivers"
                 data={analytics.queueDonut}
                 centerLabel={analytics.totalStations.toLocaleString()}
                 centerSub="Outlets"
@@ -689,36 +657,36 @@ export default function AdminDashboard() {
               <RatingDistribution
                 averageRating={analytics.avgAccuracy}
                 totalVotes={analytics.totalVotes}
-                title="Pump Meter Accuracy"
-                subtitle="Driver community reviews on fuel calibration"
+                title="Pump accuracy"
+                subtitle="Average driver rating across all stations"
               />
             </div>
 
             {/* Quick Action Banner */}
-            <div className="bg-indigo-900 rounded-3xl p-6 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm border border-indigo-800">
+            <div className="bg-brand rounded-xl p-6 text-on-brand flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-brand-line">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center shrink-0 border border-emerald-500/30">
-                  <ShieldCheck className="w-6 h-6 text-emerald-400" />
+                <div className="w-11 h-11 bg-brand-2 rounded-lg flex items-center justify-center shrink-0 border border-brand-line">
+                  <ShieldCheck className="w-5 h-5 text-brand-accent" aria-hidden />
                 </div>
                 <div>
-                  <h4 className="text-base font-black text-white">Database Guard Active</h4>
-                  <p className="text-xs text-indigo-200 mt-0.5">
-                    Row Level Security (RLS) is guarding station updates and claims. All administrative actions execute via signed database functions.
+                  <h4 className="text-base font-semibold text-on-brand">Data protection is on</h4>
+                  <p className="text-sm text-on-brand-muted mt-0.5">
+                    Database rules control who can change prices and claims. Admin actions run through secure, audited functions.
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => setActiveTab('claims')}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-indigo-950 font-black px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm"
+                  className="h-10 px-4 rounded-lg bg-accent-solid hover:bg-accent-hover text-on-accent text-sm font-semibold transition-colors"
                 >
-                  Review Pending Claims ({pendingClaims.length})
+                  Review claims ({pendingClaims.length})
                 </button>
                 <button
                   onClick={() => setActiveTab('stations')}
-                  className="bg-white/10 hover:bg-white/15 text-white font-bold px-4 py-2.5 rounded-xl text-xs transition-colors border border-white/10"
+                  className="h-10 px-4 rounded-lg bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors border border-on-brand/15"
                 >
-                  Explore Directory
+                  View stations
                 </button>
               </div>
             </div>
@@ -732,51 +700,51 @@ export default function AdminDashboard() {
           <div className="flex flex-col gap-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-end">
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black text-indigo-950 mb-1">Station Ownership Claims</h2>
-                <p className="text-slate-500 text-xs sm:text-sm">Verify Corporate Affairs Commission (CAC) certificates and approve retail managers.</p>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-fg mb-1">Station claims</h2>
+                <p className="text-fg-muted text-xs sm:text-sm">Check CAC certificates and approve station owners.</p>
               </div>
-              <span className="text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 rounded-xl">
+              <span className="text-xs font-semibold bg-warning-soft text-on-warning-soft border border-warning-line px-3 py-1.5 rounded-lg">
                 {pendingClaims.length} Pending Review
               </span>
             </div>
 
             {/* Pending Claims Cards */}
             {isLoading ? (
-              <div className="p-16 text-center text-slate-400 font-bold animate-pulse">Loading claims from secure database...</div>
+              <div className="p-16 text-center text-fg-subtle font-semibold animate-pulse">Loading claims…</div>
             ) : pendingClaims.length === 0 ? (
-              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80 shadow-xs">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h4 className="text-lg font-black text-indigo-950 mb-1">Queue is Clear</h4>
-                <p className="text-slate-500 text-xs">All submitted station ownership claims have been processed.</p>
+              <div className="bg-surface rounded-xl p-12 text-center border border-line shadow-xs">
+                <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-3" />
+                <h4 className="text-lg font-semibold text-fg mb-1">All caught up</h4>
+                <p className="text-fg-muted text-xs">All submitted station ownership claims have been processed.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {pendingClaims.map(claim => (
-                  <div key={claim.id} className="bg-white rounded-3xl p-6 shadow-xs border border-amber-200 relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute top-0 right-0 bg-amber-100 text-amber-900 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-wider">
+                  <div key={claim.id} className="bg-surface rounded-xl p-6 shadow-xs border border-warning-line relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 bg-warning-soft text-on-warning-soft text-xs font-semibold uppercase px-3 py-1 rounded-bl-lg tracking-wider">
                       Pending Review
                     </div>
 
                     <div>
-                      <h4 className="font-black text-indigo-950 text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
-                      <p className="text-xs font-bold text-slate-500 mb-2 leading-snug">{claim.address}</p>
-                      <p className="text-[10px] text-slate-400 mb-4 flex items-center gap-1">
+                      <h4 className="font-semibold text-fg text-xl pr-20 leading-tight mb-1">{claim.station_name}</h4>
+                      <p className="text-xs font-semibold text-fg-muted mb-2 leading-snug">{claim.address}</p>
+                      <p className="text-xs text-fg-subtle mb-4 flex items-center gap-1">
                         <Clock className="w-3 h-3"/> Submitted {new Date(claim.created_at).toLocaleDateString()}
                       </p>
 
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 mb-4 text-xs">
+                      <div className="bg-surface-2 rounded-xl p-4 border border-line mb-4 text-xs">
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Applicant</span>
-                            <span className="font-bold text-slate-800 truncate block">{claim.applicant_name}</span>
+                            <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Applicant</span>
+                            <span className="font-semibold text-fg truncate block">{claim.applicant_name}</span>
                           </div>
                           <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone</span>
-                            <span className="font-bold text-slate-800 truncate block">{claim.phone_number}</span>
+                            <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Phone</span>
+                            <span className="font-semibold text-fg truncate block">{claim.phone_number}</span>
                           </div>
-                          <div className="col-span-2 pt-2 border-t border-slate-200">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">CAC Reg Number</span>
-                            <span className="font-bold text-slate-900 font-mono text-sm">{claim.business_reg_number}</span>
+                          <div className="col-span-2 pt-2 border-t border-line">
+                            <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">CAC Reg Number</span>
+                            <span className="font-semibold text-fg font-mono text-sm">{claim.business_reg_number}</span>
                           </div>
                         </div>
                       </div>
@@ -788,7 +756,7 @@ export default function AdminDashboard() {
                           type="button"
                           onClick={() => openDocument(`claim-${claim.id}`, claim.document_url)}
                           disabled={!claim.document_url || openingDocId === `claim-${claim.id}`}
-                          className="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-xs disabled:opacity-50"
+                          className="flex items-center justify-center gap-1.5 bg-accent-soft hover:bg-surface-2 text-on-accent-soft font-semibold py-2.5 rounded-lg transition-colors border border-accent-line text-xs shadow-xs disabled:opacity-50"
                         >
                           {openingDocId === `claim-${claim.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                           <span>View CAC Doc</span>
@@ -801,9 +769,9 @@ export default function AdminDashboard() {
                             : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(claim.station_name)}`}
                           target="_blank" 
                           rel="noopener noreferrer" 
-                          className="flex items-center justify-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 rounded-xl transition-colors border border-slate-200 text-xs shadow-xs"
+                          className="flex items-center justify-center gap-1.5 bg-surface-2 hover:bg-surface-3 text-fg font-semibold py-2.5 rounded-lg transition-colors border border-line text-xs shadow-xs"
                         >
-                          <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                          <MapPin className="w-3.5 h-3.5 text-success" />
                           <span>Check Map</span>
                           <ExternalLink className="w-3 h-3 opacity-50"/>
                         </a>
@@ -813,14 +781,14 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleApproveClaim(claim)}
                           disabled={isProcessing}
-                          className="flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2.5 rounded-xl transition-colors disabled:opacity-50 text-xs shadow-xs"
+                          className="flex items-center justify-center gap-1.5 bg-primary hover:bg-primary-hover text-on-primary font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 text-xs shadow-xs"
                         >
                           <CheckCircle className="w-4 h-4" /> Approve
                         </button>
                         <button
                           onClick={() => handleRejectClaim(claim)}
                           disabled={isProcessing}
-                          className="flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50 text-xs border border-rose-200"
+                          className="flex items-center justify-center gap-1.5 bg-danger-soft hover:bg-danger-soft text-on-danger-soft font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 text-xs border border-danger-line"
                         >
                           <XCircle className="w-4 h-4" /> Reject
                         </button>
@@ -834,11 +802,11 @@ export default function AdminDashboard() {
             {/* Historical Claims Table */}
             {pastClaims.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-lg font-black text-slate-800 mb-3">Claim Review History ({pastClaims.length})</h3>
-                <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
+                <h3 className="text-lg font-semibold text-fg mb-3">Claim Review History ({pastClaims.length})</h3>
+                <div className="bg-surface rounded-xl shadow-xs border border-line overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                      <thead className="bg-surface-2 text-fg-muted font-semibold uppercase text-xs tracking-wider border-b border-line">
                         <tr>
                           <th className="px-6 py-3.5">Station Name</th>
                           <th className="px-6 py-3.5">Applicant / RC</th>
@@ -846,17 +814,17 @@ export default function AdminDashboard() {
                           <th className="px-6 py-3.5 text-right">Review Status</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
+                      <tbody className="divide-y divide-line">
                         {pastClaims.map(claim => (
-                          <tr key={claim.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="px-6 py-3.5 font-bold text-slate-800">{claim.station_name}</td>
-                            <td className="px-6 py-3.5 text-slate-600">
-                              {claim.applicant_name} <span className="text-slate-400 font-mono">({claim.business_reg_number})</span>
+                          <tr key={claim.id} className="hover:bg-surface-2 transition-colors">
+                            <td className="px-6 py-3.5 font-semibold text-fg">{claim.station_name}</td>
+                            <td className="px-6 py-3.5 text-fg-muted">
+                              {claim.applicant_name} <span className="text-fg-subtle font-mono">({claim.business_reg_number})</span>
                             </td>
-                            <td className="px-6 py-3.5 text-slate-400">{new Date(claim.created_at).toLocaleDateString()}</td>
+                            <td className="px-6 py-3.5 text-fg-subtle">{new Date(claim.created_at).toLocaleDateString()}</td>
                             <td className="px-6 py-3.5 text-right">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                claim.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                                claim.status === 'Approved' ? 'bg-success-soft text-on-success-soft' : 'bg-danger-soft text-on-danger-soft'
                               }`}>
                                 {claim.status}
                               </span>
@@ -879,52 +847,52 @@ export default function AdminDashboard() {
           <div className="flex flex-col gap-6 animate-in fade-in duration-300">
             <div className="flex justify-between items-end">
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black text-indigo-950 mb-1">Manager Access Requests</h2>
-                <p className="text-slate-500 text-xs sm:text-sm">Review applications from station representatives seeking permission to update station prices.</p>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-fg mb-1">Manager Access Requests</h2>
+                <p className="text-fg-muted text-xs sm:text-sm">Review applications from station representatives seeking permission to update station prices.</p>
               </div>
-              <span className="text-xs font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 px-3 py-1.5 rounded-xl">
+              <span className="text-xs font-semibold bg-accent-soft text-on-accent-soft border border-accent-line px-3 py-1.5 rounded-lg">
                 {pendingRequests.length} Pending Approval
               </span>
             </div>
 
             {isLoading ? (
-              <div className="p-16 text-center text-slate-400 font-bold animate-pulse">Loading manager requests...</div>
+              <div className="p-16 text-center text-fg-subtle font-semibold animate-pulse">Loading manager requests...</div>
             ) : pendingRequests.length === 0 ? (
-              <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80 shadow-xs">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-                <h4 className="text-lg font-black text-indigo-950 mb-1">No Pending Requests</h4>
-                <p className="text-slate-500 text-xs">All user applications for Manager status have been handled.</p>
+              <div className="bg-surface rounded-xl p-12 text-center border border-line shadow-xs">
+                <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-3" />
+                <h4 className="text-lg font-semibold text-fg mb-1">No Pending Requests</h4>
+                <p className="text-fg-muted text-xs">All user applications for Manager status have been handled.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {pendingRequests.map(req => (
-                  <div key={req.id} className="bg-white rounded-3xl p-6 shadow-xs border border-indigo-200 relative overflow-hidden flex flex-col justify-between">
-                    <div className="absolute top-0 right-0 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-wider">
+                  <div key={req.id} className="bg-surface rounded-xl p-6 shadow-xs border border-accent-line relative overflow-hidden flex flex-col justify-between">
+                    <div className="absolute top-0 right-0 bg-accent-soft text-on-accent-soft text-xs font-semibold uppercase px-3 py-1 rounded-bl-lg tracking-wider">
                       Role Application
                     </div>
 
                     <div>
-                      <h4 className="font-black text-indigo-950 text-lg pr-24 leading-tight mb-1">
+                      <h4 className="font-semibold text-fg text-lg pr-24 leading-tight mb-1">
                         {req.full_name || req.email || 'Unnamed user'}
                       </h4>
-                      <p className="text-xs font-bold text-slate-500 mb-1 truncate">{req.email}</p>
-                      <p className="text-[10px] text-slate-400 mb-4 flex items-center gap-1">
+                      <p className="text-xs font-semibold text-fg-muted mb-1 truncate">{req.email}</p>
+                      <p className="text-xs text-fg-subtle mb-4 flex items-center gap-1">
                         <Clock className="w-3 h-3"/> Requested {new Date(req.created_at).toLocaleDateString()}
                       </p>
 
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 mb-4 text-xs grid grid-cols-2 gap-3">
+                      <div className="bg-surface-2 rounded-xl p-4 border border-line mb-4 text-xs grid grid-cols-2 gap-3">
                         <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Company</span>
-                          <span className="font-bold text-slate-800 truncate block">{req.company_name || '—'}</span>
+                          <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Company</span>
+                          <span className="font-semibold text-fg truncate block">{req.company_name || '—'}</span>
                         </div>
                         <div>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Phone</span>
-                          <span className="font-bold text-slate-800 truncate block">{req.phone || '—'}</span>
+                          <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Phone</span>
+                          <span className="font-semibold text-fg truncate block">{req.phone || '—'}</span>
                         </div>
                         {req.note && (
-                          <div className="col-span-2 pt-2 border-t border-slate-200">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Note</span>
-                            <span className="text-slate-700 text-xs leading-relaxed">{req.note}</span>
+                          <div className="col-span-2 pt-2 border-t border-line">
+                            <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Note</span>
+                            <span className="text-fg text-xs leading-relaxed">{req.note}</span>
                           </div>
                         )}
                       </div>
@@ -936,7 +904,7 @@ export default function AdminDashboard() {
                           type="button"
                           onClick={() => openDocument(`req-${req.id}`, req.document_url)}
                           disabled={openingDocId === `req-${req.id}`}
-                          className="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-xs mb-1 disabled:opacity-50"
+                          className="flex items-center justify-center gap-1.5 bg-accent-soft hover:bg-surface-2 text-on-accent-soft font-semibold py-2.5 rounded-lg transition-colors border border-accent-line text-xs shadow-xs mb-1 disabled:opacity-50"
                         >
                           {openingDocId === `req-${req.id}` ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
                           <span>View Verification File</span>
@@ -948,14 +916,14 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleReviewRoleRequest(req, 'Approved')}
                           disabled={isProcessing}
-                          className="flex items-center justify-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2.5 rounded-xl transition-colors disabled:opacity-50 text-xs shadow-xs"
+                          className="flex items-center justify-center gap-1.5 bg-primary hover:bg-primary-hover text-on-primary font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 text-xs shadow-xs"
                         >
                           <CheckCircle className="w-4 h-4" /> Grant Role
                         </button>
                         <button
                           onClick={() => handleReviewRoleRequest(req, 'Rejected')}
                           disabled={isProcessing}
-                          className="flex items-center justify-center gap-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 rounded-xl transition-colors disabled:opacity-50 text-xs border border-rose-200"
+                          className="flex items-center justify-center gap-1.5 bg-danger-soft hover:bg-danger-soft text-on-danger-soft font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 text-xs border border-danger-line"
                         >
                           <XCircle className="w-4 h-4" /> Decline
                         </button>
@@ -975,29 +943,29 @@ export default function AdminDashboard() {
           <div className="flex flex-col gap-6 animate-in fade-in duration-300">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
               <div>
-                <h2 className="text-2xl sm:text-3xl font-black text-indigo-950 mb-1">Station Directory</h2>
-                <p className="text-slate-500 text-xs sm:text-sm">Search, audit and manage live fuel retail outlets nationwide.</p>
+                <h2 className="text-2xl sm:text-3xl font-semibold text-fg mb-1">Station Directory</h2>
+                <p className="text-fg-muted text-xs sm:text-sm">Search, audit and manage live fuel retail outlets nationwide.</p>
               </div>
 
               <button
                 onClick={handleExportCSV}
-                className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs transition-colors"
+                className="flex items-center gap-2 bg-surface hover:bg-surface-2 border border-line text-fg font-semibold text-xs px-4 py-2.5 rounded-lg shadow-xs transition-colors"
               >
-                <Download className="w-4 h-4 text-slate-500" />
+                <Download className="w-4 h-4 text-fg-muted" />
                 <span>Export CSV ({filteredStations.length})</span>
               </button>
             </div>
 
             {/* Filter Bar */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row gap-3 items-center">
+            <div className="bg-surface rounded-xl p-4 border border-line shadow-xs flex flex-col md:flex-row gap-3 items-center">
               <div className="relative flex-1 w-full">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-fg-subtle absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Search stations by name, brand or street address..."
                   value={stationSearch}
                   onChange={e => setStationSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 focus:bg-white transition-all font-medium"
+                  className="w-full pl-10 pr-4 py-2 text-xs bg-surface-2 border border-line rounded-lg focus:outline-none focus:border-primary focus:bg-surface transition-all font-medium"
                 />
               </div>
 
@@ -1005,7 +973,7 @@ export default function AdminDashboard() {
                 <select
                   value={filterBrand}
                   onChange={e => setFilterBrand(e.target.value)}
-                  className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-indigo-600"
+                  className="text-xs bg-surface-2 border border-line rounded-lg px-3 py-2 font-medium focus:outline-none focus:border-primary"
                 >
                   <option value="all">All Brands</option>
                   <option value="nn">NNPC</option>
@@ -1024,7 +992,7 @@ export default function AdminDashboard() {
                 <select
                   value={filterStatus}
                   onChange={e => setFilterStatus(e.target.value)}
-                  className="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-indigo-600"
+                  className="text-xs bg-surface-2 border border-line rounded-lg px-3 py-2 font-medium focus:outline-none focus:border-primary"
                 >
                   <option value="all">All Statuses</option>
                   <option value="verified">Verified Only</option>
@@ -1036,10 +1004,10 @@ export default function AdminDashboard() {
             </div>
 
             {/* Stations Directory Table */}
-            <div className="bg-white rounded-3xl shadow-xs border border-slate-200 overflow-hidden">
+            <div className="bg-surface rounded-xl shadow-xs border border-line overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                  <thead className="bg-surface-2 text-fg-muted font-semibold uppercase text-xs tracking-wider border-b border-line">
                     <tr>
                       <th className="px-6 py-4">Station</th>
                       <th className="px-6 py-4">PMS Price</th>
@@ -1049,47 +1017,47 @@ export default function AdminDashboard() {
                       <th className="px-6 py-4 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-line">
                     {filteredStations.slice(0, 100).map(station => (
-                      <tr key={station.station_id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr key={station.station_id} className="hover:bg-surface-2 transition-colors">
                         <td className="px-6 py-4">
-                          <p className="font-bold text-slate-900 leading-snug">{station.name}</p>
-                          <p className="text-[11px] text-slate-500 truncate max-w-xs">{station.address}</p>
+                          <p className="font-semibold text-fg leading-snug">{station.name}</p>
+                          <p className="text-xs text-fg-muted truncate max-w-xs">{station.address}</p>
                         </td>
                         <td className="px-6 py-4">
                           {station.price_pms ? (
-                            <span className="font-black text-indigo-950 font-mono text-sm">
+                            <span className="font-semibold text-fg font-mono text-sm">
                               ₦{station.price_pms}
                             </span>
                           ) : (
-                            <span className="text-slate-400 font-medium italic">Unreported</span>
+                            <span className="text-fg-subtle font-medium italic">Unreported</span>
                           )}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            station.queue_status === 'No Queue' ? 'bg-emerald-50 text-emerald-700' :
-                            station.queue_status === 'Moderate Queue' ? 'bg-amber-50 text-amber-700' :
-                            station.queue_status === 'Long Queue' ? 'bg-rose-50 text-rose-700' :
-                            'bg-slate-100 text-slate-600'
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            station.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' :
+                            station.queue_status === 'Moderate Queue' ? 'bg-warning-soft text-on-warning-soft' :
+                            station.queue_status === 'Long Queue' ? 'bg-danger-soft text-on-danger-soft' :
+                            'bg-surface-2 text-fg-muted'
                           }`}>
                             {station.queue_status || 'Unknown'}
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="font-bold text-slate-700">
+                          <span className="font-semibold text-fg">
                             {station.pump_accuracy ? `${Number(station.pump_accuracy).toFixed(1)} ★` : '—'}
                           </span>
                           {station.accuracy_votes ? (
-                            <span className="text-[10px] text-slate-400 block font-normal">
+                            <span className="text-xs text-fg-subtle block font-normal">
                               ({station.accuracy_votes} votes)
                             </span>
                           ) : null}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${
-                            station.verified ? 'text-emerald-700' : 'text-slate-500'
+                          <span className={`inline-flex items-center gap-1 text-xs font-semibold ${
+                            station.verified ? 'text-success' : 'text-fg-muted'
                           }`}>
-                            {station.verified ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : null}
+                            {station.verified ? <CheckCircle2 className="w-3.5 h-3.5 text-success" /> : null}
                             {station.claim_status === 'Claimed' ? 'Claimed' : station.verified ? 'Verified' : 'Community'}
                           </span>
                         </td>
@@ -1101,7 +1069,7 @@ export default function AdminDashboard() {
                                 setNewPrice(station.price_pms ? String(station.price_pms) : '');
                                 setNewQueue(station.queue_status || 'Unknown');
                               }}
-                              className="text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors"
+                              className="text-on-accent-soft hover:text-on-accent-soft bg-accent-soft hover:bg-surface-2 px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors"
                             >
                               Edit
                             </button>
@@ -1109,7 +1077,7 @@ export default function AdminDashboard() {
                               href={`https://www.google.com/maps/search/?api=1&query=${station.lat},${station.lng}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                              className="p-1.5 text-fg-subtle hover:text-fg-muted hover:bg-surface-3 rounded-lg transition-colors"
                               title="View on Google Maps"
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
@@ -1123,7 +1091,7 @@ export default function AdminDashboard() {
               </div>
 
               {filteredStations.length > 100 && (
-                <div className="p-4 bg-slate-50 border-t border-slate-100 text-center text-xs text-slate-500">
+                <div className="p-4 bg-surface-2 border-t border-line text-center text-xs text-fg-muted">
                   Showing first 100 of {filteredStations.length} matching stations. Use search above to narrow results.
                 </div>
               )}
@@ -1135,32 +1103,32 @@ export default function AdminDashboard() {
 
       {/* QUICK EDIT MODAL */}
       {editingStation && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col gap-4">
+        <div className="fixed inset-0 bg-[var(--overlay)] backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-surface rounded-xl p-6 max-w-md w-full shadow-xl border border-line flex flex-col gap-4">
             <div>
-              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Admin Quick Edit</span>
-              <h3 className="text-xl font-black text-indigo-950 mt-0.5">{editingStation.name}</h3>
-              <p className="text-xs text-slate-500 truncate">{editingStation.address}</p>
+              <span className="text-xs uppercase font-semibold text-fg-subtle tracking-wider">Admin Quick Edit</span>
+              <h3 className="text-xl font-semibold text-fg mt-0.5">{editingStation.name}</h3>
+              <p className="text-xs text-fg-muted truncate">{editingStation.address}</p>
             </div>
 
             <div className="flex flex-col gap-3">
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">PMS Fuel Price (₦ / Litre)</label>
+                <label className="text-xs font-semibold text-fg block mb-1">PMS Fuel Price (₦ / Litre)</label>
                 <input
                   type="number"
                   placeholder="e.g. 910"
                   value={newPrice}
                   onChange={e => setNewPrice(e.target.value)}
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 font-mono font-bold"
+                  className="w-full px-4 py-2.5 text-sm bg-surface-2 border border-line rounded-lg focus:outline-none focus:border-primary font-mono font-semibold"
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Queue Status</label>
+                <label className="text-xs font-semibold text-fg block mb-1">Queue Status</label>
                 <select
                   value={newQueue}
                   onChange={e => setNewQueue(e.target.value)}
-                  className="w-full px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-indigo-600 font-bold"
+                  className="w-full px-4 py-2.5 text-xs bg-surface-2 border border-line rounded-lg focus:outline-none focus:border-primary font-semibold"
                 >
                   <option value="No Queue">No Queue (Fast)</option>
                   <option value="Moderate Queue">Moderate Queue</option>
@@ -1170,17 +1138,17 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 mt-2">
+            <div className="flex items-center gap-2 pt-2 border-t border-line mt-2">
               <button
                 onClick={() => setEditingStation(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+                className="flex-1 py-2.5 text-xs font-semibold text-fg-muted hover:bg-surface-3 rounded-lg transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveStation}
                 disabled={isSavingStation}
-                className="flex-1 py-2.5 text-xs font-black bg-indigo-950 hover:bg-indigo-900 text-white rounded-xl transition-colors shadow-sm disabled:opacity-50"
+                className="flex-1 py-2.5 text-xs font-semibold bg-primary hover:bg-primary-hover text-on-primary rounded-lg transition-colors shadow-sm disabled:opacity-50"
               >
                 {isSavingStation ? 'Saving...' : 'Update & Verify'}
               </button>

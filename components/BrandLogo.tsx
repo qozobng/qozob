@@ -41,7 +41,7 @@ function BrandLogoBase({ name, customLogoUrl, size, imgClassName = "", textClass
 
   return (
     <div className="w-full h-full rounded-full flex items-center justify-center" style={{ backgroundColor: color }}>
-      <span className={`text-white font-black tracking-tighter leading-none ${textClassName || 'text-[10px]'}`}>{text}</span>
+      <span className={`text-white font-bold tracking-tight leading-none ${textClassName || 'text-xs'}`}>{text}</span>
     </div>
   );
 }

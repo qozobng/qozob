@@ -3,17 +3,44 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
-import { Droplet, Loader2, Lock, Mail, User, Building2, ArrowRight, UploadCloud, CheckCircle2 } from 'lucide-react';
+import { Loader2, Lock, Mail, User, Building2, ArrowRight, CheckCircle2, AlertCircle, Eye, EyeOff, Check } from 'lucide-react';
 import Link from 'next/link';
+import { AuthShell } from '@/components/AuthShell';
+import { ui, cx } from '@/lib/ui';
+
+const ROLE_OPTIONS = [
+  {
+    value: 'User' as const,
+    icon: User,
+    title: 'Driver',
+    text: 'Find fair prices, report what you pay and rate stations.',
+  },
+  {
+    value: 'Manager' as const,
+    icon: Building2,
+    title: 'Station owner',
+    text: 'Claim your station, publish official prices and see insights.',
+  },
+];
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-4">
+      <legend className="text-sm font-semibold text-fg mb-3">{title}</legend>
+      {children}
+    </fieldset>
+  );
+}
 
 export default function SignupPage() {
   const router = useRouter();
   const supabase = createClient();
-  
+
   const [role, setRole] = useState<'User' | 'Manager'>('User');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // Form Fields
   const [firstName, setFirstName] = useState("");
@@ -26,7 +53,7 @@ export default function SignupPage() {
   const [address, setAddress] = useState("");
   const [state, setState] = useState("");
   const [country, setCountry] = useState("Nigeria");
-  
+
   // Manager Only Fields
   const [companyName, setCompanyName] = useState("");
   const [cacFile, setCacFile] = useState<File | null>(null);
@@ -37,7 +64,7 @@ export default function SignupPage() {
     setErrorMsg("");
 
     if (role === 'Manager' && (!companyName || !cacFile)) {
-      setErrorMsg("Station Owners must provide a Company Name and CAC Document.");
+      setErrorMsg("Station owners must provide a registered company name and CAC certificate.");
       setLoading(false);
       return;
     }
@@ -68,7 +95,7 @@ export default function SignupPage() {
       if (role === 'Manager' && cacFile && authData.user) {
         const fileExt = cacFile.name.split('.').pop();
         const fileName = `${authData.user.id}/cac_registration_${Date.now()}.${fileExt}`;
-        
+
         const { error: uploadError } = await supabase.storage
           .from('cac_documents')
           .upload(fileName, cacFile);
@@ -85,7 +112,7 @@ export default function SignupPage() {
         }
       }
 
-      setSuccessMsg("Account created successfully! Please sign in.");
+      setSuccessMsg("Account created. Taking you to sign in…");
       setTimeout(() => router.push('/login'), 2500);
 
     } catch (err: any) {
@@ -96,143 +123,199 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 font-sans relative overflow-hidden py-12">
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-emerald-400 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-indigo-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000"></div>
-
-      <div className="w-full max-w-2xl relative z-10">
-        <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-3xl font-black tracking-tighter text-indigo-950 hover:opacity-80 transition-opacity">
-            <Droplet className="w-8 h-8 text-emerald-500 fill-emerald-500" />
-            Qozob.
-          </Link>
-          <p className="text-slate-500 mt-2 font-medium">Join the community. Make an impact.</p>
+    <AuthShell
+      wide
+      title="Create your account"
+      subtitle="It takes about a minute. Station owners will need a CAC certificate for verification."
+    >
+      {errorMsg && (
+        <div role="alert" className={cx(ui.alertError, 'mb-6')}>
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+          <span>{errorMsg}</span>
         </div>
+      )}
+      {successMsg && (
+        <div role="status" className={cx(ui.alertSuccess, 'mb-6')}>
+          <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 p-8">
-          {errorMsg && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-bold mb-6 text-center border border-red-100 flex items-center justify-center gap-2">
-              {errorMsg}
-            </div>
-          )}
-          {successMsg && (
-            <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl text-sm font-bold mb-6 text-center border border-emerald-100 flex items-center justify-center gap-2">
-              <CheckCircle2 className="w-5 h-5" /> {successMsg}
-            </div>
-          )}
+      <form onSubmit={handleSignup} className="space-y-8">
 
-          <form onSubmit={handleSignup} className="space-y-6">
-            
-            {/* ROLE SELECTOR */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">How are you using Qozob?</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button type="button" onClick={() => setRole('User')} className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${role === 'User' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200'}`}>
-                  <User className={`w-6 h-6 mb-2 ${role === 'User' ? 'text-emerald-500' : 'text-slate-400'}`} />
-                  <span className="text-xs font-bold">Everyday User</span>
+        {/* ROLE SELECTOR */}
+        <fieldset>
+          <legend className="text-sm font-semibold text-fg mb-3">I am signing up as</legend>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup">
+            {ROLE_OPTIONS.map(({ value, icon: Icon, title, text }) => {
+              const active = role === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setRole(value)}
+                  className={cx(
+                    'relative flex items-start gap-3 text-left p-4 rounded-xl border transition-colors',
+                    active
+                      ? 'border-primary bg-surface ring-2 ring-accent-solid/40'
+                      : 'border-line-strong bg-surface hover:bg-surface-2'
+                  )}
+                >
+                  <span className={cx(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg',
+                    active ? 'bg-primary text-on-primary' : 'bg-surface-3 text-fg-muted'
+                  )}>
+                    <Icon className="h-5 w-5" aria-hidden />
+                  </span>
+                  <span className="pr-6">
+                    <span className="block text-sm font-semibold text-fg">{title}</span>
+                    <span className="block text-sm text-fg-muted mt-0.5">{text}</span>
+                  </span>
+                  <span className={cx(
+                    'absolute top-4 right-4 flex h-5 w-5 items-center justify-center rounded-full border',
+                    active ? 'bg-primary border-primary text-on-primary' : 'border-line-strong'
+                  )} aria-hidden>
+                    {active && <Check className="h-3 w-3" strokeWidth={3} />}
+                  </span>
                 </button>
-                <button type="button" onClick={() => setRole('Manager')} className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${role === 'Manager' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-100 bg-slate-50 text-slate-500 hover:border-slate-200'}`}>
-                  <Building2 className={`w-6 h-6 mb-2 ${role === 'Manager' ? 'text-indigo-500' : 'text-slate-400'}`} />
-                  <span className="text-xs font-bold">Station Owner</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="h-px bg-slate-100 w-full my-6"></div>
-
-            {/* PERSONAL DETAILS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">First Name *</label>
-                <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="John" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Middle Name</label>
-                <input type="text" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Optional" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Last Name *</label>
-                <input type="text" required value={lastName} onChange={(e) => setLastName(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Doe" />
-              </div>
-            </div>
-
-            {/* CONTACT DETAILS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Email Address *</label>
-                <div className="relative">
-                  <Mail className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
-                  <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="you@example.com" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Phone Number *</label>
-                <div className="flex gap-2">
-                  <select value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} className="w-1/3 px-2 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
-                    <option value="+234">NG (+234)</option>
-                    <option value="+1">US (+1)</option>
-                    <option value="+44">UK (+44)</option>
-                  </select>
-                  <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} className="w-2/3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="801 234 5678" />
-                </div>
-              </div>
-            </div>
-
-            {/* LOCATION DETAILS */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Country *</label>
-                <input type="text" required value={country} onChange={(e) => setCountry(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Nigeria" />
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">State / Region *</label>
-                <input type="text" required value={state} onChange={(e) => setState(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Lagos" />
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Address</label>
-                <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="Optional" />
-              </div>
-            </div>
-
-            {/* MANAGER SPECIFIC DETAILS */}
-            {role === 'Manager' && (
-              <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-4 animate-in fade-in slide-in-from-bottom-4">
-                <h3 className="text-sm font-black text-indigo-900 uppercase flex items-center gap-2">
-                  <Building2 className="w-4 h-4" /> Station Owner Verification
-                </h3>
-                <div>
-                  <label className="block text-xs font-bold text-indigo-800 uppercase mb-2">Registered Company Name *</label>
-                  <input type="text" required value={companyName} onChange={(e) => setCompanyName(e.target.value)} className="w-full px-4 py-3 bg-white border border-indigo-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. Qozob Energy Ltd." />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-indigo-800 uppercase mb-2">Upload CAC Certificate (PDF/JPG) *</label>
-                  <input type="file" required accept=".pdf, image/jpeg, image/png" onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} className="w-full bg-white border border-indigo-200 rounded-xl p-2 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer" />
-                </div>
-              </div>
-            )}
-
-            {/* SECURITY */}
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Password *</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-3.5 w-4 h-4 text-slate-400" />
-                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 outline-none" placeholder="••••••••" minLength={6} />
-              </div>
-            </div>
-
-            <button type="submit" disabled={loading} className={`w-full text-white font-black py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70 mt-4 ${role === 'Manager' ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20' : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'}`}>
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Complete Registration"}
-            </button>
-          </form>
-
-          <div className="mt-8 text-center text-sm text-slate-500">
-            Already have an account?{' '}
-            <Link href="/login" className="font-bold text-indigo-600 hover:text-indigo-500 transition-colors inline-flex items-center gap-1">
-              Sign in <ArrowRight className="w-3 h-3" />
-            </Link>
+              );
+            })}
           </div>
+        </fieldset>
+
+        {/* PERSONAL DETAILS */}
+        <Section title="Your details">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="firstName" className={ui.label}>First name</label>
+              <input id="firstName" type="text" autoComplete="given-name" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className={ui.input} placeholder="Chidi" />
+            </div>
+            <div>
+              <label htmlFor="middleName" className={ui.label}>Middle name <span className="font-normal text-fg-subtle">(optional)</span></label>
+              <input id="middleName" type="text" autoComplete="additional-name" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className={ui.input} />
+            </div>
+            <div>
+              <label htmlFor="lastName" className={ui.label}>Last name</label>
+              <input id="lastName" type="text" autoComplete="family-name" required value={lastName} onChange={(e) => setLastName(e.target.value)} className={ui.input} placeholder="Okafor" />
+            </div>
+          </div>
+        </Section>
+
+        {/* CONTACT DETAILS */}
+        <Section title="Contact">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="email" className={ui.label}>Email address</label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle pointer-events-none" aria-hidden />
+                <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={cx(ui.input, ui.inputWithIcon)} placeholder="you@example.com" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="phone" className={ui.label}>Phone number</label>
+              <div className="flex gap-2">
+                <select aria-label="Country code" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} className={cx(ui.select, 'w-[118px] shrink-0')}>
+                  <option value="+234">NG +234</option>
+                  <option value="+1">US +1</option>
+                  <option value="+44">UK +44</option>
+                </select>
+                <input id="phone" type="tel" autoComplete="tel-national" required value={phone} onChange={(e) => setPhone(e.target.value)} className={cx(ui.input, 'flex-1 min-w-0')} placeholder="801 234 5678" />
+              </div>
+            </div>
+          </div>
+        </Section>
+
+        {/* LOCATION DETAILS */}
+        <Section title="Location">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="country" className={ui.label}>Country</label>
+              <input id="country" type="text" autoComplete="country-name" required value={country} onChange={(e) => setCountry(e.target.value)} className={ui.input} placeholder="Nigeria" />
+            </div>
+            <div>
+              <label htmlFor="state" className={ui.label}>State</label>
+              <input id="state" type="text" autoComplete="address-level1" required value={state} onChange={(e) => setState(e.target.value)} className={ui.input} placeholder="Lagos" />
+            </div>
+            <div>
+              <label htmlFor="address" className={ui.label}>Address <span className="font-normal text-fg-subtle">(optional)</span></label>
+              <input id="address" type="text" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} className={ui.input} />
+            </div>
+          </div>
+        </Section>
+
+        {/* MANAGER SPECIFIC DETAILS */}
+        {role === 'Manager' && (
+          <div className="rounded-xl border border-accent-line bg-accent-soft p-5 space-y-4 animate-in fade-in slide-in-from-bottom-2">
+            <div>
+              <h3 className="text-sm font-semibold text-on-accent-soft flex items-center gap-2">
+                <Building2 className="w-4 h-4" aria-hidden /> Business verification
+              </h3>
+              <p className="mt-1 text-sm text-on-accent-soft/90">
+                We review every station owner before granting access. Your document is stored privately.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="companyName" className={ui.label}>Registered company name</label>
+              <input id="companyName" type="text" autoComplete="organization" required value={companyName} onChange={(e) => setCompanyName(e.target.value)} className={ui.input} placeholder="e.g. Sunrise Energy Ltd." />
+            </div>
+            <div>
+              <label htmlFor="cac" className={ui.label}>CAC certificate</label>
+              <input id="cac" type="file" required accept=".pdf, image/jpeg, image/png" onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} className={ui.file} />
+              <p className={ui.hint}>PDF, JPG or PNG.</p>
+            </div>
+          </div>
+        )}
+
+        {/* SECURITY */}
+        <Section title="Password">
+          <div>
+            <label htmlFor="password" className="sr-only">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle pointer-events-none" aria-hidden />
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className={cx(ui.input, ui.inputWithIcon, 'pr-11')}
+                placeholder="Create a password"
+                minLength={6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-md text-fg-subtle hover:text-fg hover:bg-surface-2 transition-colors"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
+              </button>
+            </div>
+            <p className={ui.hint}>At least 6 characters.</p>
+          </div>
+        </Section>
+
+        <div className="space-y-3">
+          <button type="submit" disabled={loading} className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full')}>
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : 'Create account'}
+          </button>
+          <p className="text-center text-xs text-fg-subtle">
+            By creating an account, you agree to our{' '}
+            <Link href="/terms" className="font-medium text-fg-muted underline underline-offset-2 hover:text-fg">Terms</Link> and{' '}
+            <Link href="/privacy" className="font-medium text-fg-muted underline underline-offset-2 hover:text-fg">Privacy Policy</Link>.
+          </p>
         </div>
-      </div>
-    </div>
+      </form>
+
+      <p className="mt-8 text-center text-sm text-fg-muted">
+        Already have an account?{' '}
+        <Link href="/login" className={cx(ui.link, 'inline-flex items-center gap-1')}>
+          Sign in <ArrowRight className="w-3.5 h-3.5" aria-hidden />
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

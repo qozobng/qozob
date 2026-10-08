@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2
+  Share2, LocateFixed, CheckCircle2, TrendingDown, LayoutDashboard
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -19,6 +19,9 @@ import { createClient } from '@/utils/supabase/client';
 import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager } from '@/lib/roles';
 import { SITE } from '@/lib/site';
+import { Wordmark } from '@/components/Wordmark';
+import { ThemeToggle } from '@/components/ThemeToggle';
+import { ui, cx } from '@/lib/ui';
 
 // --- Map Visual Key ---
 // Prefer the env var (set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local / Vercel); the inline key is kept as a fallback.
@@ -125,15 +128,23 @@ function timeAgo(dateString: string | null | undefined): string {
   return `${days}d ago`;
 }
 
+type PriceSource = 'community' | 'owner' | 'rep';
+
+function priceSource(role: string | null | undefined): PriceSource {
+  const cleanRole = (role || '').replace(/['"]/g, '').trim().toLowerCase();
+  if (cleanRole === 'qozob rep') return 'rep';
+  if (cleanRole === 'owner') return 'owner';
+  return 'community';
+}
+
+// Map pills sit on the (always light) Google map: fixed colours, white text, all ≥ 4.5:1.
+const PILL_COLORS: Record<PriceSource, string> = { community: '#B45309', owner: '#1D4ED8', rep: '#0F7B5F' };
+
+const PRICE_SOURCE_LABEL: Record<PriceSource, string> = { community: 'Community', owner: 'Station owner', rep: 'Qozob rep' };
+
+/** Theme-aware colour for price text on cards (see --src-* in globals.css). */
 function getPriceColor(role: string | null | undefined): string {
-  if (!role) return '#FBBC05'; 
-  const cleanRole = role.replace(/['"]/g, '').trim().toLowerCase();
-  switch(cleanRole) {
-    case 'qozob rep': return '#34A853'; 
-    case 'owner': return '#4285F4';     
-    case 'user': return '#FBBC05';      
-    default: return '#FBBC05';          
-  }
+  return `var(--src-${priceSource(role)})`;
 }
 
 function formatPrice(price: number | string | null | undefined, decimalClass: string): React.ReactNode {
@@ -161,9 +172,9 @@ function UserLocationMarker({ position }: { position: { lat: number, lng: number
   if (!position) return null;
   return (
     <AdvancedMarker position={position} zIndex={50}>
-      <div className="relative flex h-8 w-8 items-center justify-center">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
-        <span className="relative inline-flex h-4 w-4 rounded-full bg-blue-600 border-2 border-white shadow-lg"></span>
+      <div className="theme-light relative flex h-8 w-8 items-center justify-center">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-info opacity-75"></span>
+        <span className="relative inline-flex h-4 w-4 rounded-full bg-info border-2 border-white shadow-lg"></span>
       </div>
     </AdvancedMarker>
   );
@@ -181,11 +192,10 @@ interface StationMarkerProps {
 // Memoised: with dozens of markers on screen, this avoids re-rendering every marker on unrelated state changes
 const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUrl, price, role, lastUpdated }: StationMarkerProps) {
   const stale = isStale(lastUpdated);
-  const pillBg = getPriceColor(role);
-  const pillText = pillBg === '#FBBC05' ? '#1e1b4b' : '#ffffff'; // dark text on the yellow "community" colour for contrast
+  const pillBg = PILL_COLORS[priceSource(role)];
 
   return (
-    <div className="relative flex flex-col items-center">
+    <div className="theme-light relative flex flex-col items-center">
       <div className={`relative flex items-center justify-center w-10 h-10 rounded-full shadow-lg border-2 border-white bg-white overflow-hidden transition-all duration-300 hover:scale-125 ${!hasPrice ? 'grayscale opacity-70 scale-90' : 'scale-110 z-10'}`}>
         <BrandLogo name={name} customLogoUrl={customLogoUrl} size={40} imgClassName="rounded-full p-0.5" />
       </div>
@@ -193,8 +203,8 @@ const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUr
         // PRICE PILL: lets users compare prices at a glance without tapping each station
         <span
           title={stale ? 'Price may be outdated' : undefined}
-          className={`relative z-20 -mt-1.5 px-1.5 py-0.5 rounded-md border border-white shadow-md text-[10px] font-black leading-none whitespace-nowrap ${stale ? 'opacity-60' : ''}`}
-          style={{ backgroundColor: pillBg, color: pillText }}
+          className={`relative z-20 -mt-1.5 px-1.5 py-0.5 rounded-md border border-white shadow-md text-xs font-semibold tabular leading-none whitespace-nowrap ${stale ? 'opacity-70' : ''}`}
+          style={{ backgroundColor: pillBg, color: '#FFFFFF' }}
         >
           ₦{Math.round(Number(price)).toLocaleString()}
         </span>
@@ -207,7 +217,7 @@ const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUr
 
 const ListLogo = memo(function ListLogo({ name, customLogoUrl }: { name: string, customLogoUrl: string | null | undefined }) {
   return (
-    <div className="flex-shrink-0 w-10 h-10 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden shadow-sm mr-3">
+    <div className="flex-shrink-0 w-10 h-10 rounded-full border border-line bg-surface flex items-center justify-center overflow-hidden shadow-sm mr-3">
       <BrandLogo name={name} customLogoUrl={customLogoUrl} size={40} imgClassName="p-1" />
     </div>
   );
@@ -265,43 +275,52 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800 transition-colors">
-          <X className="w-6 h-6" />
+    <div className={ui.overlay} role="dialog" aria-modal="true" aria-labelledby="price-modal-title">
+      <div className={cx(ui.modal, 'max-w-sm p-6 sm:p-7')}>
+        <button onClick={onClose} className={ui.modalClose} aria-label="Close">
+          <X className="w-5 h-5" />
         </button>
-        <h2 className="text-2xl font-black text-indigo-950 mb-1">Update Price</h2>
-        <p className="text-sm text-slate-500 mb-6">{station.name}</p>
+        <h2 id="price-modal-title" className={cx(ui.h2, 'text-xl pr-8')}>
+          {station.price_pms ? 'Update price' : 'Add the first price'}
+        </h2>
+        <p className="text-sm text-fg-muted mt-1 mb-6 pr-8">{station.name}</p>
 
-        <div className="transition-all duration-300">
-          <label className="text-xs font-bold text-slate-500 uppercase">PMS Price (₦)</label>
-          <input 
-            type="number" 
-            step="0.01" 
-            value={suggestedPrice} 
-            onChange={(e) => setSuggestedPrice(e.target.value)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-4 text-2xl font-black outline-none focus:border-emerald-500 transition-colors" 
-            placeholder="e.g. 950" 
-          />
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="pms-price" className={ui.label}>PMS price per litre (₦)</label>
+            <input 
+              id="pms-price"
+              type="number" 
+              inputMode="decimal"
+              step="0.01" 
+              value={suggestedPrice} 
+              onChange={(e) => setSuggestedPrice(e.target.value)} 
+              className={cx(ui.input, 'h-14 text-2xl font-semibold tabular')} 
+              placeholder="e.g. 950" 
+            />
+          </div>
           
-          <label className="text-xs font-bold text-slate-500 uppercase">Current Queue Status</label>
-          <select 
-            value={suggestedQueue} 
-            onChange={(e) => setSuggestedQueue(e.target.value)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-4 mt-1 mb-6 outline-none cursor-pointer"
-          >
-            <option value="No Queue">No Queue (Fast)</option>
-            <option value="Moderate">Moderate</option>
-            <option value="Heavy">Heavy Queue</option>
-            <option value="No Fuel">No Fuel Dispensing</option>
-          </select>
+          <div>
+            <label htmlFor="queue-status" className={ui.label}>Queue right now</label>
+            <select 
+              id="queue-status"
+              value={suggestedQueue} 
+              onChange={(e) => setSuggestedQueue(e.target.value)} 
+              className={ui.select}
+            >
+              <option value="No Queue">No queue</option>
+              <option value="Moderate">Moderate</option>
+              <option value="Heavy">Heavy queue</option>
+              <option value="No Fuel">No fuel</option>
+            </select>
+          </div>
 
           <button 
             onClick={handleSuggestPrice} 
             disabled={!suggestedPrice || isSubmittingPrice} 
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
+            className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full mt-2')}
           >
-            {isSubmittingPrice ? "Saving..." : "Submit to Map"}
+            {isSubmittingPrice ? "Saving…" : "Submit price"}
           </button>
         </div>
       </div>
@@ -367,65 +386,80 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl p-8 max-w-md w-full relative shadow-2xl overflow-y-auto max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800 transition-colors">
-          <X className="w-6 h-6" />
+    <div className={ui.overlay} role="dialog" aria-modal="true" aria-labelledby="claim-modal-title">
+      <div className={cx(ui.modal, 'max-w-md p-6 sm:p-7 overflow-y-auto max-h-[90vh]')}>
+        <button onClick={onClose} className={ui.modalClose} aria-label="Close">
+          <X className="w-5 h-5" />
         </button>
-        <h2 className="text-2xl font-black text-indigo-950 mb-2">Claim Station</h2>
-        <p className="text-sm text-slate-500 mb-6">Verify ownership of <strong>{station.name}</strong>.</p>
+        <h2 id="claim-modal-title" className={cx(ui.h2, 'text-xl pr-8')}>Claim this station</h2>
+        <p className="text-sm text-fg-muted mt-1 mb-6 pr-8">Verify that you own or manage <strong className="font-semibold text-fg">{station.name}</strong>. We review every claim.</p>
         
-        <div className="transition-all duration-300 flex flex-col gap-1">
-          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
-            Applicant Name <span className="text-red-500">*</span>
-          </label>
-          <input 
-            type="text" 
-            value={applicantName} 
-            onChange={(e) => setApplicantName(e.target.value)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
-            placeholder="e.g. Adebayo Johnson" 
-          />
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="claim-name" className={ui.label}>
+              Your full name <span className="text-danger" aria-hidden>*</span>
+            </label>
+            <input 
+              id="claim-name"
+              type="text" 
+              autoComplete="name"
+              value={applicantName} 
+              onChange={(e) => setApplicantName(e.target.value)} 
+              className={ui.input} 
+              placeholder="e.g. Adebayo Johnson" 
+            />
+          </div>
 
-          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
-            Contact Phone Number <span className="text-red-500">*</span>
-          </label>
-          <input 
-            type="tel" 
-            value={phone} 
-            onChange={(e) => setPhone(e.target.value)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
-            placeholder="08012345678" 
-          />
+          <div>
+            <label htmlFor="claim-phone" className={ui.label}>
+              Contact phone <span className="text-danger" aria-hidden>*</span>
+            </label>
+            <input 
+              id="claim-phone"
+              type="tel" 
+              autoComplete="tel"
+              value={phone} 
+              onChange={(e) => setPhone(e.target.value)} 
+              className={ui.input} 
+              placeholder="08012345678" 
+            />
+          </div>
           
-          <label className="text-xs font-bold text-slate-500 uppercase mt-2">
-            CAC Reg Number <span className="text-red-500">*</span>
-          </label>
-          <input 
-            type="text" 
-            value={cacNumber} 
-            onChange={(e) => setCacNumber(e.target.value)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 mb-2 outline-none focus:border-indigo-500 transition-colors" 
-            placeholder="RC-123456" 
-          />
+          <div>
+            <label htmlFor="claim-cac" className={ui.label}>
+              CAC registration number <span className="text-danger" aria-hidden>*</span>
+            </label>
+            <input 
+              id="claim-cac"
+              type="text" 
+              value={cacNumber} 
+              onChange={(e) => setCacNumber(e.target.value)} 
+              className={ui.input} 
+              placeholder="RC-123456" 
+            />
+          </div>
           
-          <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mt-2">
-            <UploadCloud className="w-4 h-4" /> Upload CAC Document (PDF/JPG) <span className="text-red-500">*</span>
-          </label>
-          <input 
-            type="file" 
-            accept=".pdf, image/jpeg, image/png" 
-            onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} 
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 mb-4 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 transition-colors cursor-pointer" 
-          />
+          <div>
+            <label htmlFor="claim-file" className={cx(ui.label, 'flex items-center gap-1.5')}>
+              <UploadCloud className="w-4 h-4 text-fg-muted" aria-hidden /> CAC certificate <span className="text-danger" aria-hidden>*</span>
+            </label>
+            <input 
+              id="claim-file"
+              type="file" 
+              accept=".pdf, image/jpeg, image/png" 
+              onChange={(e) => setCacFile(e.target.files ? e.target.files[0] : null)} 
+              className={ui.file} 
+            />
+            <p className={ui.hint}>PDF, JPG or PNG. Stored privately; only Qozob reviewers can open it.</p>
+          </div>
         </div>
 
         <button 
           onClick={handleFinalSubmitClaim} 
           disabled={isSubmittingClaim} 
-          className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
+          className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full mt-6')}
         >
-          {isSubmittingClaim ? "Uploading..." : "Submit Claim for Review"}
+          {isSubmittingClaim ? "Uploading…" : "Submit claim"}
         </button>
       </div>
     </div>
@@ -471,45 +505,54 @@ function RateStationModal({ station, onClose, onSaved }: { station: Station, onC
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl p-8 max-w-sm w-full relative shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-800 transition-colors">
-          <X className="w-6 h-6" />
+    <div className={ui.overlay} role="dialog" aria-modal="true" aria-labelledby="rate-modal-title">
+      <div className={cx(ui.modal, 'max-w-sm p-6 sm:p-7')}>
+        <button onClick={onClose} className={ui.modalClose} aria-label="Close">
+          <X className="w-5 h-5" />
         </button>
-        <h2 className="text-2xl font-black text-indigo-950 mb-1">Rate Pump Integrity</h2>
-        <p className="text-sm text-slate-500 mb-6">{station.name}</p>
+        <h2 id="rate-modal-title" className={cx(ui.h2, 'text-xl pr-8')}>Rate pump accuracy</h2>
+        <p className="text-sm text-fg-muted mt-1 mb-6 pr-8">{station.name}</p>
         
-        <div className="bg-amber-50 rounded-xl p-4 mb-6 border border-amber-100">
-          <p className="text-xs font-bold text-amber-800 uppercase text-center mb-3">Community Trust Score</p>
-          <p className="text-xs text-amber-700 text-center mb-4">If you buy 5 Litres here, how accurate is the pump? (1 = Severe Shortage, 5 = Perfect Accuracy)</p>
+        <div className="rounded-lg border border-line bg-surface-2 p-4 mb-6">
+          <p className="text-sm text-fg text-center mb-4">
+            If you paid for 5 litres here, how accurate was the pump?
+          </p>
           
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-1.5" role="radiogroup" aria-label="Rating">
             {[1, 2, 3, 4, 5].map((star) => (
               <button
                 key={star}
+                type="button"
+                role="radio"
+                aria-checked={selectedStar === star}
+                aria-label={`${star} star${star > 1 ? 's' : ''}`}
                 onMouseEnter={() => setHoveredStar(star)}
                 onMouseLeave={() => setHoveredStar(0)}
                 onClick={() => setSelectedStar(star)}
-                className="transition-transform hover:scale-125 duration-200"
+                className="p-1 rounded-md transition-transform hover:scale-110 duration-200"
               >
                 <Star 
-                  className={`w-10 h-10 ${
+                  className={`w-9 h-9 ${
                     star <= (hoveredStar || selectedStar) 
-                      ? 'fill-amber-400 text-amber-400' 
-                      : 'text-slate-300'
+                      ? 'fill-star text-star' 
+                      : 'text-line-strong'
                   } transition-colors`} 
                 />
               </button>
             ))}
+          </div>
+          <div className="mt-3 flex justify-between text-xs text-fg-muted">
+            <span>1 · Short-changed</span>
+            <span>5 · Accurate</span>
           </div>
         </div>
 
         <button 
           onClick={handleSubmitRating} 
           disabled={selectedStar === 0 || isSubmitting} 
-          className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all disabled:opacity-50 active:scale-95"
+          className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full')}
         >
-          {isSubmitting ? "Submitting..." : "Submit Public Rating"}
+          {isSubmitting ? "Submitting…" : "Submit rating"}
         </button>
       </div>
     </div>
@@ -523,7 +566,7 @@ function RateStationModal({ station, onClose, onSaved }: { station: Station, onC
 export default function QozobApp() {
   return (
     <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
-      <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <Suspense fallback={<div className="min-h-screen bg-surface-2" />}>
         <QozobLanding />
       </Suspense>
     </APIProvider>
@@ -983,99 +1026,153 @@ function QozobLanding() {
     map.setZoom(14);
   };
 
+  // One responsive layout for the two hero cards (best price / nearest), on surface tokens so
+  // the source-coloured price always has AA contrast in light and dark mode.
+  const renderHeroCard = (station: Station, kind: 'best' | 'nearest') => {
+    const isBest = kind === 'best';
+    return (
+      <div className={cx(ui.card, 'relative overflow-hidden p-4 lg:p-5 lg:flex-1 flex flex-col gap-3')}>
+        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1', isBest ? 'bg-accent-solid' : 'bg-info')} />
+        <div className="flex items-center justify-between gap-3">
+          <span className={cx('inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em]', isBest ? 'text-accent' : 'text-info')}>
+            {isBest ? <TrendingDown className="w-3.5 h-3.5" aria-hidden /> : <Navigation className="w-3.5 h-3.5" aria-hidden />}
+            {isBest ? 'Best price nearby' : 'Nearest station'}
+          </span>
+          <span className="inline-flex items-center gap-1 text-xs text-fg-subtle">
+            <Clock className="w-3 h-3" aria-hidden /> {timeAgo(station.last_updated)}
+          </span>
+        </div>
+
+        <div className="flex items-start justify-between gap-3">
+          <button
+            type="button"
+            className="min-w-0 text-left group rounded-md"
+            onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            title={station.name}
+          >
+            <span className="block text-base lg:text-lg font-semibold text-fg leading-snug truncate group-hover:underline underline-offset-4">{station.name}</span>
+            <span className="block text-sm text-fg-muted truncate mt-0.5">{distancePrefix(station.distance)}{station.queue_status}</span>
+          </button>
+          <div className="text-right shrink-0">
+            <div className="text-2xl font-semibold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
+              {formatPrice(station.price_pms, "text-sm")}
+            </div>
+            <span className="mt-1.5 block text-xs text-fg-subtle">{PRICE_SOURCE_LABEL[priceSource(station.updated_by_role)]} price</span>
+          </div>
+        </div>
+
+        <div className="mt-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
+            {isBest && heroSavings > 0 && (
+              <span className="inline-flex items-center rounded-md bg-success-soft text-on-success-soft border border-success-line px-2 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
+                ₦{heroSavings.toLocaleString()} below avg
+              </span>
+            )}
+            {station.accuracy_votes > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-muted" title="Pump accuracy rating">
+                <Star className="w-3.5 h-3.5 fill-star text-star" aria-hidden /> {station.pump_accuracy}/5
+              </span>
+            )}
+          </div>
+          <a
+            href={getDirectionsUrl(station.lat, station.lng)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cx(ui.btn, ui.btnSm, isBest ? ui.btnPrimary : ui.btnSecondary, 'shrink-0')}
+          >
+            <Navigation className="w-3.5 h-3.5" aria-hidden /> Directions
+          </a>
+        </div>
+      </div>
+    );
+  };
+
+  const menuItem = 'w-full text-left px-3 h-10 text-sm font-medium text-fg hover:bg-surface-2 rounded-lg flex items-center gap-2.5 transition-colors';
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col relative pb-20 lg:pb-0">
+    <div className="min-h-screen bg-canvas text-fg flex flex-col relative pb-20 lg:pb-0">
       
       {/* ======================= RESPONSIVE HEADER ======================= */}
-      <header className="bg-indigo-900 text-white sticky top-0 z-50 shadow-md transition-all">
+      <header className="bg-brand text-on-brand sticky top-0 z-50 shadow-[0_1px_0_var(--brand-line)]">
 
-        {/* 1. TOP ROW: Gen-Z Logo, Desktop Ad Space, Auth */}
+        {/* 1. TOP ROW: Wordmark, desktop ad space, theme + account */}
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
           
-          {/* GEN-Z STYLED LOGO */}
-          <div className="flex-shrink-0" onClick={() => window.scrollTo(0,0)}>
-            <div className="cursor-pointer flex items-center h-8 sm:h-10 text-emerald-400 hover:text-emerald-300 transition-colors" title="Qozob">
-              {/* FIXED VIEWBOX TO PREVENT CROPPING THE 'B' */}
-              <svg viewBox="0 0 400 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
-                {/* q */}
-                <circle cx="40" cy="50" r="26" />
-                <path d="M66,50 V95" />
-                {/* o */}
-                <circle cx="120" cy="50" r="26" />
-                {/* z */}
-                <path d="M170,24 H230 L170,76 H230" />
-                {/* o */}
-                <circle cx="280" cy="50" r="26" />
-                {/* b */}
-                <path d="M334,5 V50" />
-                <circle cx="360" cy="50" r="26" />
-                
-                {/* Pulsating dot perfectly centered inside the 'b' */}
-                <circle cx="360" cy="50" r="8" fill="currentColor" stroke="none" className="animate-pulse text-emerald-500" />
-              </svg>
-            </div>
-          </div>
+          <button
+            type="button"
+            className="flex-shrink-0 rounded-md"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Qozob — back to top"
+          >
+            <Wordmark tone="brand" size="lg" />
+          </button>
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
-          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] bg-indigo-950/50 border-2 border-indigo-800/50 border-dashed rounded-xl items-center justify-center relative group transition-colors hover:bg-indigo-950 mx-4">
-            <span className="text-xs font-bold text-indigo-300/50 uppercase tracking-widest group-hover:text-indigo-300 transition-colors">
-              Advertisement Space
+          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] border border-dashed border-brand-line rounded-lg items-center justify-center mx-4">
+            <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">
+              Advertisement
             </span>
           </div>
 
-          {/* USER PROFILE & MENU */}
-          <div className="flex-shrink-0 flex items-center">
+          {/* THEME + USER PROFILE & MENU */}
+          <div className="flex-shrink-0 flex items-center gap-2">
+            <ThemeToggle tone="brand" />
             {user ? (
               <div className="relative" ref={menuRef}>
                 <button 
                   onClick={() => setIsMenuOpen(!isMenuOpen)} 
                   aria-label="Account menu"
                   aria-expanded={isMenuOpen}
-                  className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 border border-white/10 p-2 sm:px-4 sm:py-2 rounded-xl transition-all active:scale-95"
+                  className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-lg border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
                 >
-                  <Menu className="w-5 h-5 text-emerald-400" />
-                  <span className="text-xs font-bold truncate max-w-[100px] hidden sm:inline-block">{user.email}</span>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
+                    {(user.email || '?').charAt(0)}
+                  </span>
+                  <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
+                  <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
                 </button>
 
                 {isMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
-                    <div className="p-3 bg-indigo-50 border-b border-indigo-100">
-                      <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Signed in as</p>
-                      <p className="text-xs font-bold text-indigo-950 truncate">{user.email}</p>
-                      <p className="text-[10px] font-bold text-emerald-600 mt-1">{userRole}{requestedManager && <span className="text-amber-600"> · Manager access pending</span>}</p>
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-surface text-fg rounded-xl shadow-lg border border-line overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="p-4 border-b border-line">
+                      <p className={ui.eyebrow}>Signed in as</p>
+                      <p className="text-sm font-medium text-fg truncate mt-1">{user.email}</p>
+                      <p className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-md bg-surface-2 border border-line px-2 py-0.5 text-xs font-medium text-fg-muted">
+                        {userRole}{requestedManager && <span className="text-warning">· Manager access pending</span>}
+                      </p>
                     </div>
-                    <div className="p-2 flex flex-col gap-1">
+                    <div className="p-2 flex flex-col gap-0.5">
                       
                       {userRole === 'Admin' && (
-                        <button onClick={() => router.push('/admin')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                          <ShieldCheck className="w-4 h-4 text-purple-500" /> Admin Dashboard
+                        <button onClick={() => router.push('/admin')} className={menuItem}>
+                          <ShieldCheck className="w-4 h-4 text-accent" aria-hidden /> Admin dashboard
                         </button>
                       )}
 
                       {(userRole === 'Manager' || requestedManager) ? (
-                        <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                          <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                        <button onClick={() => router.push('/dashboard')} className={menuItem}>
+                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> Station dashboard
                         </button>
                       ) : (
-                        <button onClick={() => router.push('/user-dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                          <ShieldCheck className="w-4 h-4" /> Go to Dashboard
+                        <button onClick={() => router.push('/user-dashboard')} className={menuItem}>
+                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> My dashboard
                         </button>
                       )}
 
                       {userRole !== 'Manager' && (
                         <>
-                          <button onClick={() => router.push('/user-dashboard?tab=contributions')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                            <UserIcon className="w-4 h-4" /> My Contributions
+                          <button onClick={() => router.push('/user-dashboard?tab=contributions')} className={menuItem}>
+                            <UserIcon className="w-4 h-4 text-fg-muted" aria-hidden /> My contributions
                           </button>
-                          <button onClick={() => router.push('/user-dashboard?tab=settings')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
-                            <Settings className="w-4 h-4" /> Account Settings
+                          <button onClick={() => router.push('/user-dashboard?tab=settings')} className={menuItem}>
+                            <Settings className="w-4 h-4 text-fg-muted" aria-hidden /> Account settings
                           </button>
                         </>
                       )}
 
-                      <div className="h-px bg-slate-100 my-1"></div>
-                      <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 transition-colors">
-                        <LogOut className="w-4 h-4" /> Sign Out
+                      <div className="h-px bg-line my-1"></div>
+                      <button onClick={handleSignOut} className={cx(menuItem, 'text-danger hover:bg-danger-soft')}>
+                        <LogOut className="w-4 h-4" aria-hidden /> Sign out
                       </button>
                     </div>
                   </div>
@@ -1084,35 +1181,35 @@ function QozobLanding() {
             ) : (
               <button 
                 onClick={() => router.push('/login')} 
-                className="text-xs font-black bg-emerald-500 hover:bg-emerald-400 text-indigo-950 px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 active:scale-95 whitespace-nowrap"
+                className={cx(ui.btn, 'h-9 px-4', ui.btnAccent, 'whitespace-nowrap')}
               >
-                Sign In
+                Sign in
               </button>
             )}
           </div>
         </div>
 
-        {/* 2. BOTTOM ROW: Dedicated Smart Search */}
-        <div className="bg-indigo-950 border-t border-indigo-800/50 px-4 py-3 flex items-center">
-          <div className="w-full max-w-2xl mx-auto relative flex-1">
+        {/* 2. BOTTOM ROW: Location search */}
+        <div className="border-t border-brand-line px-4 py-3">
+          <div className="w-full max-w-2xl mx-auto relative">
              <input 
                 type="text" 
                 id="smart-search-input"
                 ref={searchInputRef}
                 aria-label="Search location"
                 enterKeyHint="search"
-                placeholder="Search streets, LGAs, or landmarks..." 
+                placeholder="Search a street, LGA or landmark" 
                 onKeyDown={(e) => { 
                   if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
                 }}
-                className="w-full bg-white/10 border border-white/20 rounded-full py-2.5 pl-10 pr-16 text-sm text-white placeholder-indigo-300 focus:outline-none focus:bg-white focus:text-indigo-900 transition-all shadow-inner"
+                className="w-full h-11 bg-brand-2 border border-brand-line rounded-lg pl-10 pr-24 text-sm text-on-brand placeholder:text-on-brand-muted outline-none focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
               />
-              <Search className="w-4 h-4 absolute left-4 top-3 text-indigo-300" />
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-brand-muted pointer-events-none" aria-hidden />
               <button 
                 onClick={() => handleLocationSearch(searchInputRef.current?.value || "")} 
-                className="absolute right-1.5 top-1.5 bg-emerald-400 text-indigo-900 px-3 py-1.5 rounded-full text-xs font-bold hover:bg-emerald-300 transition-colors active:scale-95"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-4 rounded-md bg-accent-solid text-on-accent text-sm font-semibold hover:bg-accent-hover transition-colors"
               >
-                Go
+                Search
               </button>
           </div>
         </div>
@@ -1121,200 +1218,46 @@ function QozobLanding() {
       <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
         
         {/* ======================= HERO CARDS SECTION ======================= */}
-        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-4 h-fit lg:h-full z-10">
-          
-          {/* === MOBILE VIEW: STACKED CARDS === */}
-          <div className="flex lg:hidden flex-col gap-3">
-            {/* 1. Mobile Top Pick */}
-            {heroStation && (
-              <div className="bg-indigo-900 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden border border-indigo-700">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10"></div>
-                <div className="flex flex-col gap-2 relative z-10">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1.5">
-                      <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
-                      <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
-                    </div>
-                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
-                      <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center gap-3">
-                    <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                      <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-emerald-300">{heroStation.name}</h2>
-                      <p className="text-indigo-200 text-[11px] truncate mt-0.5">
-                        {distancePrefix(heroStation.distance)}{heroStation.queue_status}
-                        {heroSavings > 0 && <span className="text-emerald-300 font-bold"> • ₦{heroSavings.toLocaleString()} below avg</span>}
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
-                        {formatPrice(heroStation.price_pms, "text-[10px]")}
-                      </div>
-                      <a href={getDirectionsUrl(heroStation.lat, heroStation.lng)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-emerald-400 hover:bg-emerald-300 text-indigo-950 rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0">
-                        <Navigation className="w-4 h-4 ml-[-1px]" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* 2. Mobile Nearest */}
-            {nearestStation && (
-              <div className="bg-indigo-900/90 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden border border-indigo-800">
-                <div className="flex flex-col gap-2 relative z-10">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-1.5">
-                      <Navigation className="text-blue-400 w-3.5 h-3.5" />
-                      <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Nearest</h3>
-                    </div>
-                  </div>
-                  
-                  <div className="flex justify-between items-center gap-3">
-                    <div className="flex-1 min-w-0" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
-                      <h2 className="text-base font-bold truncate leading-tight cursor-pointer hover:text-blue-300">{nearestStation.name}</h2>
-                      <p className="text-indigo-200 text-[11px] truncate mt-0.5">
-                        {distancePrefix(nearestStation.distance)}{nearestStation.queue_status}
-                      </p>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-lg font-bold leading-none drop-shadow-md" style={{ color: getPriceColor(nearestStation.updated_by_role) }}>
-                        {formatPrice(nearestStation.price_pms, "text-[10px]")}
-                      </div>
-                      <a href={getDirectionsUrl(nearestStation.lat, nearestStation.lng)} target="_blank" rel="noopener noreferrer" className="w-9 h-9 bg-blue-500 hover:bg-blue-400 text-white rounded-full flex items-center justify-center transition-all active:scale-95 shadow-lg flex-shrink-0">
-                        <Navigation className="w-4 h-4 ml-[-1px]" />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* === DESKTOP VIEW: VERTICAL 50/50 SPLIT (Compact Height) === */}
-          <div className="hidden lg:flex flex-col gap-4 h-full">
-            
-            {/* Card 1: Top Pick Near You (Top 50%) */}
-            {heroStation && (
-              <div className="flex-1 bg-indigo-900 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden border border-indigo-700 flex flex-col justify-center group hover:shadow-2xl transition-all">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-400 rounded-full blur-3xl opacity-20 -mr-10 -mt-10 group-hover:opacity-30 transition-opacity"></div>
-                
-                <div className="relative z-10 flex flex-col h-full">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <AlertTriangle className="text-emerald-400 w-3.5 h-3.5" />
-                        <h3 className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Top Pick</h3>
-                      </div>
-                      <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-emerald-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(heroStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={heroStation.name}>
-                        {heroStation.name}
-                      </h2>
-                      <p className="text-indigo-200 text-[11px] mt-0.5">{distancePrefix(heroStation.distance)}{heroStation.queue_status}</p>
-                    </div>
-                    
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-2xl font-bold leading-none drop-shadow-md mb-1" style={{ color: getPriceColor(heroStation.updated_by_role) }}>
-                        {formatPrice(heroStation.price_pms, "text-sm")}
-                      </div>
-                      {heroStation.accuracy_votes > 0 && (
-                        <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-amber-400">
-                          <Star className="w-2.5 h-2.5 fill-amber-400" /> {heroStation.pump_accuracy}/5
-                        </div>
-                      )}
-                      {heroSavings > 0 && (
-                        <div className="text-[9px] font-bold text-emerald-300 mt-0.5" title="Compared with the average price of stations loaded on the map">
-                          ₦{heroSavings.toLocaleString()} below area avg
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-indigo-800/50">
-                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
-                      <Clock className="w-2.5 h-2.5" /> {timeAgo(heroStation.last_updated)}
-                    </div>
-                    <a href={getDirectionsUrl(heroStation.lat, heroStation.lng)} target="_blank" rel="noopener noreferrer" className="bg-emerald-400 hover:bg-emerald-300 text-indigo-950 font-bold py-1.5 px-4 text-xs rounded-lg flex items-center gap-1.5 transition-all active:scale-95 shadow-md">
-                      <Navigation className="w-3.5 h-3.5" /> Navigate
-                    </a>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Card 2: Nearest to You (Bottom 50%) */}
-            {nearestStation && (
-              <div className="flex-1 bg-indigo-900/90 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden border border-indigo-800 flex flex-col justify-center group hover:shadow-2xl transition-all">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500 rounded-full blur-3xl opacity-10 -mr-10 -mt-10 group-hover:opacity-20 transition-opacity"></div>
-                
-                <div className="relative z-10 flex flex-col h-full">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Navigation className="text-blue-400 w-3.5 h-3.5" />
-                        <h3 className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Nearest</h3>
-                      </div>
-                      <h2 className="text-xl font-bold leading-tight cursor-pointer hover:text-blue-300 transition-colors line-clamp-1" onClick={() => { setSelectedStation(nearestStation); window.scrollTo({ top: 0, behavior: 'smooth' }); }} title={nearestStation.name}>
-                        {nearestStation.name}
-                      </h2>
-                      <p className="text-indigo-200 text-[11px] mt-0.5">{distancePrefix(nearestStation.distance)}{nearestStation.queue_status}</p>
-                    </div>
-                    
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-2xl font-bold leading-none drop-shadow-md mb-1" style={{ color: getPriceColor(nearestStation.updated_by_role) }}>
-                        {formatPrice(nearestStation.price_pms, "text-sm")}
-                      </div>
-                      {nearestStation.accuracy_votes > 0 && (
-                        <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-amber-400">
-                          <Star className="w-2.5 h-2.5 fill-amber-400" /> {nearestStation.pump_accuracy}/5
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="mt-auto flex justify-between items-center pt-2 border-t border-indigo-800/50">
-                    <div className="flex items-center gap-1 text-[9px] font-bold text-indigo-300 uppercase tracking-wider">
-                      <Clock className="w-2.5 h-2.5" /> {timeAgo(nearestStation.last_updated)}
-                    </div>
-                    <a href={getDirectionsUrl(nearestStation.lat, nearestStation.lng)} target="_blank" rel="noopener noreferrer" className="bg-blue-500 hover:bg-blue-400 text-white font-bold py-1.5 px-4 text-xs rounded-lg flex items-center gap-1.5 transition-all active:scale-95 shadow-md">
-                      <Navigation className="w-3.5 h-3.5" /> Navigate
-                    </a>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-          </div>
+        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-3 lg:gap-4 h-fit lg:h-full z-10">
+          {heroStation && renderHeroCard(heroStation, 'best')}
+          {nearestStation && renderHeroCard(nearestStation, 'nearest')}
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
-          <div className="bg-slate-300 rounded-3xl h-[45vh] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden shadow-lg border-4 border-white group">
+          <div className="bg-surface-3 rounded-xl h-[45vh] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden border border-line shadow-[0_1px_2px_rgb(var(--shadow-color)/0.06)] group">
             
             {isFetchingDynamic && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in slide-in-from-top-4">
-                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-ping"></div> Fetching area...
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand text-on-brand text-xs font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
+                <span className="w-2 h-2 bg-brand-accent rounded-full animate-pulse" aria-hidden></span> Loading stations…
               </div>
             )}
 
             {/* LIVE INDICATOR: shown while the realtime price channel is connected */}
             {isLive && (
-              <div className="absolute top-4 left-4 z-40 bg-white/90 backdrop-blur text-indigo-950 text-[10px] font-black px-2.5 py-1 rounded-full shadow-md flex items-center gap-1.5 uppercase tracking-widest pointer-events-none" title="Prices update live as the community reports them">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75 animate-ping"></span>
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+              <div className="theme-light absolute top-4 left-4 z-40 bg-white/95 backdrop-blur text-fg text-xs font-semibold px-2.5 py-1 rounded-full shadow-md border border-line flex items-center gap-1.5 pointer-events-none" title="Prices update live as the community reports them">
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success"></span>
                 </span>
                 Live
               </div>
             )}
 
+            {/* PRICE SOURCE LEGEND (matches the pill colours on the map) */}
+            <div className="theme-light absolute bottom-6 right-14 sm:right-16 z-40 hidden sm:flex items-center gap-3 bg-white/95 backdrop-blur border border-line rounded-lg shadow-md px-3 py-2 pointer-events-none">
+              {(['community', 'owner', 'rep'] as PriceSource[]).map((s) => (
+                <span key={s} className="inline-flex items-center gap-1.5 text-xs font-medium text-fg">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PILL_COLORS[s] }} aria-hidden />
+                  {PRICE_SOURCE_LABEL[s]}
+                </span>
+              ))}
+            </div>
+
             {/* LOCATE ME BUTTON */}
             <button
               onClick={handleLocateMe}
-              className="absolute bottom-6 left-4 z-40 bg-white hover:bg-indigo-50 text-indigo-900 p-2.5 rounded-full shadow-lg border border-slate-200 transition-all active:scale-95"
+              className="theme-light absolute bottom-6 left-4 z-40 bg-white hover:bg-surface-2 text-fg p-2.5 rounded-full shadow-lg border border-line transition-colors"
               aria-label="Center map on my location"
               title="My location"
             >
@@ -1353,83 +1296,87 @@ function QozobLanding() {
               {/* ======================= MAP INFO WINDOW ======================= */}
               {selectedStation && (
                 <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
-                  <div className="p-3 min-w-[240px] relative">
-                    <button 
-                      onClick={() => setSelectedStation(null)} 
-                      className="absolute top-1 right-1 text-slate-400 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-full p-1.5 transition-colors z-10"
-                      aria-label="Close"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                    <button 
-                      onClick={() => handleShareStation(selectedStation)} 
-                      className="absolute top-1 right-9 text-slate-400 hover:text-indigo-700 bg-slate-100 hover:bg-indigo-100 rounded-full p-1.5 transition-colors z-10"
-                      aria-label="Share station"
-                      title="Share this station"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </button>
+                  {/* Info windows keep Google's white frame, so the content is pinned to the light palette */}
+                  <div className="theme-light p-4 min-w-[260px] max-w-[300px] relative text-fg font-sans">
+                    <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                      <button 
+                        onClick={() => handleShareStation(selectedStation)} 
+                        className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
+                        aria-label="Share station"
+                        title="Share this station"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => setSelectedStation(null)} 
+                        className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
+                        aria-label="Close"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                     
-                    <div className="flex justify-between items-start mb-1 pr-16">
-                      <h3 className="font-extrabold text-indigo-950 text-lg leading-tight">{selectedStation.name}</h3>
+                    <div className="flex items-start gap-1.5 pr-16">
+                      <h3 className="font-semibold text-fg text-base leading-snug">{selectedStation.name}</h3>
                       {selectedStation.verified && (
-                        <span title="Verified Official Price" className="flex-shrink-0 ml-1">
-                          <ShieldCheck className="w-5 h-5 text-blue-500" />
+                        <span title="Verified price" className="flex-shrink-0 mt-0.5">
+                          <ShieldCheck className="w-4 h-4 text-info" aria-label="Verified" />
                         </span>
                       )}
                     </div>
                     
-                    <p className="text-xs text-slate-500 mb-1">{selectedStation.address}</p>
+                    <p className="text-xs text-fg-muted mt-1">{selectedStation.address}</p>
                     
-                    {selectedStation.accuracy_votes > 0 && (
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-amber-500 mb-2">
-                        <Star className="w-3 h-3 fill-amber-400" /> Pump Integrity: {selectedStation.pump_accuracy}/5
-                      </div>
-                    )}
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <a 
+                        href={getDirectionsUrl(selectedStation.lat, selectedStation.lng)} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-accent text-xs font-semibold inline-flex items-center gap-1 hover:underline underline-offset-2"
+                      >
+                        <Navigation className="w-3 h-3" aria-hidden /> Directions{selectedStation.distance ? ` · ${selectedStation.distance} km` : ''}
+                      </a>
+                      {selectedStation.accuracy_votes > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-muted">
+                          <Star className="w-3 h-3 fill-star text-star" aria-hidden /> Pump accuracy {selectedStation.pump_accuracy}/5
+                        </span>
+                      )}
+                    </div>
                     
-                    <a 
-                      href={getDirectionsUrl(selectedStation.lat, selectedStation.lng)} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-indigo-600 text-xs font-bold flex items-center gap-1 mb-4 hover:underline transition-all"
-                    >
-                      <Navigation className="w-3 h-3" /> Get Directions ({selectedStation.distance ? `${selectedStation.distance}km away` : 'Calculating...'})
-                    </a>
-                    
-                    <div className="bg-slate-50 p-3 rounded-xl mb-4 border border-slate-100 flex justify-between items-end">
+                    <div className="mt-3 bg-surface-2 p-3 rounded-lg border border-line flex justify-between items-end gap-3">
                       <div>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">Current PMS Price</p>
-                        <div className="text-3xl font-black mb-1 flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role), textShadow: selectedStation.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
+                        <p className="text-xs font-medium text-fg-muted">PMS price</p>
+                        <div className="text-[28px] font-semibold tabular leading-tight flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role) }}>
                           {formatPrice(selectedStation.price_pms, "text-base")}
                         </div>
                         {selectedStation.price_pms && (
-                          <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                            <Clock className="w-3 h-3" /> {timeAgo(selectedStation.last_updated)}
+                          <div className="flex flex-wrap items-center gap-1 text-xs text-fg-muted">
+                            <Clock className="w-3 h-3" aria-hidden /> {timeAgo(selectedStation.last_updated)} · {PRICE_SOURCE_LABEL[priceSource(selectedStation.updated_by_role)]}
                             {isStale(selectedStation.last_updated) && (
-                              <span className="text-amber-500 normal-case tracking-normal ml-1">• may be outdated</span>
+                              <span className="text-warning font-medium">· may be outdated</span>
                             )}
                           </div>
                         )}
                       </div>
-                      <div className={`text-[10px] font-bold px-2 py-1 rounded-md ${selectedStation.queue_status === 'No Queue' ? 'bg-emerald-100 text-emerald-700' : selectedStation.queue_status === 'Moderate' ? 'bg-amber-100 text-amber-700' : selectedStation.queue_status === 'Heavy' ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'}`}>
+                      <div className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-md border ${selectedStation.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft border-success-line' : selectedStation.queue_status === 'Moderate' ? 'bg-warning-soft text-on-warning-soft border-warning-line' : selectedStation.queue_status === 'Heavy' ? 'bg-danger-soft text-on-danger-soft border-danger-line' : 'bg-surface-3 text-fg border-line'}`}>
                         {selectedStation.queue_status}
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-2">
+                    <div className="mt-3 flex flex-col gap-2">
                       <button 
                         onClick={() => handleProtectedAction(() => setShowPriceForm(true))} 
-                        className="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold py-2 rounded-lg text-sm border border-emerald-300 transition-colors active:scale-95"
+                        className={cx(ui.btn, 'h-9 px-3', ui.btnPrimary, 'w-full')}
                       >
-                        {selectedStation.price_pms ? "Update Pricing" : "Be the first to add price!"}
+                        {selectedStation.price_pms ? "Update price" : "Add the first price"}
                       </button>
                       
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
                           onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
-                          className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold py-2 rounded-lg text-sm border border-amber-300 flex items-center justify-center gap-2 transition-colors active:scale-95"
+                          className={cx(ui.btn, 'h-9 px-3', ui.btnSecondary, 'w-full')}
                         >
-                          <Star className="w-4 h-4 fill-amber-500" /> Rate Pump Accuracy
+                          <Star className="w-4 h-4 fill-star text-star" aria-hidden /> Rate pump accuracy
                         </button>
                       )}
 
@@ -1437,24 +1384,24 @@ function QozobLanding() {
                       {selectedStation.claim_status === 'None' && (
                         <button 
                           onClick={handleDynamicClaimAction} 
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 transition-colors active:scale-95"
+                          className={cx(ui.btn, 'h-9 px-3', ui.btnGhost, 'w-full border border-dashed border-line-strong')}
                         >
-                          <ShieldCheck className="w-4 h-4" /> Claim This Station
+                          <ShieldCheck className="w-4 h-4" aria-hidden /> Own this station? Claim it
                         </button>
                       )}
                       
                       {selectedStation.claim_status === 'Pending Review' && (
                         <button 
                           onClick={() => alert("This station is currently under review by our team.")} 
-                          className="w-full bg-indigo-100 text-indigo-700 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-2 border border-indigo-200"
+                          className="w-full h-9 rounded-lg bg-accent-soft text-on-accent-soft text-sm font-medium flex items-center justify-center gap-2 border border-accent-line"
                         >
-                           Claim In Progress...
+                          <Clock className="w-4 h-4" aria-hidden /> Claim under review
                         </button>
                       )}
 
                       {selectedStation.claim_status === 'Claimed' && (
-                         <div className="w-full bg-emerald-50 text-emerald-700 font-bold py-2 rounded-lg text-xs flex items-center justify-center gap-1 border border-emerald-100">
-                           <ShieldCheck className="w-4 h-4" /> Station Officially Claimed
+                         <div className="w-full h-9 rounded-lg bg-success-soft text-on-success-soft text-sm font-medium flex items-center justify-center gap-1.5 border border-success-line">
+                           <ShieldCheck className="w-4 h-4" aria-hidden /> Verified owner
                          </div>
                       )}
 
@@ -1467,152 +1414,149 @@ function QozobLanding() {
         </div>
 
         {/* ======================= LIST VIEW & FILTER ======================= */}
-        <div className="order-3 lg:order-3 lg:col-span-2 lg:col-start-1 bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-              <h2 className="text-xl font-extrabold text-indigo-950 flex items-center gap-2">
-                <Filter className="w-5 h-5 text-emerald-500" /> Local Stations
-              </h2>
+        <section className={cx(ui.card, 'order-3 lg:order-3 lg:col-span-2 lg:col-start-1 p-5 sm:p-6')} aria-labelledby="stations-heading">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-4">
+              <div>
+                <h2 id="stations-heading" className={ui.h2}>Stations near you</h2>
+                <p className="text-sm text-fg-muted mt-0.5">{sortedAndFilteredList.length} shown</p>
+              </div>
               
               <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                 <div className="relative flex-1 sm:flex-none">
+                  <label htmlFor="list-sort" className="sr-only">Sort stations</label>
                   <select 
+                    id="list-sort"
                     value={listSort} 
                     onChange={(e) => setListSort(e.target.value)} 
-                    className="w-full sm:w-auto bg-indigo-50 border border-indigo-100 text-indigo-900 rounded-lg p-2 pl-8 text-sm font-bold outline-none cursor-pointer appearance-none transition-colors hover:bg-indigo-100"
+                    className={cx(ui.select, 'h-10 pl-9 pr-8 sm:w-auto font-medium')}
                   >
                     <option value="Distance">Nearest</option>
                     <option value="Price">Cheapest</option>
-                    <option value="Rating">Highest Rated</option>
-                    <option value="Recent">Recently Updated</option>
-                    <option value="Name">Name (A-Z)</option>
+                    <option value="Rating">Highest rated</option>
+                    <option value="Recent">Recently updated</option>
+                    <option value="Name">Name (A–Z)</option>
                   </select>
-                  <ArrowUpDown className="w-4 h-4 absolute left-2 top-2.5 text-indigo-500 pointer-events-none" />
+                  <ArrowUpDown className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" aria-hidden />
                 </div>
                 
-                <select 
-                  value={listFilter} 
-                  onChange={(e) => setListFilter(e.target.value)} 
-                  className="flex-1 sm:flex-none bg-slate-50 border border-slate-200 rounded-lg p-2 text-sm font-bold outline-none cursor-pointer transition-colors hover:bg-slate-100"
-                >
-                  <option value="All">All Found</option>
-                  <option value="Priced">Priced Only</option>
-                  <option value="Top Rated">Top Rated (4+ Stars)</option>
-                  <option value="No Queue">No Queue</option>
-                </select>
+                <div className="relative flex-1 sm:flex-none">
+                  <label htmlFor="list-filter" className="sr-only">Filter stations</label>
+                  <select 
+                    id="list-filter"
+                    value={listFilter} 
+                    onChange={(e) => setListFilter(e.target.value)} 
+                    className={cx(ui.select, 'h-10 pl-9 pr-8 sm:w-auto font-medium')}
+                  >
+                    <option value="All">All stations</option>
+                    <option value="Priced">With a price</option>
+                    <option value="Top Rated">Rated 4+ stars</option>
+                    <option value="No Queue">No queue</option>
+                  </select>
+                  <Filter className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-fg-muted pointer-events-none" aria-hidden />
+                </div>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[400px] overflow-y-auto pr-2 pb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1 pb-1">
               {sortedAndFilteredList.map((station) => (
-                <div 
+                <button 
+                  type="button"
                   key={station.id} 
                   onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
-                  className="flex justify-between items-center p-4 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-md border border-slate-100 cursor-pointer transition-all duration-200 gap-3"
+                  className="text-left flex justify-between items-center p-3.5 rounded-lg bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer transition-colors gap-3"
                 >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
-                      <div className="flex items-center gap-2 mt-1">
-                        <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                      <h3 className="font-semibold text-fg text-sm truncate">{station.name}</h3>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-fg-muted truncate">{station.distance ? `${station.distance} km away` : station.address}</p>
                         {station.accuracy_votes > 0 && (
-                          <div className="flex items-center text-[9px] font-bold text-amber-500 flex-shrink-0">
-                            <Star className="w-2.5 h-2.5 fill-amber-400 mr-0.5" /> {station.pump_accuracy}
-                          </div>
+                          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-fg-muted flex-shrink-0">
+                            <Star className="w-3 h-3 fill-star text-star" aria-hidden /> {station.pump_accuracy}
+                          </span>
                         )}
                       </div>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className="text-lg font-black flex items-baseline justify-end" style={{ color: getPriceColor(station.updated_by_role), textShadow: station.updated_by_role === 'User' ? '0px 0px 1px rgba(0,0,0,0.2)' : 'none' }}>
-                      {formatPrice(station.price_pms, "text-[10px]")}
+                    <div className="text-lg font-semibold tabular flex items-baseline justify-end" style={{ color: station.price_pms !== null ? getPriceColor(station.updated_by_role) : undefined }}>
+                      {station.price_pms !== null ? formatPrice(station.price_pms, "text-xs") : <span className="text-sm font-medium text-fg-subtle">No price</span>}
                     </div>
                     {station.price_pms && (
-                      <div className="flex items-center justify-end gap-1 text-[8px] font-bold text-slate-400 mt-0.5 uppercase tracking-tighter">
-                        <Clock className="w-2.5 h-2.5" /> {timeAgo(station.last_updated)}
+                      <div className="flex items-center justify-end gap-1 text-xs text-fg-subtle mt-0.5">
+                        <Clock className="w-3 h-3" aria-hidden /> {timeAgo(station.last_updated)}
                       </div>
                     )}
                   </div>
-                </div>
+                </button>
               ))}
               {sortedAndFilteredList.length === 0 && (
-                <div className="col-span-full text-center py-10 text-slate-400">
-                  <Droplet className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                  <p className="text-sm font-bold">
-                    {isFetchingDynamic ? "Finding stations near you..." : mergedStations.length === 0 ? "No stations loaded yet. Try moving the map." : "No stations match this filter."}
+                <div className="col-span-full text-center py-10">
+                  <Droplet className="w-8 h-8 mx-auto mb-2 text-fg-subtle" aria-hidden />
+                  <p className="text-sm font-medium text-fg-muted">
+                    {isFetchingDynamic ? "Finding stations near you…" : mergedStations.length === 0 ? "No stations loaded yet. Try moving the map." : "No stations match this filter."}
                   </p>
                 </div>
               )}
             </div>
-        </div>
+        </section>
 
         {/* ======================= NEEDS PRICING LIST ======================= */}
         <div className="order-4 lg:order-4 lg:col-start-3 h-fit">
-          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-            <h2 className="text-lg font-extrabold text-indigo-950 mb-4 flex items-center gap-2">
-              <Droplet className="text-emerald-500"/> Needs Pricing Data
-            </h2>
-            <div className="flex flex-col gap-3">
+          <section className={cx(ui.card, 'p-5 sm:p-6')} aria-labelledby="needs-price-heading">
+            <h2 id="needs-price-heading" className={ui.h2}>Help fill the gaps</h2>
+            <p className="text-sm text-fg-muted mt-0.5 mb-4">These stations have no price yet.</p>
+            <div className="flex flex-col gap-2">
               {needsPricing.map((station) => (
-                <div 
+                <button 
+                  type="button"
                   key={station.id} 
                   onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
-                  className="flex justify-between items-center p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:-translate-y-1 hover:shadow-sm border border-slate-100 cursor-pointer gap-3 transition-all duration-200"
+                  className="text-left flex justify-between items-center p-3 rounded-lg bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer gap-3 transition-colors"
                 >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-slate-800 text-sm truncate">{station.name}</h3>
-                      <p className="text-[10px] text-slate-500 truncate">{station.distance ? `${station.distance}km away` : station.address}</p>
+                      <h3 className="font-semibold text-fg text-sm truncate">{station.name}</h3>
+                      <p className="text-xs text-fg-muted truncate">{station.distance ? `${station.distance} km away` : station.address}</p>
                     </div>
                   </div>
-                  <div className="text-right text-xs font-bold text-slate-400 flex-shrink-0 bg-slate-200 px-2 py-1 rounded-md">Update</div>
-                </div>
+                  <span className="text-xs font-semibold text-accent flex-shrink-0">Add price</span>
+                </button>
               ))}
+              {needsPricing.length === 0 && (
+                <p className="text-sm text-fg-subtle py-4 text-center">Every nearby station has a price. Nice.</p>
+              )}
             </div>
-          </div>
+          </section>
         </div>
       </main>
 
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
-      <div className="fixed bottom-0 left-0 right-0 z-[100] bg-indigo-950 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] border-t border-indigo-800 pb-2 lg:hidden">
-        <div className="w-full h-[60px] flex items-center justify-center bg-indigo-950/80 relative overflow-hidden">
-           <span className="text-[10px] font-bold text-indigo-300/60 uppercase tracking-widest">Mobile Carousel Ad</span>
-           <div className="absolute bottom-1.5 flex gap-1.5">
-             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
-             <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
-             <div className="w-1.5 h-1.5 rounded-full bg-slate-500 opacity-50"></div>
+      <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
+        <div className="w-full h-[60px] flex items-center justify-center relative overflow-hidden">
+           <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">Advertisement</span>
+           <div className="absolute bottom-1.5 flex gap-1.5" aria-hidden>
+             <div className="w-1.5 h-1.5 rounded-full bg-brand-accent"></div>
+             <div className="w-1.5 h-1.5 rounded-full bg-on-brand-muted/40"></div>
+             <div className="w-1.5 h-1.5 rounded-full bg-on-brand-muted/40"></div>
            </div>
         </div>
       </div>
 
       {/* ======================= GLOBAL FOOTER ======================= */}
-      <footer className="bg-slate-900 text-slate-400 pt-8 pb-28 lg:pb-8 text-center text-sm mt-8 border-t border-slate-800 w-full">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Droplet className="w-4 h-4 text-emerald-500 fill-emerald-500" />
-            {/* NEW AMBIGRAM FOOTER LOGO */}
-            <div className="h-6 text-emerald-400">
-              <svg viewBox="0 0 400 100" className="h-full w-auto" fill="none" stroke="currentColor" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="40" cy="50" r="26" />
-                <path d="M66,50 V95" />
-                <circle cx="120" cy="50" r="26" />
-                <path d="M170,24 H230 L170,76 H230" />
-                <circle cx="280" cy="50" r="26" />
-                <path d="M334,5 V50" />
-                <circle cx="360" cy="50" r="26" />
-                <circle cx="360" cy="50" r="8" fill="currentColor" stroke="none" className="animate-pulse text-emerald-500" />
-              </svg>
-            </div>
-            
-            <span className="text-slate-500 ml-2">© {new Date().getFullYear()} All rights reserved.</span>
+      <footer className="bg-brand text-on-brand-muted pt-10 pb-28 lg:pb-10 text-sm mt-8 border-t border-brand-line w-full">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-5">
+          <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
+            <Wordmark tone="brand" size="md" />
+            <span className="text-xs">© {new Date().getFullYear()} {SITE.name}. All rights reserved.</span>
           </div>
-          <div className="flex gap-6 font-bold text-xs flex-wrap justify-center">
-            <a href="#" className="hover:text-emerald-400 transition-colors">About Us</a>
-            <a href="/privacy" className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
-            <a href="/terms" className="hover:text-emerald-400 transition-colors">Terms of Service</a>
-            <a href={`mailto:${SITE.contactEmail}`} className="hover:text-emerald-400 transition-colors">Contact</a>
-          </div>
+          <nav className="flex gap-x-6 gap-y-2 font-medium text-sm flex-wrap justify-center" aria-label="Footer">
+            <a href="/privacy" className="hover:text-on-brand transition-colors">Privacy</a>
+            <a href="/terms" className="hover:text-on-brand transition-colors">Terms</a>
+            <a href={`mailto:${SITE.contactEmail}`} className="hover:text-on-brand transition-colors">Contact</a>
+          </nav>
         </div>
       </footer>
 
@@ -1625,9 +1569,9 @@ function QozobLanding() {
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[200] px-5 py-3 rounded-2xl shadow-2xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-[90vw] ${toast.type === 'success' ? 'bg-indigo-950 text-emerald-300 border border-emerald-500/30' : 'bg-red-600 text-white'}`}
+          className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-3 rounded-lg shadow-xl text-sm font-medium flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-[90vw] border ${toast.type === 'success' ? 'bg-brand text-on-brand border-brand-line' : 'bg-danger-soft text-on-danger-soft border-danger-line'}`}
         >
-          {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertTriangle className="w-4 h-4 flex-shrink-0" />}
+          {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-brand-accent" aria-hidden /> : <AlertTriangle className="w-4 h-4 flex-shrink-0" aria-hidden />}
           <span>{toast.message}</span>
         </div>
       )}

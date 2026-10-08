@@ -70,38 +70,42 @@ export default function AdminClaimsDashboard() {
     }
   };
 
-  if (loading) return <div className="p-12 flex justify-center"><Loader2 className="animate-spin" /></div>;
+  if (loading) return <div className="min-h-screen bg-canvas p-12 flex justify-center"><Loader2 className="animate-spin text-accent" aria-label="Loading" /></div>;
 
   return (
-    <div className="max-w-6xl mx-auto p-8 font-sans">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-black text-indigo-950">Pending Station Claims</h1>
+    <div className="min-h-screen bg-canvas text-fg font-sans">
+    <div className="max-w-6xl mx-auto p-6 sm:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">Pending station claims</h1>
+          <p className="text-sm text-fg-muted mt-1">Check the CAC certificate, then approve or reject.</p>
+        </div>
         <a 
           href="/admin" 
-          className="text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-2 rounded-xl transition-colors"
+          className="inline-flex items-center h-10 px-4 text-sm font-medium text-fg bg-surface hover:bg-surface-2 border border-line-strong rounded-lg transition-colors"
         >
-          ← Full Admin Command Center
+          ← Back to admin
         </a>
       </div>
       
       {claims.length === 0 ? (
-        <p className="text-slate-500">No pending claims to review.</p>
+        <p className="text-fg-muted">No pending claims to review.</p>
       ) : (
-        <div className="grid gap-6">
+        <div className="grid gap-4">
           {claims.map((claim) => (
-            <div key={claim.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row justify-between gap-6">
+            <div key={claim.id} className="bg-surface border border-line rounded-xl p-6 flex flex-col md:flex-row justify-between gap-6">
               <div>
-                <h2 className="text-xl font-bold text-indigo-900">{claim.station_name}</h2>
-                <p className="text-sm text-slate-500 mb-4">Applicant: {claim.applicant_name} | Phone: {claim.phone_number}</p>
-                <div className="flex gap-4">
+                <h2 className="text-lg font-semibold text-fg">{claim.station_name}</h2>
+                <p className="text-sm text-fg-muted mb-4">Applicant: {claim.applicant_name} · Phone: {claim.phone_number}</p>
+                <div className="flex flex-wrap gap-3">
                   <button 
                     type="button"
                     onClick={() => openDocument(claim.document_url)}
-                    className="flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-lg hover:bg-indigo-100"
+                    className="inline-flex items-center gap-2 h-10 px-4 text-sm font-medium text-fg bg-surface hover:bg-surface-2 border border-line-strong rounded-lg transition-colors"
                   >
-                    <FileText className="w-4 h-4" /> View CAC Document
+                    <FileText className="w-4 h-4" aria-hidden /> View CAC certificate
                   </button>
-                  <p className="text-sm px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
+                  <p className="inline-flex items-center text-sm h-10 px-4 bg-surface-2 border border-line rounded-lg text-fg-muted font-mono">
                     RC: {claim.business_reg_number}
                   </p>
                 </div>
@@ -110,21 +114,22 @@ export default function AdminClaimsDashboard() {
               <div className="flex flex-col gap-2 min-w-[200px]">
                 <button 
                   onClick={() => handleReview(claim, 'Approved')}
-                  className="flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 rounded-xl transition-colors"
+                  className="flex items-center justify-center gap-2 h-11 bg-primary hover:bg-primary-hover text-on-primary text-sm font-semibold rounded-lg transition-colors"
                 >
-                  <CheckCircle className="w-4 h-4" /> Approve & Escalate Role
+                  <CheckCircle className="w-4 h-4" aria-hidden /> Approve claim
                 </button>
                 <button 
                   onClick={() => handleReview(claim, 'Rejected')}
-                  className="flex items-center justify-center gap-2 bg-red-100 hover:bg-red-200 text-red-700 font-bold py-3 rounded-xl transition-colors"
+                  className="flex items-center justify-center gap-2 h-11 bg-danger-soft hover:brightness-95 text-on-danger-soft border border-danger-line text-sm font-semibold rounded-lg transition-colors"
                 >
-                  <XCircle className="w-4 h-4" /> Reject Claim
+                  <XCircle className="w-4 h-4" aria-hidden /> Reject
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }

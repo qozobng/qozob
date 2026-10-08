@@ -16,6 +16,8 @@ import { StatCard } from '@/components/analytics/StatCard';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
 import { RatingDistribution } from '@/components/analytics/RatingDistribution';
+import { Wordmark } from '@/components/Wordmark';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 // =========================================================================
 // TYPES
@@ -415,10 +417,10 @@ export default function DashboardPage() {
     const other = approved.length - noQueue - moderate - severe;
 
     const queueDonut: DonutSegment[] = [
-      { label: 'No Queue (Smooth)', value: noQueue, color: '#10b981' },
-      { label: 'Moderate Queue', value: moderate, color: '#f59e0b' },
-      { label: 'Long Queue', value: severe, color: '#dc2626' },
-      { label: 'Unspecified', value: Math.max(0, other), color: '#94a3b8' },
+      { label: 'No Queue (Smooth)', value: noQueue, color: 'var(--chart-pos)' },
+      { label: 'Moderate Queue', value: moderate, color: 'var(--chart-warn)' },
+      { label: 'Long Queue', value: severe, color: 'var(--chart-neg)' },
+      { label: 'Unspecified', value: Math.max(0, other), color: 'var(--chart-neutral)' },
     ];
 
     // Price comparison bars for each station vs market benchmark
@@ -432,8 +434,8 @@ export default function DashboardPage() {
           : `₦${s.price_pms - marketAveragePrice} above market`
         : 'Unset',
       color: s.price_pms 
-        ? s.price_pms <= marketAveragePrice ? '#10b981' : '#f59e0b'
-        : '#cbd5e1'
+        ? s.price_pms <= marketAveragePrice ? 'var(--chart-pos)' : 'var(--chart-warn)'
+        : 'var(--chart-neutral)'
     }));
 
     return {
@@ -452,81 +454,80 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      <div className="min-h-screen flex items-center justify-center bg-surface-2">
+        <Loader2 className="w-8 h-8 animate-spin text-accent" />
       </div>
     );
   }
 
+  const menuItem = 'w-full text-left px-3 h-10 text-sm font-medium text-fg hover:bg-surface-2 rounded-lg flex items-center gap-2.5 transition-colors';
+
   return (
-    <div className="min-h-screen bg-slate-50 font-sans pb-16">
+    <div className="min-h-screen bg-canvas text-fg font-sans pb-16">
       
       {/* ======================= NAVBAR ======================= */}
-      <nav className="bg-indigo-950 text-white sticky top-0 z-50 border-b border-indigo-900 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <h1 
-              className="text-2xl font-black tracking-tight text-emerald-400 cursor-pointer" 
-              onClick={() => router.push('/')}
-            >
-              Qozob.
-            </h1>
-            <span className="bg-white/10 text-[10px] font-black px-2.5 py-1 rounded-full text-indigo-200 border border-white/10 uppercase tracking-widest hidden sm:inline-block">
-              Station Manager Console
-            </span>
+      <nav className="bg-brand text-on-brand sticky top-0 z-50 border-b border-brand-line">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button type="button" onClick={() => router.push('/')} aria-label="Qozob home" className="rounded-md shrink-0">
+              <Wordmark tone="brand" size="md" />
+            </button>
+            <span className="h-6 w-px bg-brand-line hidden sm:block" aria-hidden />
+            <div className="hidden sm:block min-w-0">
+              <p className="text-sm font-semibold text-on-brand leading-tight">Station dashboard</p>
+              <p className="text-xs text-on-brand-muted leading-tight">For station owners</p>
+            </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => router.push('/')}
-              className="hidden md:flex items-center gap-1.5 text-xs font-bold text-indigo-200 hover:text-white bg-white/5 hover:bg-white/10 px-3 py-2 rounded-xl transition-colors border border-white/10"
+              className="hidden md:inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-sm font-medium text-on-brand-muted hover:text-on-brand hover:bg-on-brand/5 border border-on-brand/15 transition-colors"
             >
-              <span>View Live Map</span>
-              <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
+              Public map
+              <ArrowUpRight className="w-3.5 h-3.5" aria-hidden />
             </button>
 
             <button
               onClick={() => setShowBulkModal(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-indigo-950 font-black text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-accent-solid hover:bg-accent-hover text-on-accent text-sm font-semibold transition-colors"
             >
-              <FileUp className="w-3.5 h-3.5" />
-              <span>Bulk Excel</span>
+              <FileUp className="w-4 h-4" aria-hidden />
+              <span className="hidden sm:inline">Bulk update</span>
             </button>
+
+            <ThemeToggle tone="brand" />
 
             <div className="relative">
               <button 
                 onClick={() => setIsMenuOpen(!isMenuOpen)} 
-                className="flex items-center gap-2 bg-white/10 hover:bg-white/15 border border-white/10 px-3.5 py-2 rounded-xl transition-all"
+                aria-label="Account menu"
+                aria-expanded={isMenuOpen}
+                className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-lg border border-on-brand/15 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
               >
-                <span className="text-xs font-bold truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
-                <Menu className="w-4 h-4 text-emerald-400" />
+                <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-accent text-brand text-xs font-semibold uppercase" aria-hidden>
+                  {(user.email || '?').charAt(0)}
+                </span>
+                <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
+                <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
               </button>
               
               {isMenuOpen && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 text-slate-800 animate-in fade-in slide-in-from-top-2 duration-200">
-                  <div className="p-3.5 bg-indigo-50 border-b border-indigo-100">
-                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">Manager Account</span>
-                    <span className="text-xs font-bold text-indigo-950 truncate block mt-0.5">{user.email}</span>
+                <div className="absolute right-0 top-full mt-2 w-64 bg-surface rounded-xl shadow-lg border border-line overflow-hidden z-50 text-fg animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="p-4 border-b border-line">
+                    <span className="text-xs font-semibold text-fg-subtle uppercase tracking-[0.08em] block">Station owner</span>
+                    <span className="text-sm font-medium text-fg truncate block mt-1">{user.email}</span>
                   </div>
-                  <div className="p-2 flex flex-col gap-1">
-                    <button 
-                      onClick={() => router.push('/')} 
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-xl flex items-center gap-2"
-                    >
-                      <MapIcon className="w-4 h-4 text-emerald-600" /> Public Map
+                  <div className="p-2 flex flex-col gap-0.5">
+                    <button onClick={() => router.push('/')} className={menuItem}>
+                      <MapIcon className="w-4 h-4 text-fg-muted" aria-hidden /> Public map
                     </button>
-                    <button 
-                      onClick={() => { setShowBulkModal(true); setIsMenuOpen(false); }} 
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 rounded-xl flex items-center gap-2"
-                    >
-                      <FileUp className="w-4 h-4 text-indigo-600" /> Bulk Excel Update
+                    <button onClick={() => { setShowBulkModal(true); setIsMenuOpen(false); }} className={menuItem}>
+                      <FileUp className="w-4 h-4 text-fg-muted" aria-hidden /> Bulk price update
                     </button>
-                    <div className="h-px bg-slate-100 my-1" />
-                    <button 
-                      onClick={handleSignOut} 
-                      className="w-full text-left px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl flex items-center gap-2"
-                    >
-                      <LogOut className="w-4 h-4" /> Sign Out
+                    <div className="h-px bg-line my-1" />
+                    <button onClick={handleSignOut} className={`${menuItem} text-danger hover:bg-danger-soft`}>
+                      <LogOut className="w-4 h-4" aria-hidden /> Sign out
                     </button>
                   </div>
                 </div>
@@ -541,13 +542,12 @@ export default function DashboardPage() {
         
         {/* Pending Access Notification */}
         {accessPending && (
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4 shadow-xs">
-            <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div className="text-xs leading-relaxed">
-              <p className="font-black text-sm">Manager Access Application Under Review</p>
-              <p className="text-amber-800 mt-0.5">
-                Your application for station management rights has been sent to the Qozob administration team. 
-                You can submit station claims right now from the map. Once reviewed, full control features will unlock.
+          <div className="flex items-start gap-3 bg-warning-soft border border-warning-line text-on-warning-soft rounded-xl p-4">
+            <Clock className="w-5 h-5 shrink-0 mt-0.5" aria-hidden />
+            <div className="text-sm leading-relaxed">
+              <p className="font-semibold">Your station owner access is under review</p>
+              <p className="mt-0.5">
+                Our team is reviewing your application. You can already claim stations from the map; full controls unlock once you are approved.
               </p>
             </div>
           </div>
@@ -556,33 +556,32 @@ export default function DashboardPage() {
         {/* Manager Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-3">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-black text-indigo-950 flex items-center gap-2">
-              <ShieldCheck className="text-emerald-500 w-8 h-8" />
-              <span>Retail Portfolio Overview</span>
+            <h2 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">
+              Your stations
             </h2>
-            <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
-              Monitor pump prices, meter accuracy, and queue traffic across your verified retail filling stations.
+            <p className="text-fg-muted text-sm mt-1">
+              Prices, pump accuracy and queues across the stations you manage.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => router.push('/')}
-              className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs px-3.5 py-2 rounded-xl transition-colors shadow-xs"
+              className="bg-surface hover:bg-surface-2 border border-line text-fg font-semibold text-xs px-3.5 py-2 rounded-lg transition-colors shadow-xs"
             >
               + Claim Another Station
             </button>
-            <div className="flex bg-slate-200 p-1 rounded-xl">
+            <div className="flex bg-surface-3 p-1 rounded-lg">
               <button 
                 onClick={() => setViewMode('card')} 
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'card' ? 'bg-white shadow-xs text-indigo-950' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'card' ? 'bg-surface shadow-xs text-fg' : 'text-fg-muted hover:text-fg'}`}
                 title="Grid View"
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
               <button 
                 onClick={() => setViewMode('list')} 
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white shadow-xs text-indigo-950' : 'text-slate-500 hover:text-slate-800'}`}
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-surface shadow-xs text-fg' : 'text-fg-muted hover:text-fg'}`}
                 title="List View"
               >
                 <List className="w-4 h-4" />
@@ -665,20 +664,20 @@ export default function DashboardPage() {
         {/* ======================= STATIONS MANAGEMENT GRID ======================= */}
         <div>
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-lg font-black text-slate-800">Your Retail Outlets</h3>
-            <span className="text-xs text-slate-500 font-medium">{stations.length} total stations registered</span>
+            <h3 className="text-lg font-semibold text-fg">Your Retail Outlets</h3>
+            <span className="text-xs text-fg-muted font-medium">{stations.length} total stations registered</span>
           </div>
 
           {stations.length === 0 ? (
-            <div className="bg-white border border-slate-200/80 rounded-3xl p-12 text-center shadow-xs">
-              <Building2 className="w-14 h-14 text-slate-300 mx-auto mb-3" />
-              <h4 className="text-base font-black text-indigo-950 mb-1">No stations claimed yet</h4>
-              <p className="text-slate-500 text-xs max-w-sm mx-auto mb-5">
+            <div className="bg-surface border border-line rounded-xl p-12 text-center shadow-xs">
+              <Building2 className="w-14 h-14 text-fg-subtle mx-auto mb-3" />
+              <h4 className="text-base font-semibold text-fg mb-1">No stations claimed yet</h4>
+              <p className="text-fg-muted text-xs max-w-sm mx-auto mb-5">
                 Locate your retail stations on the public map and tap &quot;Claim Station&quot; with your CAC incorporation certificate.
               </p>
               <button
                 onClick={() => router.push('/')}
-                className="bg-indigo-950 hover:bg-indigo-900 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-colors shadow-sm"
+                className="bg-primary hover:bg-primary-hover text-on-primary font-semibold text-xs px-5 py-2.5 rounded-lg transition-colors shadow-sm"
               >
                 Go to Public Map
               </button>
@@ -693,65 +692,65 @@ export default function DashboardPage() {
                 return (
                   <div 
                     key={station.id} 
-                    className={`bg-white border ${isPending ? 'border-amber-200' : 'border-slate-200/80'} rounded-3xl p-6 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden flex ${viewMode === 'card' ? 'flex-col justify-between' : 'flex-col lg:flex-row lg:items-center gap-4 lg:gap-6'}`}
+                    className={`bg-surface border ${isPending ? 'border-warning-line' : 'border-line'} rounded-xl p-6 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden flex ${viewMode === 'card' ? 'flex-col justify-between' : 'flex-col lg:flex-row lg:items-center gap-4 lg:gap-6'}`}
                   >
-                    <div className={`absolute top-0 left-0 ${isPending ? 'bg-amber-400' : 'bg-emerald-500'} ${viewMode === 'card' ? 'w-full h-1.5' : 'w-full h-1.5 lg:w-1.5 lg:h-full'}`} />
+                    <div className={`absolute top-0 left-0 ${isPending ? 'bg-warning' : 'bg-success'} ${viewMode === 'card' ? 'w-full h-1.5' : 'w-full h-1.5 lg:w-1.5 lg:h-full'}`} />
                     
                     {/* Header: Logo + Station Name */}
                     <div className={`flex items-center gap-3.5 ${viewMode === 'card' ? 'mb-4 mt-1' : 'flex-1 pt-3 lg:pt-0'}`}>
-                      <div className={`w-14 h-14 rounded-full border border-slate-200 bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-xs relative ${isPending ? 'opacity-60' : ''}`}>
+                      <div className={`w-14 h-14 rounded-full border border-line bg-surface flex items-center justify-center overflow-hidden shrink-0 shadow-xs relative ${isPending ? 'opacity-60' : ''}`}>
                         <BrandLogo name={station.name} customLogoUrl={station.custom_logo_url} size={56} imgClassName="p-1" textClassName="text-lg" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <h4 className="font-black text-indigo-950 text-base leading-tight truncate">{station.name}</h4>
+                          <h4 className="font-semibold text-fg text-base leading-tight truncate">{station.name}</h4>
                         </div>
-                        <span className="inline-block bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border border-slate-200 mb-1">
+                        <span className="inline-block bg-surface-2 text-fg-muted text-xs font-semibold uppercase tracking-wider px-2 py-0.5 rounded border border-line mb-1">
                           ID: {stationCode}
                         </span>
-                        <p className="text-xs text-slate-500 flex items-center gap-1 truncate max-w-[220px]">
-                          <MapPin className="w-3 h-3 shrink-0 text-slate-400" /> {station.address}
+                        <p className="text-xs text-fg-muted flex items-center gap-1 truncate max-w-[220px]">
+                          <MapPin className="w-3 h-3 shrink-0 text-fg-subtle" /> {station.address}
                         </p>
                       </div>
                     </div>
 
                     {/* Middle: Price & Queue Controls */}
                     {isPending ? (
-                      <div className={`bg-amber-50 rounded-2xl p-4 border border-amber-100 flex items-center gap-2.5 ${viewMode === 'card' ? 'mb-4' : 'w-full lg:w-56 shrink-0'}`}>
-                        <Clock className="w-4 h-4 text-amber-500 shrink-0" />
-                        <span className="text-xs font-bold text-amber-800">Claim Under Admin Review</span>
+                      <div className={`bg-warning-soft rounded-xl p-4 border border-warning-line flex items-center gap-2.5 ${viewMode === 'card' ? 'mb-4' : 'w-full lg:w-56 shrink-0'}`}>
+                        <Clock className="w-4 h-4 text-warning shrink-0" />
+                        <span className="text-xs font-semibold text-warning">Claim Under Admin Review</span>
                       </div>
                     ) : (
-                      <div className={`bg-slate-50 rounded-2xl p-4 border border-slate-100 flex flex-col gap-2.5 ${viewMode === 'card' ? 'mb-4' : 'w-full lg:w-64 shrink-0'}`}>
+                      <div className={`bg-surface-2 rounded-xl p-4 border border-line flex flex-col gap-2.5 ${viewMode === 'card' ? 'mb-4' : 'w-full lg:w-64 shrink-0'}`}>
                         {/* Price Inline */}
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Live PMS Price</span>
+                          <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider">Live PMS Price</span>
                           {isEditingThisPrice ? (
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
                                 value={inlinePriceVal}
                                 onChange={e => setInlinePriceVal(e.target.value)}
-                                className="w-20 px-2 py-1 text-xs font-black bg-white border border-indigo-500 rounded-lg outline-none font-mono"
+                                className="w-20 px-2 py-1 text-xs font-semibold bg-surface border border-primary rounded-lg outline-none font-mono"
                                 autoFocus
                               />
                               <button
                                 onClick={() => handleInlinePriceSave(station)}
                                 disabled={isSavingInline}
-                                className="p-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+                                className="p-1 bg-success text-on-solid rounded-lg hover:bg-primary-hover"
                               >
                                 <Check className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => setEditingPriceId(null)}
-                                className="p-1 text-slate-400 hover:text-slate-600"
+                                className="p-1 text-fg-subtle hover:text-fg-muted"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <span className="text-xl font-black text-indigo-950 font-mono">
+                              <span className="text-xl font-semibold text-fg font-mono">
                                 {station.price_pms ? `₦${station.price_pms}` : 'Not Set'}
                               </span>
                               <button
@@ -759,7 +758,7 @@ export default function DashboardPage() {
                                   setEditingPriceId(station.station_id);
                                   setInlinePriceVal(station.price_pms ? String(station.price_pms) : '');
                                 }}
-                                className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-200 transition-colors"
+                                className="text-xs font-semibold text-on-accent-soft bg-accent-soft hover:bg-surface-2 px-2 py-0.5 rounded border border-accent-line transition-colors"
                               >
                                 Edit
                               </button>
@@ -768,12 +767,12 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Queue Selector */}
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Queue</span>
+                        <div className="flex items-center justify-between pt-2 border-t border-line text-xs">
+                          <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider">Queue</span>
                           <select
                             value={station.queue_status || 'Unknown'}
                             onChange={e => handleQueueChange(station, e.target.value)}
-                            className="text-[11px] font-bold bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-slate-700 outline-none cursor-pointer focus:border-indigo-600"
+                            className="text-xs font-semibold bg-surface border border-line rounded-lg px-2 py-0.5 text-fg outline-none cursor-pointer focus:border-primary"
                           >
                             <option value="No Queue">No Queue</option>
                             <option value="Moderate Queue">Moderate Queue</option>
@@ -789,7 +788,7 @@ export default function DashboardPage() {
                       <button 
                         onClick={() => openEditModal(station)} 
                         disabled={isPending} 
-                        className="flex-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 px-3 rounded-xl transition-colors border border-indigo-100 text-xs disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                        className="flex-1 bg-accent-soft hover:bg-surface-2 text-on-accent-soft font-semibold py-2.5 px-3 rounded-lg transition-colors border border-accent-line text-xs disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
                       >
                         Full Details
                       </button>
@@ -797,9 +796,9 @@ export default function DashboardPage() {
                         href={`https://www.google.com/maps/dir/?api=1&destination=${station.lat},${station.lng}`} 
                         target="_blank" 
                         rel="noopener noreferrer" 
-                        className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold py-2.5 px-3 rounded-xl transition-colors border border-emerald-100 text-xs flex items-center justify-center gap-1 shadow-xs"
+                        className="bg-success-soft hover:bg-success-soft text-on-success-soft font-semibold py-2.5 px-3 rounded-lg transition-colors border border-success-line text-xs flex items-center justify-center gap-1 shadow-xs"
                       >
-                        <Navigation className="w-3.5 h-3.5 text-emerald-600" />
+                        <Navigation className="w-3.5 h-3.5 text-success" />
                         <span>Map</span>
                       </a>
                     </div>
@@ -813,45 +812,45 @@ export default function DashboardPage() {
 
       {/* ======================= BULK UPLOAD MODAL ======================= */}
       {showBulkModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full relative shadow-2xl border border-slate-100">
+        <div className="fixed inset-0 bg-[var(--overlay)] backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-surface rounded-xl p-6 sm:p-8 max-w-md w-full relative shadow-xl border border-line">
             <button 
               onClick={() => setShowBulkModal(false)} 
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              className="absolute top-5 right-5 text-fg-subtle hover:text-fg p-1 rounded-lg"
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-2xl font-black text-indigo-950 mb-1">Bulk Excel Manager</h3>
-            <p className="text-xs text-slate-500 mb-6">Synchronize pricing for all your managed stations at once.</p>
+            <h3 className="text-2xl font-semibold text-fg mb-1">Bulk Excel Manager</h3>
+            <p className="text-xs text-fg-muted mb-6">Synchronize pricing for all your managed stations at once.</p>
             
-            <div className="bg-indigo-50 rounded-2xl p-5 mb-5 border border-indigo-100 flex flex-col gap-4">
+            <div className="bg-accent-soft rounded-xl p-5 mb-5 border border-accent-line flex flex-col gap-4">
               <div className="flex gap-3">
-                <div className="bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0 font-black text-[11px] mt-0.5">1</div>
+                <div className="bg-primary text-on-primary rounded-full w-5 h-5 flex items-center justify-center shrink-0 font-semibold text-xs mt-0.5">1</div>
                 <div>
-                  <h4 className="text-xs font-bold text-indigo-950">Download prefilled template</h4>
-                  <p className="text-[11px] text-indigo-700/80 mt-0.5 mb-2.5">Contains your stations and unique system codes.</p>
+                  <h4 className="text-xs font-semibold text-fg">Download prefilled template</h4>
+                  <p className="text-xs text-fg-muted mt-0.5 mb-2.5">Contains your stations and unique system codes.</p>
                   <button 
                     onClick={downloadBulkTemplate} 
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 px-3.5 rounded-xl flex items-center gap-1.5 shadow-xs transition-colors"
+                    className="bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold py-2 px-3.5 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors"
                   >
                     <FileDown className="w-3.5 h-3.5" /> Download CSV
                   </button>
                 </div>
               </div>
 
-              <div className="h-px bg-indigo-200/60 w-full" />
+              <div className="h-px bg-accent-soft w-full" />
 
               <div className="flex gap-3">
-                <div className="bg-indigo-600 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0 font-black text-[11px] mt-0.5">2</div>
+                <div className="bg-primary text-on-primary rounded-full w-5 h-5 flex items-center justify-center shrink-0 font-semibold text-xs mt-0.5">2</div>
                 <div className="w-full">
-                  <h4 className="text-xs font-bold text-indigo-950">Upload updated CSV</h4>
-                  <label className="w-full bg-white border border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50/50 transition-colors rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer group mt-2">
-                    <FileUp className="w-5 h-5 text-indigo-500 group-hover:scale-110 transition-transform mb-1" />
-                    <span className="text-xs font-bold text-indigo-700">Choose CSV Spreadsheet</span>
+                  <h4 className="text-xs font-semibold text-fg">Upload updated CSV</h4>
+                  <label className="w-full bg-surface border border-dashed border-accent-line hover:border-primary hover:bg-surface-2 transition-colors rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer group mt-2">
+                    <FileUp className="w-5 h-5 text-accent group-hover:scale-110 transition-transform mb-1" />
+                    <span className="text-xs font-semibold text-fg">Choose CSV Spreadsheet</span>
                     <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} disabled={bulkProcessing} />
                   </label>
                   {bulkProcessing && (
-                    <p className="text-[11px] text-emerald-600 font-bold mt-2 flex items-center gap-1 animate-pulse">
+                    <p className="text-xs text-success font-semibold mt-2 flex items-center gap-1 animate-pulse">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating database in parallel...
                     </p>
                   )}
@@ -859,8 +858,8 @@ export default function DashboardPage() {
               </div>
             </div>
             
-            <div className="flex items-start gap-2 bg-amber-50 p-3 rounded-xl border border-amber-100 text-amber-900 text-xs">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2 bg-warning-soft p-3 rounded-lg border border-warning-line text-on-warning-soft text-xs">
+              <AlertCircle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
               <p className="leading-snug"><strong>Note:</strong> Please keep the &quot;System_ID&quot; column intact to ensure accurate station matching.</p>
             </div>
           </div>
@@ -869,58 +868,58 @@ export default function DashboardPage() {
 
       {/* ======================= SINGLE EDIT MODAL ======================= */}
       {editingStation && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full relative shadow-2xl max-h-[90vh] overflow-y-auto border border-slate-100">
+        <div className="fixed inset-0 bg-[var(--overlay)] backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-surface rounded-xl p-6 sm:p-8 max-w-md w-full relative shadow-xl max-h-[90vh] overflow-y-auto border border-line">
             <button 
               onClick={() => setEditingStation(null)} 
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 p-1 rounded-lg"
+              className="absolute top-5 right-5 text-fg-subtle hover:text-fg p-1 rounded-lg"
             >
               <X className="w-5 h-5" />
             </button>
-            <h3 className="text-2xl font-black text-indigo-950 mb-0.5">Edit Station Details</h3>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-5">
+            <h3 className="text-2xl font-semibold text-fg mb-0.5">Edit Station Details</h3>
+            <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block mb-5">
               Code: {generateStationCode(editingStation.station_id)}
             </span>
 
             <div className="flex flex-col gap-3.5">
               <div>
-                <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">Station Name</label>
+                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Station Name</label>
                 <input 
                   type="text" 
                   value={editName} 
                   onChange={(e) => setEditName(e.target.value)} 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-600 font-bold text-slate-800 text-sm" 
+                  className="w-full bg-surface-2 border border-line rounded-lg p-3 outline-none focus:border-primary font-semibold text-fg text-sm" 
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">Address</label>
+                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Address</label>
                 <textarea 
                   value={editAddress} 
                   onChange={(e) => setEditAddress(e.target.value)} 
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-600 text-xs text-slate-700 resize-none h-18" 
+                  className="w-full bg-surface-2 border border-line rounded-lg p-3 outline-none focus:border-primary text-xs text-fg resize-none h-18" 
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">PMS Price (₦)</label>
+                  <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">PMS Price (₦)</label>
                   <input 
                     type="number" 
                     step="0.01" 
                     value={editPrice} 
                     onChange={(e) => setEditPrice(e.target.value)} 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-lg font-black outline-none focus:border-emerald-500 text-indigo-950 font-mono" 
+                    className="w-full bg-surface-2 border border-line rounded-lg p-3 text-lg font-semibold outline-none focus:border-primary text-fg font-mono" 
                     placeholder="950" 
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">Queue State</label>
+                  <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Queue State</label>
                   <select
                     value={editQueue}
                     onChange={(e) => setEditQueue(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-bold outline-none focus:border-indigo-600 text-slate-700 h-[52px]"
+                    className="w-full bg-surface-2 border border-line rounded-lg p-3 text-xs font-semibold outline-none focus:border-primary text-fg h-[52px]"
                   >
                     <option value="No Queue">No Queue</option>
                     <option value="Moderate Queue">Moderate</option>
@@ -931,13 +930,13 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">Custom Brand Logo</label>
-                <div className="flex items-center gap-3 bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100">
+                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Custom Brand Logo</label>
+                <div className="flex items-center gap-3 bg-accent-soft p-3.5 rounded-lg border border-accent-line">
                   {editLogoUrl ? (
-                    <img src={editLogoUrl} alt="Preview" className="w-10 h-10 rounded-full border border-slate-200 object-contain bg-white" />
+                    <img src={editLogoUrl} alt="Preview" className="w-10 h-10 rounded-full border border-line object-contain bg-surface" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center border border-slate-200">
-                      <ImageIcon className="w-4 h-4 text-slate-300" />
+                    <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center border border-line">
+                      <ImageIcon className="w-4 h-4 text-fg-subtle" />
                     </div>
                   )}
                   <div className="flex-1">
@@ -946,9 +945,9 @@ export default function DashboardPage() {
                       accept="image/png, image/jpeg" 
                       onChange={handleLogoUpload} 
                       disabled={uploadingLogo} 
-                      className="w-full text-xs text-slate-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer disabled:opacity-50" 
+                      className="w-full text-xs text-fg-muted file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary file:text-on-primary hover:file:bg-primary-hover cursor-pointer disabled:opacity-50" 
                     />
-                    {uploadingLogo && <p className="text-[10px] text-indigo-600 mt-1 font-bold animate-pulse">Uploading logo...</p>}
+                    {uploadingLogo && <p className="text-xs text-accent mt-1 font-semibold animate-pulse">Uploading logo...</p>}
                   </div>
                 </div>
               </div>
@@ -957,14 +956,14 @@ export default function DashboardPage() {
             <div className="flex gap-2.5 mt-6">
               <button 
                 onClick={() => setEditingStation(null)} 
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-3 rounded-xl transition-all text-xs"
+                className="flex-1 bg-surface-2 hover:bg-surface-3 text-fg-muted font-semibold py-3 rounded-lg transition-all text-xs"
               >
                 Cancel
               </button>
               <button 
                 onClick={saveStationUpdates} 
                 disabled={isSaving || uploadingLogo || !editName} 
-                className="flex-[2] bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3 rounded-xl transition-all disabled:opacity-50 flex justify-center items-center gap-1.5 text-xs shadow-sm"
+                className="flex-[2] bg-primary hover:bg-primary-hover text-on-primary font-semibold py-3 rounded-lg transition-all disabled:opacity-50 flex justify-center items-center gap-1.5 text-xs shadow-sm"
               >
                 {isSaving ? "Publishing..." : <><CheckCircle2 className="w-4 h-4" /> Save & Broadcast</>}
               </button>
