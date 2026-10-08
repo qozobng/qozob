@@ -8,7 +8,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 export function LegalPage({ title, intro, children }: { title: string; intro: string; children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-canvas font-sans text-fg">
-      <header className="bg-brand border-b border-brand-line">
+      <header className="bg-brand-grad border-b border-brand-line">
         <div className="max-w-3xl mx-auto px-5 py-4 flex items-center justify-between gap-4">
           <Link href="/" aria-label={`${SITE.name} home`} className="rounded-md">
             <Wordmark tone="brand" size="md" />

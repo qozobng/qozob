@@ -7,7 +7,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* =====================================================================================
-   QOZOB DESIGN TOKENS — "Midnight & Champagne"
+   QOZOB DESIGN TOKENS — "Mint & Grape"
+   Fresh mint + grape purple. Clean near-white in light mode, deep violet in dark mode.
    Every text/background pair below meets WCAG AA (4.5:1 for text, 3:1 for icons/large text)
    in BOTH modes. Components use these tokens (bg-surface, text-fg, bg-primary …) instead of
    raw Tailwind colours, so nothing can blend into its background when the theme changes.
@@ -18,47 +19,47 @@
   color-scheme: light;
 
   /* Surfaces */
-  --canvas: #F7F5F0;          /* app background (warm ivory) */
+  --canvas: #F7F5FC;          /* app background (whisper of lilac) */
   --surface: #FFFFFF;         /* cards, modals, inputs */
-  --surface-2: #F2EFE8;       /* subtle fills, secondary buttons */
-  --surface-3: #E8E3D8;       /* hover / pressed fills */
-  --line: #E2DCCF;            /* hairline borders */
-  --line-strong: #C9C0AE;     /* input borders, dividers that must be seen */
+  --surface-2: #F2EEFB;       /* subtle fills, secondary buttons */
+  --surface-3: #E7E0F7;       /* hover / pressed fills */
+  --line: #E6E0F4;            /* hairline borders */
+  --line-strong: #ADA1CF;     /* input borders, dividers that must be seen */
 
   /* Text */
-  --fg: #0E1525;              /* primary text            16.9:1 on surface */
-  --fg-muted: #474E60;        /* secondary text           8.4:1 on surface */
-  --fg-subtle: #5E6576;       /* captions, placeholders   5.9:1 on surface */
+  --fg: #1B0F33;              /* primary text (grape ink) 18.1:1 on surface */
+  --fg-muted: #4B3F66;        /* secondary text            9.5:1 on surface */
+  --fg-subtle: #665B80;       /* captions, placeholders    6.2:1 on surface */
 
-  /* Primary action (buttons, selected states) */
-  --primary: #0F1B2D;
-  --primary-hover: #1D2B45;
-  --on-primary: #F7F5F0;
+  /* Primary action (buttons, selected states) — grape */
+  --primary: #6D28D9;         /* 7.1:1 with white */
+  --primary-hover: #5B21B6;
+  --on-primary: #FFFFFF;
 
-  /* Brand surfaces (header, footer, sidebars, hero cards) — navy in both modes */
-  --brand: #0F1B2D;
-  --brand-2: #16243A;
-  --brand-line: #2A3956;
-  --on-brand: #F7F5F0;        /* 16.1:1 on brand */
-  --on-brand-muted: #B7C0D1;  /* 9.1:1 on brand */
-  --brand-accent: #D4B47A;    /* champagne on navy, 8.7:1 */
-  --brand-info: #9DB8F5;
-  --brand-danger: #FCA5A5;
+  /* Brand surfaces (header, footer, sidebars) — rich grape */
+  --brand: #3B0F80;
+  --brand-2: #4A1A99;
+  --brand-line: #5E2DB3;
+  --on-brand: #FFFFFF;        /* 13.4:1 on brand */
+  --on-brand-muted: #D9CCF7;  /* 8.9:1 on brand */
+  --brand-accent: #6EE7B7;    /* mint on grape, 8.8:1 */
+  --brand-info: #C7D7FE;
+  --brand-danger: #FECACA;
 
-  /* Champagne accent */
-  --accent: #8A6A35;          /* accent text / links on light, 5.0:1 */
-  --accent-solid: #D4B47A;    /* champagne buttons */
-  --accent-hover: #E2C68F;
-  --on-accent: #0F1B2D;       /* 8.7:1 on champagne */
-  --accent-soft: #F4ECDD;
-  --on-accent-soft: #5C4520;  /* 7.6:1 */
-  --accent-line: #E3D3B4;
+  /* Mint accent */
+  --accent: #047857;          /* accent text / links on light, 5.5:1 */
+  --accent-solid: #34D399;    /* mint buttons, chips, highlights */
+  --accent-hover: #5FE3B1;
+  --on-accent: #05291C;       /* 8.2:1 on mint */
+  --accent-soft: #E3FAF0;
+  --on-accent-soft: #065F46;  /* 7.0:1 */
+  --accent-line: #A7F0D2;
 
   /* Status */
-  --success: #0F7B5F;  --success-soft: #E3F3EC;  --on-success-soft: #0B5E48;  --success-line: #B8DFCF;
-  --warning: #9A5B00;  --warning-soft: #FBF0DC;  --on-warning-soft: #6E4100;  --warning-line: #EED3A3;
-  --danger:  #B42318;  --danger-soft:  #FDECEA;  --on-danger-soft:  #8F1C13;  --danger-line:  #F5C2BC;
-  --info:    #1D4ED8;  --info-soft:    #E8EEFC;  --on-info-soft:    #1E3A8A;  --info-line:    #C3D3F7;
+  --success: #0F7B5F;  --success-soft: #E3F6EE;  --on-success-soft: #0B5E48;  --success-line: #B5E3D0;
+  --warning: #9A5B00;  --warning-soft: #FDF1DC;  --on-warning-soft: #6E4100;  --warning-line: #F0D4A2;
+  --danger:  #C0262D;  --danger-soft:  #FDECEC;  --on-danger-soft:  #8F1C22;  --danger-line:  #F6C3C5;
+  --info:    #1D4ED8;  --info-soft:    #EAEFFD;  --on-info-soft:    #1E3A8A;  --info-line:    #C5D4F8;
   --on-solid: #FFFFFF;        /* text on solid success/danger/info fills */
   --star: #B7791F;            /* rating stars, 3.6:1 (icon) */
 
@@ -68,73 +69,73 @@
   --src-rep: #0F7B5F;
 
   /* Charts */
-  --chart-1: #1F3A5F;
-  --chart-2: #B08D57;
+  --chart-1: #7C3AED;
+  --chart-2: #059669;
   --chart-pos: #0F7B5F;
-  --chart-warn: #C27C0E;
-  --chart-neg: #B42318;
-  --chart-neutral: #B9B3A6;
-  --chart-track: #EFEBE3;
+  --chart-warn: #D97706;
+  --chart-neg: #C0262D;
+  --chart-neutral: #C5BBE0;
+  --chart-track: #EFEAF9;
 
-  --overlay: rgba(8, 12, 22, 0.6);
-  --shadow-color: 15 27 45;
+  --overlay: rgba(20, 8, 42, 0.55);
+  --shadow-color: 59 15 128;
 }
 
 .dark {
   color-scheme: dark;
 
-  --canvas: #0A101C;
-  --surface: #121A2A;
-  --surface-2: #18223A;
-  --surface-3: #212C47;
-  --line: #26314A;
-  --line-strong: #3A4868;
+  --canvas: #110A22;
+  --surface: #1A1131;
+  --surface-2: #22173F;
+  --surface-3: #2C1F50;
+  --line: #2F2354;
+  --line-strong: #54448A;
 
-  --fg: #F5F1E8;              /* 15.6:1 on surface */
-  --fg-muted: #B3BBCB;        /* 9.0:1 */
-  --fg-subtle: #959EB1;       /* 6.3:1 */
+  --fg: #F6F2FF;              /* 16.3:1 on surface */
+  --fg-muted: #CBC0E8;        /* 10.5:1 */
+  --fg-subtle: #A99CCB;       /* 7.1:1 */
 
-  --primary: #D4B47A;         /* champagne becomes the action colour on dark */
-  --primary-hover: #E2C68F;
-  --on-primary: #0A101C;      /* 9.7:1 */
+  --primary: #A78BFA;         /* lavender action colour on dark */
+  --primary-hover: #C4B5FD;
+  --on-primary: #140A2B;      /* 7.0:1 */
 
-  --brand: #0D1526;
-  --brand-2: #131D33;
-  --brand-line: #26314A;
-  --on-brand: #F5F1E8;
-  --on-brand-muted: #B3BBCB;
-  --brand-accent: #D4B47A;
-  --brand-info: #9DB8F5;
+  --brand: #1D0D3D;
+  --brand-2: #28164F;
+  --brand-line: #3A2668;
+  --on-brand: #F6F2FF;
+  --on-brand-muted: #CFC3EE;
+  --brand-accent: #6EE7B7;
+  --brand-info: #C7D7FE;
   --brand-danger: #FCA5A5;
 
-  --accent: #D4B47A;
-  --accent-solid: #D4B47A;
-  --accent-hover: #E2C68F;
-  --on-accent: #0A101C;
-  --accent-soft: #2A2618;
-  --on-accent-soft: #E9D3A6;
-  --accent-line: #4A4128;
+  --accent: #6EE7B7;
+  --accent-solid: #34D399;
+  --accent-hover: #6EE7B7;
+  --on-accent: #05291C;
+  --accent-soft: #0E2C25;
+  --on-accent-soft: #A7F3D0;
+  --accent-line: #1F5A47;
 
-  --success: #34D399;  --success-soft: #0F2A22;  --on-success-soft: #A7F3D0;  --success-line: #1F4D3E;
-  --warning: #F5B544;  --warning-soft: #2E2410;  --on-warning-soft: #FCD9A0;  --warning-line: #5A4520;
-  --danger:  #F87171;  --danger-soft:  #3A1517;  --on-danger-soft:  #FECACA;  --danger-line:  #6B2A2D;
-  --info:    #8AB0FF;  --info-soft:    #15213D;  --on-info-soft:    #C7D7FE;  --info-line:    #2B3F6B;
-  --on-solid: #0A101C;
+  --success: #34D399;  --success-soft: #0E2A24;  --on-success-soft: #A7F3D0;  --success-line: #1F4D3E;
+  --warning: #F5B544;  --warning-soft: #2E2312;  --on-warning-soft: #FCD9A0;  --warning-line: #5A4520;
+  --danger:  #F87171;  --danger-soft:  #3A1420;  --on-danger-soft:  #FECACA;  --danger-line:  #6B2A36;
+  --info:    #8AB0FF;  --info-soft:    #1A1F45;  --on-info-soft:    #C7D7FE;  --info-line:    #2E3B75;
+  --on-solid: #110A22;
   --star: #F5B544;
 
   --src-community: #F5B544;
   --src-owner: #8AB0FF;
   --src-rep: #34D399;
 
-  --chart-1: #8AA6D6;
-  --chart-2: #D4B47A;
+  --chart-1: #A78BFA;
+  --chart-2: #34D399;
   --chart-pos: #34D399;
   --chart-warn: #F5B544;
   --chart-neg: #F87171;
-  --chart-neutral: #4A5672;
-  --chart-track: #1C2640;
+  --chart-neutral: #54448A;
+  --chart-track: #2A1D4C;
 
-  --overlay: rgba(2, 4, 10, 0.72);
+  --overlay: rgba(6, 2, 14, 0.72);
   --shadow-color: 0 0 0;
 }
 
@@ -193,22 +194,30 @@
   --color-background: var(--canvas);
   --color-foreground: var(--fg);
 
-  /* Inter, loaded in layout.tsx */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Plus Jakarta Sans, loaded in layout.tsx */
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Moderate, professional rounding (8–12px) */
-  --radius-md: 0.5rem;   /* 8px  */
-  --radius-lg: 0.625rem; /* 10px */
-  --radius-xl: 0.75rem;  /* 12px */
-  --radius-2xl: 0.875rem;
-  --radius-3xl: 1rem;
+  /* Soft, playful rounding (10–24px); buttons are full pills */
+  --radius-md: 0.625rem; /* 10px */
+  --radius-lg: 0.875rem; /* 14px */
+  --radius-xl: 1rem;     /* 16px */
+  --radius-2xl: 1.25rem; /* 20px */
+  --radius-3xl: 1.5rem;  /* 24px */
 }
 
 /* Prices and figures line up neatly */
 @utility tabular {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+/* Signature grape gradient for brand surfaces (header, auth panel, sidebars) */
+@utility bg-brand-grad {
+  background-color: var(--brand);
+  background-image:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand-accent) 16%, transparent) 0%, transparent 45%),
+    linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
 }
 
 html {
@@ -218,15 +227,17 @@ html {
 body {
   background: var(--canvas);
   color: var(--fg);
-  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  font-feature-settings: "cv11" 1, "ss01" 1;
+  font-family: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Visible, on-brand keyboard focus everywhere */
+/* Visible, on-brand keyboard focus everywhere (grape/lavender: always visible on its background) */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent-solid);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+:where(.bg-brand, .bg-brand-grad, .bg-brand-2) :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline-color: var(--brand-accent);
 }
 
 ::selection {

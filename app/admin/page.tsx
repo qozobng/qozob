@@ -463,7 +463,7 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-canvas font-sans text-fg pb-16">
       
       {/* Top Navbar */}
-      <nav className="bg-brand text-on-brand sticky top-0 z-50 border-b border-brand-line">
+      <nav className="bg-brand-grad text-on-brand sticky top-0 z-50 border-b border-brand-line">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <Link href="/" aria-label="Qozob home" className="rounded-md shrink-0">
@@ -663,7 +663,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Quick Action Banner */}
-            <div className="bg-brand rounded-xl p-6 text-on-brand flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-brand-line">
+            <div className="bg-brand-grad rounded-3xl p-6 text-on-brand flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-brand-line">
               <div className="flex items-center gap-4">
                 <div className="w-11 h-11 bg-brand-2 rounded-lg flex items-center justify-center shrink-0 border border-brand-line">
                   <ShieldCheck className="w-5 h-5 text-brand-accent" aria-hidden />

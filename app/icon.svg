@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="168" height="168" viewBox="0 0 168 168">
-  <!-- Qozob browser/app icon: the existing Qozob mark in ivory on a midnight tile -->
-  <rect width="168" height="168" rx="36" fill="#0F1B2D"/>
-  <g transform="translate(6,168) scale(0.1,-0.1)" fill="#F7F5F0" stroke="none">
+  <!-- Qozob browser/app icon: the existing Qozob mark in mint on a grape tile -->
+  <rect width="168" height="168" rx="40" fill="#3B0F80"/>
+  <g transform="translate(6,168) scale(0.1,-0.1)" fill="#6EE7B7" stroke="none">
     <path d="M680 1296 c-195 -55 -320 -219 -320 -419 0 -100 9 -109 52 -55 29 35
 36 53 41 104 6 75 41 145 99 200 66 64 119 87 215 92 75 4 87 2 145 -26 58
 -28 118 -71 118 -85 0 -4 -107 -8 -237 -9 l-238 -3 -3 -32 -3 -33 188 -1 c103
@@ -13,5 +13,5 @@
 72 l-30 29 233 3 232 2 0 40 0 40 -207 2 -206 3 127 133 128 132 -53 -1 -54
 -1 -157 -164z"/>
   </g>
-  <circle cx="138" cy="132" r="8" fill="#D4B47A"/>
+  <circle cx="138" cy="132" r="8" fill="#FFFFFF"/>
 </svg>

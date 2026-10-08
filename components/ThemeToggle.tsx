@@ -10,7 +10,7 @@ const ICON = { light: Sun, dark: Moon, system: Monitor };
 
 /**
  * Light / Dark / Auto switch.
- * - `tone="brand"`  for navy surfaces (header, sidebars)
+ * - `tone="brand"`  for grape brand surfaces (header, sidebars)
  * - `tone="surface"` for light/dark card surfaces
  * - `variant="segmented"` shows all three options (used in settings); default is a compact cycling button.
  */

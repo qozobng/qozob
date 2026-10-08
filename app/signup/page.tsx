@@ -125,8 +125,8 @@ export default function SignupPage() {
   return (
     <AuthShell
       wide
-      title="Create your account"
-      subtitle="It takes about a minute. Station owners will need a CAC certificate for verification."
+      title="Join the Qozob crew ⛽"
+      subtitle="Takes about a minute. Own a station? Have your CAC certificate handy so we can verify you."
     >
       {errorMsg && (
         <div role="alert" className={cx(ui.alertError, 'mb-6')}>

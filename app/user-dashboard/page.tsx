@@ -259,7 +259,7 @@ function UserDashboardContent() {
     <div className="min-h-screen bg-canvas text-fg font-sans flex flex-col md:flex-row w-full pb-10">
       
       {/* ======================= SIDEBAR NAVIGATION ======================= */}
-      <aside className="w-full md:w-64 bg-brand text-on-brand flex flex-col md:min-h-screen z-10 shrink-0 md:border-r border-brand-line">
+      <aside className="w-full md:w-64 bg-brand-grad text-on-brand flex flex-col md:min-h-screen z-10 shrink-0 md:border-r border-brand-line">
         <div className="p-5 md:p-6">
           <div className="flex items-center justify-between mb-6">
             <button type="button" onClick={() => router.push('/')} aria-label="Qozob home" className="rounded-md">

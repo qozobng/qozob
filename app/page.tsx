@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2, TrendingDown, LayoutDashboard
+  Share2, LocateFixed, CheckCircle2, LayoutDashboard
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -1026,17 +1026,60 @@ function QozobLanding() {
     map.setZoom(14);
   };
 
-  // One responsive layout for the two hero cards (best price / nearest), on surface tokens so
-  // the source-coloured price always has AA contrast in light and dark mode.
+  // Hero cards (best price / nearest), on surface tokens so the source-coloured price always has
+  // AA contrast in light and dark mode.
+  // Mobile/tablet: one compact row each (~76px), so the whole map + a peek of the list fit on landing.
+  const renderHeroCompact = (station: Station, kind: 'best' | 'nearest') => {
+    const isBest = kind === 'best';
+    return (
+      <div className={cx(ui.card, 'lg:hidden relative overflow-hidden pl-4 pr-3 py-2.5 flex items-center gap-3')}>
+        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1.5', isBest ? 'bg-accent-solid' : 'bg-primary')} />
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left rounded-md"
+          onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          title={station.name}
+        >
+          <span className="flex items-center gap-1 text-xs font-semibold whitespace-nowrap">
+            <span className={isBest ? 'text-accent' : 'text-primary'}>{isBest ? 'Best price nearby' : 'Nearest station'}</span>
+            <span aria-hidden>{isBest ? '🔥' : '📍'}</span>
+            <span className="font-medium text-fg-subtle truncate">· {timeAgo(station.last_updated)}</span>
+          </span>
+          <span className="block text-[15px] font-semibold text-fg leading-snug truncate mt-0.5">{station.name}</span>
+          <span className="block text-xs text-fg-muted truncate">
+            {distancePrefix(station.distance)}{station.queue_status}
+            {isBest && heroSavings > 0 && <span className="font-semibold text-accent"> · ₦{heroSavings.toLocaleString()} below avg</span>}
+          </span>
+        </button>
+        <div className="shrink-0 text-xl font-bold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
+          {formatPrice(station.price_pms, "text-xs")}
+        </div>
+        <a
+          href={getDirectionsUrl(station.lat, station.lng)}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Directions to ${station.name}`}
+          title="Directions"
+          className={cx(
+            'shrink-0 h-10 w-10 rounded-full flex items-center justify-center shadow-sm transition-transform active:scale-95',
+            isBest ? 'bg-accent-solid text-on-accent hover:bg-accent-hover' : 'bg-primary text-on-primary hover:bg-primary-hover'
+          )}
+        >
+          <Navigation className="w-4 h-4" aria-hidden />
+        </a>
+      </div>
+    );
+  };
+
+  // Desktop: taller card that fills the right-hand column next to the map.
   const renderHeroCard = (station: Station, kind: 'best' | 'nearest') => {
     const isBest = kind === 'best';
     return (
-      <div className={cx(ui.card, 'relative overflow-hidden p-4 lg:p-5 lg:flex-1 flex flex-col gap-3')}>
-        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1', isBest ? 'bg-accent-solid' : 'bg-info')} />
+      <div className={cx(ui.card, 'hidden relative overflow-hidden p-5 lg:flex-1 lg:flex flex-col gap-3')}>
+        <span aria-hidden className={cx('absolute inset-y-0 left-0 w-1.5', isBest ? 'bg-accent-solid' : 'bg-primary')} />
         <div className="flex items-center justify-between gap-3">
-          <span className={cx('inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.08em]', isBest ? 'text-accent' : 'text-info')}>
-            {isBest ? <TrendingDown className="w-3.5 h-3.5" aria-hidden /> : <Navigation className="w-3.5 h-3.5" aria-hidden />}
-            {isBest ? 'Best price nearby' : 'Nearest station'}
+          <span className={cx('inline-flex items-center gap-1.5 text-sm font-semibold', isBest ? 'text-accent' : 'text-primary')}>
+            {isBest ? 'Best price nearby' : 'Nearest station'} <span aria-hidden>{isBest ? '🔥' : '📍'}</span>
           </span>
           <span className="inline-flex items-center gap-1 text-xs text-fg-subtle">
             <Clock className="w-3 h-3" aria-hidden /> {timeAgo(station.last_updated)}
@@ -1050,11 +1093,11 @@ function QozobLanding() {
             onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
             title={station.name}
           >
-            <span className="block text-base lg:text-lg font-semibold text-fg leading-snug truncate group-hover:underline underline-offset-4">{station.name}</span>
+            <span className="block text-lg font-semibold text-fg leading-snug truncate group-hover:underline underline-offset-4">{station.name}</span>
             <span className="block text-sm text-fg-muted truncate mt-0.5">{distancePrefix(station.distance)}{station.queue_status}</span>
           </button>
           <div className="text-right shrink-0">
-            <div className="text-2xl font-semibold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
+            <div className="text-3xl font-bold tabular leading-none" style={{ color: getPriceColor(station.updated_by_role) }}>
               {formatPrice(station.price_pms, "text-sm")}
             </div>
             <span className="mt-1.5 block text-xs text-fg-subtle">{PRICE_SOURCE_LABEL[priceSource(station.updated_by_role)]} price</span>
@@ -1064,7 +1107,7 @@ function QozobLanding() {
         <div className="mt-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {isBest && heroSavings > 0 && (
-              <span className="inline-flex items-center rounded-md bg-success-soft text-on-success-soft border border-success-line px-2 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
+              <span className="inline-flex items-center rounded-full bg-accent-soft text-on-accent-soft border border-accent-line px-2.5 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
                 ₦{heroSavings.toLocaleString()} below avg
               </span>
             )}
@@ -1078,7 +1121,7 @@ function QozobLanding() {
             href={getDirectionsUrl(station.lat, station.lng)}
             target="_blank"
             rel="noopener noreferrer"
-            className={cx(ui.btn, ui.btnSm, isBest ? ui.btnPrimary : ui.btnSecondary, 'shrink-0')}
+            className={cx(ui.btn, ui.btnSm, isBest ? ui.btnAccent : ui.btnPrimary, 'shrink-0 h-9 px-4')}
           >
             <Navigation className="w-3.5 h-3.5" aria-hidden /> Directions
           </a>
@@ -1093,10 +1136,10 @@ function QozobLanding() {
     <div className="min-h-screen bg-canvas text-fg flex flex-col relative pb-20 lg:pb-0">
       
       {/* ======================= RESPONSIVE HEADER ======================= */}
-      <header className="bg-brand text-on-brand sticky top-0 z-50 shadow-[0_1px_0_var(--brand-line)]">
+      <header className="bg-brand-grad text-on-brand sticky top-0 z-50 shadow-[0_1px_0_var(--brand-line)]">
 
         {/* 1. TOP ROW: Wordmark, desktop ad space, theme + account */}
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4 sm:gap-6">
+        <div className="max-w-7xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between gap-4 sm:gap-6">
           
           <button
             type="button"
@@ -1108,7 +1151,7 @@ function QozobLanding() {
           </button>
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
-          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] border border-dashed border-brand-line rounded-lg items-center justify-center mx-4">
+          <div className="hidden lg:flex flex-1 max-w-[728px] h-[90px] border border-dashed border-brand-line rounded-2xl items-center justify-center mx-4">
             <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">
               Advertisement
             </span>
@@ -1123,9 +1166,9 @@ function QozobLanding() {
                   onClick={() => setIsMenuOpen(!isMenuOpen)} 
                   aria-label="Account menu"
                   aria-expanded={isMenuOpen}
-                  className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-lg border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
+                  className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-full border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
                     {(user.email || '?').charAt(0)}
                   </span>
                   <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
@@ -1190,7 +1233,7 @@ function QozobLanding() {
         </div>
 
         {/* 2. BOTTOM ROW: Location search */}
-        <div className="border-t border-brand-line px-4 py-3">
+        <div className="border-t border-brand-line px-4 py-2 sm:py-3">
           <div className="w-full max-w-2xl mx-auto relative">
              <input 
                 type="text" 
@@ -1198,16 +1241,16 @@ function QozobLanding() {
                 ref={searchInputRef}
                 aria-label="Search location"
                 enterKeyHint="search"
-                placeholder="Search a street, LGA or landmark" 
+                placeholder="Where to? Search a street or landmark" 
                 onKeyDown={(e) => { 
                   if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
                 }}
-                className="w-full h-11 bg-brand-2 border border-brand-line rounded-lg pl-10 pr-24 text-sm text-on-brand placeholder:text-on-brand-muted outline-none focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
+                className="w-full h-10 sm:h-11 bg-brand-2 border border-brand-line rounded-full pl-10 pr-24 text-sm text-on-brand placeholder:text-on-brand-muted outline-none focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
               />
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-brand-muted pointer-events-none" aria-hidden />
               <button 
                 onClick={() => handleLocationSearch(searchInputRef.current?.value || "")} 
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-4 rounded-md bg-accent-solid text-on-accent text-sm font-semibold hover:bg-accent-hover transition-colors"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 sm:h-8 px-4 rounded-full bg-accent-solid text-on-accent text-sm font-semibold hover:bg-accent-hover transition-colors"
               >
                 Search
               </button>
@@ -1215,17 +1258,19 @@ function QozobLanding() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto w-full p-4 flex flex-col lg:grid lg:grid-cols-3 gap-6 mt-2 flex-grow">
+      <main className="max-w-7xl mx-auto w-full px-4 pt-3 pb-4 sm:p-4 flex flex-col lg:grid lg:grid-cols-3 gap-3 sm:gap-6 sm:mt-2 flex-grow">
         
         {/* ======================= HERO CARDS SECTION ======================= */}
-        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-3 lg:gap-4 h-fit lg:h-full z-10">
+        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-2 lg:gap-4 h-fit lg:h-full z-10">
+          {heroStation && renderHeroCompact(heroStation, 'best')}
+          {nearestStation && renderHeroCompact(nearestStation, 'nearest')}
           {heroStation && renderHeroCard(heroStation, 'best')}
           {nearestStation && renderHeroCard(nearestStation, 'nearest')}
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
         <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
-          <div className="bg-surface-3 rounded-xl h-[45vh] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden border border-line shadow-[0_1px_2px_rgb(var(--shadow-color)/0.06)] group">
+          <div className="bg-surface-3 rounded-2xl h-[clamp(200px,calc(100svh_-_27rem),520px)] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden border border-line shadow-[0_1px_2px_rgb(var(--shadow-color)/0.06)] group">
             
             {isFetchingDynamic && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand text-on-brand text-xs font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
@@ -1414,8 +1459,8 @@ function QozobLanding() {
         </div>
 
         {/* ======================= LIST VIEW & FILTER ======================= */}
-        <section className={cx(ui.card, 'order-3 lg:order-3 lg:col-span-2 lg:col-start-1 p-5 sm:p-6')} aria-labelledby="stations-heading">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-4">
+        <section className={cx(ui.card, 'order-3 lg:order-3 lg:col-span-2 lg:col-start-1 p-4 sm:p-6')} aria-labelledby="stations-heading">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
               <div>
                 <h2 id="stations-heading" className={ui.h2}>Stations near you</h2>
                 <p className="text-sm text-fg-muted mt-0.5">{sortedAndFilteredList.length} shown</p>
@@ -1463,7 +1508,7 @@ function QozobLanding() {
                   type="button"
                   key={station.id} 
                   onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
-                  className="text-left flex justify-between items-center p-3.5 rounded-lg bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer transition-colors gap-3"
+                  className="text-left flex justify-between items-center p-3.5 rounded-xl bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer transition-colors gap-3"
                 >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
@@ -1505,15 +1550,15 @@ function QozobLanding() {
         {/* ======================= NEEDS PRICING LIST ======================= */}
         <div className="order-4 lg:order-4 lg:col-start-3 h-fit">
           <section className={cx(ui.card, 'p-5 sm:p-6')} aria-labelledby="needs-price-heading">
-            <h2 id="needs-price-heading" className={ui.h2}>Help fill the gaps</h2>
-            <p className="text-sm text-fg-muted mt-0.5 mb-4">These stations have no price yet.</p>
+            <h2 id="needs-price-heading" className={ui.h2}>Help fill the gaps <span aria-hidden>🙌</span></h2>
+            <p className="text-sm text-fg-muted mt-0.5 mb-4">No price here yet. Drop one and help other drivers.</p>
             <div className="flex flex-col gap-2">
               {needsPricing.map((station) => (
                 <button 
                   type="button"
                   key={station.id} 
                   onClick={() => { setSelectedStation(station); window.scrollTo({ top: 0, behavior: 'smooth' }); }} 
-                  className="text-left flex justify-between items-center p-3 rounded-lg bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer gap-3 transition-colors"
+                  className="text-left flex justify-between items-center p-3 rounded-xl bg-surface hover:bg-surface-2 border border-line hover:border-line-strong cursor-pointer gap-3 transition-colors"
                 >
                   <div className="flex items-center flex-1 min-w-0">
                     <ListLogo name={station.name} customLogoUrl={station.custom_logo_url} />
@@ -1522,11 +1567,11 @@ function QozobLanding() {
                       <p className="text-xs text-fg-muted truncate">{station.distance ? `${station.distance} km away` : station.address}</p>
                     </div>
                   </div>
-                  <span className="text-xs font-semibold text-accent flex-shrink-0">Add price</span>
+                  <span className="text-xs font-semibold text-accent flex-shrink-0">Drop a price</span>
                 </button>
               ))}
               {needsPricing.length === 0 && (
-                <p className="text-sm text-fg-subtle py-4 text-center">Every nearby station has a price. Nice.</p>
+                <p className="text-sm text-fg-subtle py-4 text-center">Every nearby station has a price. Nice one 🎉</p>
               )}
             </div>
           </section>
@@ -1534,7 +1579,7 @@ function QozobLanding() {
       </main>
 
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
-      <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
+      <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand-grad border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
         <div className="w-full h-[60px] flex items-center justify-center relative overflow-hidden">
            <span className="text-xs font-medium text-on-brand-muted uppercase tracking-[0.08em]">Advertisement</span>
            <div className="absolute bottom-1.5 flex gap-1.5" aria-hidden>
@@ -1546,10 +1591,10 @@ function QozobLanding() {
       </div>
 
       {/* ======================= GLOBAL FOOTER ======================= */}
-      <footer className="bg-brand text-on-brand-muted pt-10 pb-28 lg:pb-10 text-sm mt-8 border-t border-brand-line w-full">
+      <footer className="bg-brand-grad text-on-brand-muted pt-10 pb-28 lg:pb-10 text-sm mt-8 border-t border-brand-line w-full">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-5">
           <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-4">
-            <Wordmark tone="brand" size="md" />
+            <span className="inline-flex items-center gap-2"><Droplet className="w-4 h-4 text-brand-accent fill-brand-accent" aria-hidden /><Wordmark tone="brand" size="md" /></span>
             <span className="text-xs">© {new Date().getFullYear()} {SITE.name}. All rights reserved.</span>
           </div>
           <nav className="flex gap-x-6 gap-y-2 font-medium text-sm flex-wrap justify-center" aria-label="Footer">
@@ -1569,7 +1614,7 @@ function QozobLanding() {
         <div
           role="status"
           aria-live="polite"
-          className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-3 rounded-lg shadow-xl text-sm font-medium flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-[90vw] border ${toast.type === 'success' ? 'bg-brand text-on-brand border-brand-line' : 'bg-danger-soft text-on-danger-soft border-danger-line'}`}
+          className={`fixed bottom-24 lg:bottom-6 left-1/2 -translate-x-1/2 z-[200] px-4 py-3 rounded-2xl shadow-xl text-sm font-medium flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-[90vw] border ${toast.type === 'success' ? 'bg-brand text-on-brand border-brand-line' : 'bg-danger-soft text-on-danger-soft border-danger-line'}`}
         >
           {toast.type === 'success' ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-brand-accent" aria-hidden /> : <AlertTriangle className="w-4 h-4 flex-shrink-0" aria-hidden />}
           <span>{toast.message}</span>

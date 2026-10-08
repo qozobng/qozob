@@ -466,7 +466,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-canvas text-fg font-sans pb-16">
       
       {/* ======================= NAVBAR ======================= */}
-      <nav className="bg-brand text-on-brand sticky top-0 z-50 border-b border-brand-line">
+      <nav className="bg-brand-grad text-on-brand sticky top-0 z-50 border-b border-brand-line">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex justify-between items-center gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <button type="button" onClick={() => router.push('/')} aria-label="Qozob home" className="rounded-md shrink-0">

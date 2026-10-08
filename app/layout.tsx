@@ -1,20 +1,20 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
 
-// Inter: clean, highly legible, the standard typeface for professional data-driven apps
-const inter = Inter({
+// Plus Jakarta Sans: friendly, rounded and modern, yet very legible for prices and data
+const jakarta = Plus_Jakarta_Sans({
   subsets: ['latin'],
   display: 'swap',
-  variable: '--font-inter', // used by Tailwind's `font-sans` (see globals.css)
+  variable: '--font-jakarta', // used by Tailwind's `font-sans` (see globals.css)
 });
 
 // Browser / phone status-bar colour follows the light or dark theme
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#0F1B2D' },
-    { media: '(prefers-color-scheme: dark)', color: '#0A101C' },
+    { media: '(prefers-color-scheme: light)', color: '#3B0F80' },
+    { media: '(prefers-color-scheme: dark)', color: '#110A22' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -118,7 +118,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${inter.className} ${inter.variable} antialiased bg-canvas text-fg`}>
+      <body className={`${jakarta.className} ${jakarta.variable} antialiased bg-canvas text-fg`}>
         {children}
       </body>
     </html>

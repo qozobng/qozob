@@ -78,7 +78,7 @@ function LoginContent() {
   };
 
   return (
-    <AuthShell title="Sign in" subtitle="Welcome back. Sign in to update prices, rate stations and manage your account.">
+    <AuthShell title="Welcome back 👋" subtitle="Sign in to drop prices, rate stations and keep your saved spots.">
       {errorMsg && (
         <div role="alert" className={cx(ui.alertError, 'mb-6')}>
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
