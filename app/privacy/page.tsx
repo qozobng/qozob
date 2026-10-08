@@ -36,7 +36,7 @@ export default function PrivacyPolicyPage() {
         </ul>
         <p><strong>When you use the map</strong></p>
         <ul>
-          <li>Your device location, <em>only if you allow it</em> in your browser, to show nearby stations and distances. Used this way, your location stays on your device.</li>
+          <li>Your device location, <em>only if you allow it</em> in your browser, to show nearby stations and distances. Used this way, your location stays on your device. To show adverts for your area, we send only a <strong>rough position (rounded to about 1 km)</strong> to look up your Local Government Area. It is used for that moment only and is <strong>not stored</strong> or linked to your account.</li>
           <li>Prices, queue reports and pump-accuracy ratings you submit.</li>
           <li>When you are <strong>signed in and submit a price</strong>, we record your location at that moment, how accurate it was and your distance from the station, together with the report. We use this to check the price came from someone at the station, to stop fake prices and to award reward coins. It is never shown publicly.</li>
         </ul>
@@ -83,10 +83,11 @@ export default function PrivacyPolicyPage() {
               <tr><td className={td}>Send news, fuel tips and reward updates by email</td><td className={td}>Consent (unticked box and email confirmation; withdraw any time)</td></tr>
               <tr><td className={td}>Send essential account emails (password resets, claim decisions, prize notices)</td><td className={td}>Contract</td></tr>
               <tr><td className={td}>Security logs, investigating abuse, responding to lawful requests</td><td className={td}>Legitimate interests and legal obligation</td></tr>
+              <tr><td className={td}>Show adverts for your area, using your approximate location (if allowed) or the state on your profile</td><td className={td}>Legitimate interests (relevant local adverts keep {SITE.name} free). Turn off location in your browser or change your profile state at any time.</td></tr>
             </tbody>
           </table>
         </div>
-        <p className="mt-3">We <strong>do not sell</strong> your personal information, and we do not use it to target advertising.</p>
+        <p className="mt-3">We <strong>do not sell</strong> your personal information. Adverts are chosen only by area (your LGA or state at that moment); we do not build advertising profiles about you, and advertisers never receive your personal information.</p>
       </section>
 
       <section>

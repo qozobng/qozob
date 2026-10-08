@@ -6,6 +6,6 @@ export const SITE = {
   url: 'https://www.qozob.com',
   contactEmail: 'support@qozob.com',
   country: 'Nigeria',
-  legalLastUpdated: '8 October 2026',
+  legalLastUpdated: '9 October 2026',
 } as const;
 

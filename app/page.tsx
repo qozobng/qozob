@@ -22,6 +22,7 @@ import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
 import { JoinPrompt, JoinNudge, type JoinReason } from '@/components/JoinPrompt';
+import { normaliseState } from '@/lib/nigeria';
 import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
@@ -1241,6 +1242,8 @@ function QozobLanding() {
   };
 
   const menuItem = 'w-full text-left px-3 h-10 text-sm font-medium text-fg hover:bg-surface-2 rounded-lg flex items-center gap-2.5 transition-colors';
+  // Local adverts: the map position decides the LGA; the profile state is the fallback
+  const viewerState = normaliseState(user?.user_metadata?.state);
 
   return (
     <div className="min-h-screen bg-canvas text-fg flex flex-col relative pb-20 lg:pb-0">
@@ -1262,7 +1265,7 @@ function QozobLanding() {
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
           <div className="hidden lg:flex flex-1 justify-center mx-4 min-w-0">
-            <AdCarousel placement="desktop_header" />
+            <AdCarousel placement="desktop_header" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
           </div>
 
           {/* THEME + USER PROFILE & MENU */}
@@ -1730,7 +1733,7 @@ function QozobLanding() {
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
       <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand-grad border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
         <div className="px-2 pt-1">
-          <AdCarousel placement="mobile_bottom" />
+          <AdCarousel placement="mobile_bottom" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
         </div>
       </div>
 

@@ -28,12 +28,23 @@ interface Ad {
 
 const REFRESH_MS = 10 * 60 * 1000; // pick up newly scheduled / expired adverts
 const SLIDE_MS = 650;
+const AD_FIELDS = 'id,title,advertiser,link_url,desktop_image_url,mobile_image_url,weight,placement,sort_order,created_at';
 
 function dwellMs(weight: number) {
   return 4000 + (Math.min(10, Math.max(1, weight || 1)) - 1) * 1000;
 }
 
-export function AdCarousel({ placement, className = '' }: { placement: AdPlacement; className?: string }) {
+const sameIds = (a: Ad[], b: Ad[]) => a.length === b.length && a.every((ad, i) => ad.id === b[i].id);
+
+export function AdCarousel({ placement, className = '', lat, lng, viewerState }: {
+  placement: AdPlacement;
+  className?: string;
+  /** Viewer's position, used only to pick local adverts (rounded to ~1 km, never stored). */
+  lat?: number | null;
+  lng?: number | null;
+  /** State from the viewer's profile, used when their position isn't known. */
+  viewerState?: string | null;
+}) {
   const supabase = useMemo(() => createClient(), []);
   const [ads, setAds] = useState<Ad[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -49,18 +60,40 @@ export function AdCarousel({ placement, className = '' }: { placement: AdPlaceme
   const seen = useRef<Set<string>>(new Set());
   const touchX = useRef<number | null>(null);
 
-  // ---- Load live adverts for this placement ----
+  // ~1 km grid: adverts only reload when the viewer moves to a different area
+  const locKey = lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)
+    ? `${lat.toFixed(2)},${lng.toFixed(2)}`
+    : '';
+
+  // ---- Load live adverts for this placement and area (LGA → state → nationwide) ----
   const load = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('ads')
-      .select('id,title,advertiser,link_url,desktop_image_url,mobile_image_url,weight,placement,sort_order,created_at')
-      .in('placement', [placement, 'both'])
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (!error && data) setAds(data as Ad[]);
+    const [pLat, pLng] = locKey ? locKey.split(',').map(Number) : [null, null];
+    let list: Ad[] | null = null;
+    const { data, error } = await supabase.rpc('ads_for_viewer', {
+      p_placement: placement,
+      p_lat: pLat,
+      p_lng: pLng,
+      p_state: viewerState || null,
+    });
+    if (!error && data && Array.isArray((data as { ads?: unknown }).ads)) {
+      list = (data as { ads: Ad[] }).ads;
+    } else if (error && (error.code === 'PGRST202' || /ads_for_viewer/i.test(error.message || ''))) {
+      // Targeting not installed yet (20261012_ad_targeting.sql): show every live advert as before
+      const res = await supabase
+        .from('ads')
+        .select(AD_FIELDS)
+        .in('placement', [placement, 'both'])
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (!res.error && res.data) list = res.data as Ad[];
+    }
+    if (list) {
+      const next = list;
+      setAds((prev) => (sameIds(prev, next) ? prev : next)); // keep the current slide if nothing changed
+    }
     setLoaded(true);
-  }, [supabase, placement]);
+  }, [supabase, placement, locKey, viewerState]);
 
   useEffect(() => {
     load();

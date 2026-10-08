@@ -3,13 +3,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Megaphone, Plus, Pencil, Trash2, Eye, MousePointerClick, Percent, Loader2, X, Image as ImageIcon,
-  PauseCircle, PlayCircle, ExternalLink, CalendarClock, AlertTriangle,
+  PauseCircle, PlayCircle, ExternalLink, CalendarClock, AlertTriangle, MapPin, Search,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { ui, cx } from '@/lib/ui';
 import { StatCard } from '@/components/analytics/StatCard';
 import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
+import { NIGERIAN_STATES, stateLabel } from '@/lib/nigeria';
+import { useLgaList, type LgaOption } from '@/components/rewards/hooks';
 
 // =========================================================================
 // ADMIN → ADVERTS
@@ -42,6 +44,31 @@ interface AdRow {
   created_at: string;
   arcon_ref?: string | null;
   advertiser_confirmed?: boolean;
+  // Location targeting (20261012_ad_targeting.sql)
+  target_scope?: TargetScope;
+  target_states?: string[];
+  target_lga_ids?: number[];
+}
+
+type TargetScope = 'national' | 'states' | 'lgas';
+const TARGET_LABEL: Record<TargetScope, string> = {
+  national: 'Whole country',
+  states: 'Selected states',
+  lgas: 'Selected LGAs',
+};
+
+/** Short "who sees it" label for the list */
+function targetSummary(ad: AdRow, lgaName: (id: number) => string): { label: string; title: string } {
+  const scope = ad.target_scope || 'national';
+  if (scope === 'states' && ad.target_states?.length) {
+    const names = ad.target_states.map(stateLabel);
+    return { label: names.length <= 2 ? names.join(', ') : `${names.length} states`, title: names.join(', ') };
+  }
+  if (scope === 'lgas' && ad.target_lga_ids?.length) {
+    const names = ad.target_lga_ids.map(lgaName);
+    return { label: names.length <= 2 ? names.join(', ') : `${names.length} LGAs`, title: names.join(', ') };
+  }
+  return { label: 'Nationwide', title: 'Shown to everyone in Nigeria' };
 }
 
 const ARCON_MISSING_WARNING =
@@ -105,6 +132,12 @@ export function AdsManager() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdRow | 'new' | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const lgas = useLgaList();
+  const lgaById = useMemo(() => new Map(lgas.map(l => [l.id, l])), [lgas]);
+  const lgaName = useCallback((id: number) => {
+    const l = lgaById.get(id);
+    return l ? `${l.name} (${stateLabel(l.state)})` : `LGA #${id}`;
+  }, [lgaById]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -242,6 +275,14 @@ export function AdsManager() {
                       {ad.arcon_ref
                         ? <span className="inline-flex items-center rounded-full border border-success-line bg-success-soft text-on-success-soft px-2 py-0.5 text-xs font-semibold" title="ARCON approval number">ARCON {ad.arcon_ref}</span>
                         : <span className="inline-flex items-center rounded-full border border-warning-line bg-warning-soft text-on-warning-soft px-2 py-0.5 text-xs font-semibold">No ARCON ref</span>}
+                      {(() => {
+                        const t = targetSummary(ad, lgaName);
+                        return (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-info-line bg-info-soft text-on-info-soft px-2 py-0.5 text-xs font-semibold max-w-[220px]" title={t.title}>
+                            <MapPin className="w-3 h-3 shrink-0" aria-hidden /> <span className="truncate">{t.label}</span>
+                          </span>
+                        );
+                      })()}
                     </div>
                     <p className="text-xs text-fg-muted mt-1">
                       {ad.advertiser ? `${ad.advertiser} · ` : ''}{PLACEMENT_LABEL[ad.placement]} · weight {ad.weight} · order {ad.sort_order}
@@ -275,17 +316,23 @@ export function AdsManager() {
         )}
       </section>
 
-      {editing && <AdEditor ad={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {editing && <AdEditor ad={editing === 'new' ? null : editing} lgas={lgas} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------------------
-function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => void; onSaved: () => void }) {
+function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaOption[]; onClose: () => void; onSaved: () => void }) {
   const [title, setTitle] = useState(ad?.title || '');
   const [advertiser, setAdvertiser] = useState(ad?.advertiser || '');
   const [linkUrl, setLinkUrl] = useState(ad?.link_url || '');
   const [placement, setPlacement] = useState<Placement>(ad?.placement || 'both');
+  // Who sees it: whole country, chosen states or chosen LGAs
+  const [scope, setScope] = useState<TargetScope>(ad?.target_scope || 'national');
+  const [targetStates, setTargetStates] = useState<string[]>(ad?.target_states || []);
+  const [targetLgaIds, setTargetLgaIds] = useState<number[]>(ad?.target_lga_ids || []);
+  const [lgaStateFilter, setLgaStateFilter] = useState('');
+  const [lgaSearch, setLgaSearch] = useState('');
   const [startsAt, setStartsAt] = useState(toLocalInput(ad?.starts_at || new Date().toISOString()));
   const [endsAt, setEndsAt] = useState(toLocalInput(ad?.ends_at || null));
   const [weight, setWeight] = useState(ad?.weight || 5);
@@ -338,6 +385,8 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
     if (e && new Date(e) <= new Date(s)) return setErr('The end date must be after the start date.');
     const ref = arconRef.trim();
     if (ref && (ref.length < 3 || ref.length > 80)) return setErr('The ARCON approval number should be 3 to 80 characters.');
+    if (scope === 'states' && targetStates.length === 0) return setErr('Pick at least one state, or choose "Whole country".');
+    if (scope === 'lgas' && targetLgaIds.length === 0) return setErr('Pick at least one LGA, or choose "Whole country".');
     if (isActive && !ref && !window.confirm(ARCON_MISSING_WARNING)) return;
 
     setSaving(true);
@@ -369,10 +418,24 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
         ...(uploaded.desktop ? { desktop_image_url: uploaded.desktop.url, desktop_image_path: uploaded.desktop.path } : {}),
         ...(uploaded.mobile ? { mobile_image_url: uploaded.mobile.url, mobile_image_path: uploaded.mobile.path } : {}),
       };
+      const targeting = {
+        target_scope: scope,
+        target_states: scope === 'states' ? targetStates : [],
+        target_lga_ids: scope === 'lgas' ? targetLgaIds : [],
+      };
 
-      const { error: dbErr } = ad
-        ? await supabase.from('ads').update(row).eq('id', ad.id)
-        : await supabase.from('ads').insert({ id: folder, ...row });
+      const write = (values: Record<string, unknown>) => (ad
+        ? supabase.from('ads').update(values).eq('id', ad.id)
+        : supabase.from('ads').insert({ id: folder, ...values }));
+      let { error: dbErr } = await write({ ...row, ...targeting });
+      // Targeting columns not installed yet: nationwide adverts can still be saved the old way
+      if (dbErr && /target_(scope|states|lga_ids)/.test(dbErr.message)) {
+        if (scope === 'national') {
+          ({ error: dbErr } = await write(row));
+        } else {
+          dbErr = { ...dbErr, message: 'Location targeting is not set up yet. Run supabase/migrations/20261012_ad_targeting.sql in the Supabase SQL editor, then try again.' };
+        }
+      }
       if (dbErr) {
         const paths = Object.values(uploaded).map(u => u.path);
         if (paths.length) await supabase.storage.from('ad_creatives').remove(paths);
@@ -438,6 +501,78 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
             </select>
           </div>
 
+          {/* ---- WHO SEES IT (location targeting) ---- */}
+          <fieldset className="sm:col-span-2 rounded-xl border border-line p-4">
+            <legend className="px-1 text-sm font-semibold text-fg inline-flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-primary" aria-hidden /> Who sees it
+            </legend>
+            <div className="grid grid-cols-3 gap-1 rounded-xl bg-surface-2 p-1 border border-line" role="radiogroup" aria-label="Target area">
+              {(Object.keys(TARGET_LABEL) as TargetScope[]).map(s => (
+                <button
+                  key={s}
+                  type="button"
+                  role="radio"
+                  aria-checked={scope === s}
+                  onClick={() => setScope(s)}
+                  className={cx(
+                    'h-9 rounded-lg text-xs sm:text-sm font-semibold transition-colors',
+                    scope === s ? 'bg-primary text-on-primary shadow-sm' : 'text-fg-muted hover:text-fg hover:bg-surface'
+                  )}
+                >
+                  {TARGET_LABEL[s]}
+                </button>
+              ))}
+            </div>
+            <p className={ui.hint}>
+              {scope === 'national' && 'Shown to everyone, everywhere in Nigeria.'}
+              {scope === 'states' && 'Shown to people whose map location (or profile state) is in one of these states.'}
+              {scope === 'lgas' && 'Shown only to people whose map location is inside one of these LGAs. Local adverts appear before nationwide ones.'}
+            </p>
+
+            {scope === 'states' && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-fg-muted">{targetStates.length} of {NIGERIAN_STATES.length} selected</span>
+                  <span className="flex gap-3 text-xs font-semibold">
+                    <button type="button" className="text-primary hover:underline" onClick={() => setTargetStates([...NIGERIAN_STATES])}>Select all</button>
+                    <button type="button" className="text-fg-muted hover:text-fg hover:underline" onClick={() => setTargetStates([])}>Clear</button>
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+                  {NIGERIAN_STATES.map(st => {
+                    const on = targetStates.includes(st);
+                    return (
+                      <button
+                        key={st}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setTargetStates(prev => (on ? prev.filter(x => x !== st) : [...prev, st]))}
+                        className={cx(
+                          'h-8 px-3 rounded-full border text-xs font-semibold transition-colors',
+                          on ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-fg border-line-strong hover:bg-surface-2'
+                        )}
+                      >
+                        {stateLabel(st)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {scope === 'lgas' && (
+              <LgaPicker
+                lgas={lgas}
+                selected={targetLgaIds}
+                onChange={setTargetLgaIds}
+                stateFilter={lgaStateFilter}
+                onStateFilter={setLgaStateFilter}
+                search={lgaSearch}
+                onSearch={setLgaSearch}
+              />
+            )}
+          </fieldset>
+
           {needsDesktop && <div className="sm:col-span-2">{imageField('desktop')}</div>}
           {needsMobile && <div className="sm:col-span-2">{imageField('mobile')}</div>}
 
@@ -476,3 +611,95 @@ function AdEditor({ ad, onClose, onSaved }: { ad: AdRow | null; onClose: () => v
   );
 }
 
+
+// ---------------------------------------------------------------------------------------
+// LGA picker: filter by state, search by name, tick LGAs; selected ones show as removable chips
+function LgaPicker({ lgas, selected, onChange, stateFilter, onStateFilter, search, onSearch }: {
+  lgas: LgaOption[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+  stateFilter: string;
+  onStateFilter: (s: string) => void;
+  search: string;
+  onSearch: (s: string) => void;
+}) {
+  const byId = useMemo(() => new Map(lgas.map(l => [l.id, l])), [lgas]);
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const q = search.trim().toLowerCase();
+  const visible = useMemo(() => {
+    if (!stateFilter && q.length < 2) return [];
+    return lgas
+      .filter(l => (!stateFilter || l.state === stateFilter) && (q.length < 2 || l.name.toLowerCase().includes(q)))
+      .slice(0, 200);
+  }, [lgas, stateFilter, q]);
+
+  const toggle = (id: number) => onChange(selectedSet.has(id) ? selected.filter(x => x !== id) : [...selected, id]);
+  const addAllVisible = () => onChange(Array.from(new Set([...selected, ...visible.map(l => l.id)])));
+
+  if (lgas.length === 0) {
+    return (
+      <p className="mt-3 text-sm text-fg-muted">
+        LGA boundaries are not loaded yet. Import them (Rewards set-up) to target individual LGAs, or target by state for now.
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {selected.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-medium text-fg-muted">{selected.length} LGA{selected.length === 1 ? '' : 's'} selected</span>
+            <button type="button" className="text-xs font-semibold text-fg-muted hover:text-fg hover:underline" onClick={() => onChange([])}>Clear</button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+            {selected.map(id => {
+              const l = byId.get(id);
+              return (
+                <span key={id} className="inline-flex items-center gap-1 h-7 pl-2.5 pr-1 rounded-full bg-primary text-on-primary text-xs font-semibold">
+                  {l ? `${l.name}, ${stateLabel(l.state)}` : `LGA #${id}`}
+                  <button type="button" onClick={() => toggle(id)} className="p-0.5 rounded-full hover:bg-white/20" aria-label={`Remove ${l?.name || id}`}>
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <select value={stateFilter} onChange={e => onStateFilter(e.target.value)} className={cx(ui.select, 'h-10')} aria-label="Filter LGAs by state">
+          <option value="">All states</option>
+          {NIGERIAN_STATES.map(s => <option key={s} value={s}>{stateLabel(s)}</option>)}
+        </select>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle pointer-events-none" aria-hidden />
+          <input value={search} onChange={e => onSearch(e.target.value)} className={cx(ui.input, 'h-10 pl-9')} placeholder="Search LGA name" aria-label="Search LGAs" />
+        </div>
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="text-xs text-fg-subtle">{!stateFilter && q.length < 2 ? 'Choose a state or type at least 2 letters to see LGAs.' : 'No LGAs match.'}</p>
+      ) : (
+        <div className="rounded-xl border border-line">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-line bg-surface-2 rounded-t-xl">
+            <span className="text-xs font-medium text-fg-muted">{visible.length} shown</span>
+            <button type="button" className="text-xs font-semibold text-primary hover:underline" onClick={addAllVisible}>Select all shown</button>
+          </div>
+          <ul className="max-h-56 overflow-y-auto divide-y divide-line">
+            {visible.map(l => (
+              <li key={l.id}>
+                <label className="flex items-center gap-3 px-3 py-2 text-sm text-fg cursor-pointer hover:bg-surface-2">
+                  <input type="checkbox" checked={selectedSet.has(l.id)} onChange={() => toggle(l.id)} className="h-4 w-4 accent-[var(--primary)]" />
+                  <span className="min-w-0 flex-1 truncate">{l.name}</span>
+                  <span className="text-xs text-fg-subtle shrink-0">{stateLabel(l.state)}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
