@@ -18,6 +18,7 @@ import { createClient } from '@/utils/supabase/client';
 // --- SHARED BRANDING ---
 import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager } from '@/lib/roles';
+import { SITE } from '@/lib/site';
 
 // --- Map Visual Key ---
 // Prefer the env var (set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local / Vercel); the inline key is kept as a fallback.
@@ -1608,9 +1609,9 @@ function QozobLanding() {
           </div>
           <div className="flex gap-6 font-bold text-xs flex-wrap justify-center">
             <a href="#" className="hover:text-emerald-400 transition-colors">About Us</a>
-            <a href="#" className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-emerald-400 transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-emerald-400 transition-colors">Contact</a>
+            <a href="/privacy" className="hover:text-emerald-400 transition-colors">Privacy Policy</a>
+            <a href="/terms" className="hover:text-emerald-400 transition-colors">Terms of Service</a>
+            <a href={`mailto:${SITE.contactEmail}`} className="hover:text-emerald-400 transition-colors">Contact</a>
           </div>
         </div>
       </footer>

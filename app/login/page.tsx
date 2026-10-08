@@ -113,7 +113,11 @@ function LoginContent() {
               </>
             )}
           </button>
-
+          <p className="-mt-3 mb-6 text-center text-[11px] text-slate-400">
+            By continuing, you agree to our{' '}
+            <Link href="/terms" className="font-bold text-slate-500 hover:text-emerald-600">Terms</Link> and{' '}
+            <Link href="/privacy" className="font-bold text-slate-500 hover:text-emerald-600">Privacy Policy</Link>.
+          </p>
           <div className="flex items-center gap-4 mb-6">
             <div className="h-px bg-slate-200 flex-1"></div>
             <span className="text-xs font-bold text-slate-400 uppercase">Or log in with email</span>
