@@ -77,10 +77,10 @@ export default function SignupPage() {
           console.error("CAC Upload Warning:", uploadError);
           // We don't fail the whole signup if just the file fails, but we log it.
         } else {
-          const { data: urlData } = supabase.storage.from('cac_documents').getPublicUrl(fileName);
-          // Update user metadata with the document URL
+          // The CAC bucket is private: save the file's path (admins open it through a short-lived signed link).
+          // The Manager-access request is filed automatically the first time they sign in.
           await supabase.auth.updateUser({
-            data: { cac_document_url: urlData.publicUrl }
+            data: { cac_document_path: fileName }
           });
         }
       }

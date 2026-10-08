@@ -17,6 +17,7 @@ import { createClient } from '@/utils/supabase/client';
 
 // --- SHARED BRANDING ---
 import { BrandLogo } from '@/components/BrandLogo';
+import { getRole, hasRequestedManager } from '@/lib/roles';
 
 // --- Map Visual Key ---
 // Prefer the env var (set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local / Vercel); the inline key is kept as a fallback.
@@ -250,13 +251,14 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
       updated_by_role: 'User', 
       verified: false
     };
-    const { error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' });
+    // The database decides the final label (Owner / Qozob rep / User) — use the row it actually saved
+    const { data: savedRow, error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' }).select().maybeSingle();
 
     setIsSubmittingPrice(false);
     if (error) {
       alert("Error saving price: " + error.message);
     } else {
-      onSaved(station.id, payload, "Price updated successfully! Thanks for helping the community.");
+      onSaved(station.id, savedRow || payload, "Price updated successfully! Thanks for helping the community.");
       onClose();
     }
   };
@@ -321,26 +323,22 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
     }
     setIsSubmittingClaim(true);
     try {
-      // 1. Upload Document First
+      // 1. Get the active user (uploads are kept in a per-user folder)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Authentication required. Please log in again.");
+
+      // 2. Upload the document. The bucket is private, so we store the file's path (not a public link);
+      //    admins open it through a short-lived signed link.
       const fileExt = cacFile.name.split('.').pop();
-      const fileName = `cac_${station.id}_${Date.now()}.${fileExt}`;
+      const fileName = `${user.id}/cac_${station.id}_${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('cac_documents')
         .upload(fileName, cacFile);
       
       if (uploadError) throw new Error(uploadError.message);
-      
-      // 2. Fetch the generated public URL
-      const { data: publicUrlData } = supabase.storage
-        .from('cac_documents')
-        .getPublicUrl(fileName);
 
-      // 3. Get the active user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Authentication required. Please log in again.");
-
-      // 4. Save to the database
+      // 3. Save to the database
       const { error: dbError } = await supabase.from('station_claims').insert({
         user_id: user.id, 
         station_id: station.id, 
@@ -350,7 +348,7 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
         business_reg_number: cacNumber, 
         official_email: user.email,
         phone_number: phone, 
-        document_url: publicUrlData.publicUrl, 
+        document_url: fileName, 
         status: 'Pending Review',
         lat: station.lat,
         lng: station.lng
@@ -444,32 +442,29 @@ function RateStationModal({ station, onClose, onSaved }: { station: Station, onC
     if (selectedStar === 0 || !station) return;
     setIsSubmitting(true);
 
-    const currentVotes = station.accuracy_votes || 0;
-    const currentScore = station.pump_accuracy || 0;
-    const newVotes = currentVotes + 1;
-    const newScore = ((currentScore * currentVotes) + selectedStar) / newVotes;
-
-    const payload = {
-      station_id: station.id,
-      name: station.name,
-      address: station.address,
-      lat: station.lat,
-      lng: station.lng,
-      price_pms: station.price_pms, 
-      queue_status: station.queue_status,
-      updated_by_role: station.updated_by_role,
-      pump_accuracy: parseFloat(newScore.toFixed(1)), 
-      accuracy_votes: newVotes,
-      last_updated: station.last_updated === "Never" ? new Date().toISOString() : station.last_updated,
-      verified: station.verified || false
-    };
-    const { error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' });
+    // Counted on the server: one vote per person per station (rating again replaces your old vote),
+    // and simultaneous ratings can't overwrite each other.
+    const { data, error } = await supabase.rpc('rate_station', {
+      p_station_id: station.id,
+      p_stars: selectedStar,
+      p_name: station.name,
+      p_address: station.address,
+      p_lat: station.lat,
+      p_lng: station.lng,
+    });
 
     setIsSubmitting(false);
     if (error) {
       alert("Error saving rating: " + error.message);
     } else {
-      onSaved(station.id, payload, "Thank you! Your community rating has been recorded.");
+      const result = (data || {}) as { pump_accuracy?: number; accuracy_votes?: number; changed_vote?: boolean };
+      const patch = {
+        pump_accuracy: Number(result.pump_accuracy ?? station.pump_accuracy ?? 0),
+        accuracy_votes: Number(result.accuracy_votes ?? station.accuracy_votes ?? 0),
+      };
+      onSaved(station.id, patch, result.changed_vote
+        ? "Your rating has been updated. Thanks!"
+        : "Thank you! Your community rating has been recorded.");
       onClose();
     }
   };
@@ -542,6 +537,7 @@ function QozobLanding() {
 
   const [user, setUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [requestedManager, setRequestedManager] = useState(false); // asked for Manager access, awaiting admin approval
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   const [googleStations, setGoogleStations] = useState<any[]>([]);
@@ -584,17 +580,23 @@ function QozobLanding() {
   }, []);
 
   // Sync Auth User
+  // The role comes from app_metadata (set only by an admin / the database). user_metadata.role is
+  // user-editable, so it only tells us someone has *asked* to be a Manager.
   useEffect(() => {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
-      if (user) setUserRole(user.user_metadata?.role || 'User');
+      if (user) {
+        setUserRole(getRole(user));
+        setRequestedManager(hasRequestedManager(user));
+      }
     };
     fetchUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      setUserRole(session?.user?.user_metadata?.role || null);
+      setUserRole(session?.user ? getRole(session.user) : null);
+      setRequestedManager(hasRequestedManager(session?.user));
     });
 
     return () => subscription.unsubscribe();
@@ -649,7 +651,8 @@ function QozobLanding() {
     await Promise.all(chunks.map(async (chunk) => {
       const [{ data: rows, error: rowsError }, { data: claims }] = await Promise.all([
         supabase.from('stations').select('*').in('station_id', chunk),
-        supabase.from('station_claims').select('station_id, status').in('station_id', chunk),
+        // Claims contain personal details and are private; this function returns only station_id + status
+        supabase.rpc('get_claim_statuses', { ids: chunk }),
       ]);
 
       if (rowsError) {
@@ -763,7 +766,7 @@ function QozobLanding() {
     const distance = userLoc ? getDistanceFromLatLonInKm(userLoc.lat, userLoc.lng, statLat, statLng) : null;
 
     let computedClaimStatus = "None";
-    if (dbData?.verified) {
+    if (dbData?.verified || dbData?.manager_id) {
       computedClaimStatus = "Claimed";
     } else if (claimStatus) {
       computedClaimStatus = claimStatus;
@@ -927,8 +930,8 @@ function QozobLanding() {
       return router.push(`/login?redirect=claim&stationId=${selectedStation.id}`);
     }
 
-    if (userRole !== 'Manager' && userRole !== 'Admin') {
-      alert("Only Station Owners/Managers can claim stations. Please update your account role in Settings.");
+    if (userRole !== 'Manager' && userRole !== 'Admin' && !requestedManager) {
+      alert("Only Station Owners/Managers can claim stations. Please request Manager access in Settings.");
       return router.push('/user-dashboard?tab=settings');
     }
 
@@ -1038,17 +1041,17 @@ function QozobLanding() {
                     <div className="p-3 bg-indigo-50 border-b border-indigo-100">
                       <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">Signed in as</p>
                       <p className="text-xs font-bold text-indigo-950 truncate">{user.email}</p>
-                      <p className="text-[10px] font-bold text-emerald-600 mt-1">{userRole}</p>
+                      <p className="text-[10px] font-bold text-emerald-600 mt-1">{userRole}{requestedManager && <span className="text-amber-600"> · Manager access pending</span>}</p>
                     </div>
                     <div className="p-2 flex flex-col gap-1">
                       
                       {userRole === 'Admin' && (
-                        <button onClick={() => router.push('/admin/claims')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
+                        <button onClick={() => router.push('/admin')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
                           <ShieldCheck className="w-4 h-4 text-purple-500" /> Admin Dashboard
                         </button>
                       )}
 
-                      {userRole === 'Manager' ? (
+                      {(userRole === 'Manager' || requestedManager) ? (
                         <button onClick={() => router.push('/dashboard')} className="w-full text-left px-3 py-2 text-sm font-bold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-lg flex items-center gap-2 transition-colors">
                           <ShieldCheck className="w-4 h-4" /> Go to Dashboard
                         </button>

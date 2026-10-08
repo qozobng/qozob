@@ -8,6 +8,7 @@ import {
   LayoutGrid, List, FileDown, FileUp, AlertCircle, Menu, Settings, Map as MapIcon, Clock
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
 import { BrandLogo } from '@/components/BrandLogo';
 
 // =========================================================================
@@ -77,6 +78,7 @@ export default function DashboardPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [accessPending, setAccessPending] = useState(false); // Manager access requested, awaiting admin approval
 
   const [editName, setEditName] = useState("");
   const [editAddress, setEditAddress] = useState("");
@@ -91,8 +93,15 @@ export default function DashboardPage() {
       if (authError || !user) {
         return router.push('/login');
       }
-      if (user.user_metadata?.role !== 'Manager') {
+      // Trusted role (app_metadata). People who asked to be a Manager but aren't approved yet can still
+      // come in to follow their pending claims — the database only ever lets them edit stations they own.
+      const role = getRole(user);
+      if (role !== 'Manager' && role !== 'Admin' && !hasRequestedManager(user)) {
         return router.push('/user-dashboard');
+      }
+      if (role === 'User') {
+        setAccessPending(true);
+        ensureManagerRequestFiled(supabase, user); // files the sign-up request if it hasn't been yet
       }
       
       setUser(user);
@@ -376,6 +385,19 @@ export default function DashboardPage() {
       {/* ======================= MAIN DASHBOARD ======================= */}
       <main className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
         
+        {accessPending && (
+          <div className="mb-6 flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-4">
+            <Clock className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-black">Your Manager access is awaiting approval</p>
+              <p className="text-amber-800/80 mt-0.5">
+                You can claim your station from the map now. Once our team approves your claim (or your access request),
+                you&apos;ll be able to update prices and details here.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="mb-8 flex flex-col lg:flex-row lg:items-end justify-between gap-6">
           <div>
             <h2 className="text-3xl font-black text-indigo-950 flex items-center gap-2">

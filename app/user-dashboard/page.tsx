@@ -7,6 +7,9 @@ import {
   LogOut, Star, Droplet, ArrowRight, CheckCircle2, Loader2 
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
+import {
+  getRole, getLatestRoleRequest, requestManagerAccess, ensureManagerRequestFiled, type RoleRequest
+} from '@/lib/roles';
 
 // 1. Create the inner component containing all the logic
 function UserDashboardContent() {
@@ -22,9 +25,12 @@ function UserDashboardContent() {
   const [loading, setLoading] = useState(true);
   
   // Settings States
+  // currentRole = the trusted role (app_metadata, set only by an admin). Choosing "Manager" here now
+  // files a request for an admin to approve instead of switching instantly.
   const [currentRole, setCurrentRole] = useState<string>("User");
   const [selectedRole, setSelectedRole] = useState<string>("User");
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -35,9 +41,15 @@ function UserDashboardContent() {
       }
       
       setUser(user);
-      const role = user.user_metadata?.role || "User";
+      const role = getRole(user);
       setCurrentRole(role);
-      setSelectedRole(role);
+
+      // Files the request automatically for people who chose "Station Owner" at sign-up
+      const latest = role === 'User'
+        ? (await ensureManagerRequestFiled(supabase, user)) ?? (await getLatestRoleRequest(supabase, user.id))
+        : null;
+      setRoleRequest(latest);
+      setSelectedRole(role !== 'User' || latest?.status === 'Pending' ? 'Manager' : 'User');
       setLoading(false);
     };
 
@@ -49,28 +61,38 @@ function UserDashboardContent() {
     router.push('/');
   };
 
+  const isPending = roleRequest?.status === 'Pending';
+  const canChangeRole = currentRole === 'User'; // verified Managers/Admins are managed by the Qozob team
+  const roleActionNeeded = canChangeRole && (
+    (selectedRole === 'Manager' && !isPending) || (selectedRole === 'User' && isPending)
+  );
+
   const handleUpdateRole = async () => {
-    if (selectedRole === currentRole) return;
-    
+    if (!user || !roleActionNeeded) return;
     setIsUpdatingRole(true);
-    
-    // Securely update the user's metadata in Supabase
-    const { data, error } = await supabase.auth.updateUser({
-      data: { role: selectedRole }
-    });
 
-    setIsUpdatingRole(false);
-
-    if (error) {
-      alert("Error updating role: " + error.message);
-    } else {
-      setCurrentRole(selectedRole);
-      alert(`Success! Your account is now set to ${selectedRole}.`);
-      
-      // If they upgraded to Manager, redirect them to the Manager Dashboard
-      if (selectedRole === 'Manager') {
-        router.push('/dashboard');
+    if (selectedRole === 'Manager') {
+      // File a Manager-access request for an admin to review
+      const result = await requestManagerAccess(supabase, user);
+      setIsUpdatingRole(false);
+      if (!result.ok) {
+        return alert("Error sending request: " + result.error);
       }
+      setRoleRequest(await getLatestRoleRequest(supabase, user.id));
+      alert("Request sent! Our team will review it shortly. Meanwhile you can claim your station from the map.");
+    } else {
+      // Withdraw a pending request
+      if (roleRequest) {
+        const { error } = await supabase.from('role_requests').delete().eq('id', roleRequest.id).eq('status', 'Pending');
+        if (error) {
+          setIsUpdatingRole(false);
+          return alert("Error withdrawing request: " + error.message);
+        }
+      }
+      await supabase.auth.updateUser({ data: { role: 'User' } });
+      setIsUpdatingRole(false);
+      setRoleRequest(null);
+      alert("Your Manager access request has been withdrawn.");
     }
   };
 
@@ -121,7 +143,7 @@ function UserDashboardContent() {
         </div>
 
         <div className="mt-auto p-6 flex flex-col gap-2">
-          {currentRole === 'Manager' && (
+          {(currentRole === 'Manager' || currentRole === 'Admin' || isPending) && (
             <button 
               onClick={() => router.push('/dashboard')} 
               className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-indigo-900 bg-emerald-400 hover:bg-emerald-300 transition-colors w-full justify-center shadow-lg"
@@ -180,12 +202,14 @@ function UserDashboardContent() {
                   <ShieldCheck className="w-5 h-5 text-indigo-500" /> Platform Role
                 </h3>
                 <p className="text-xs text-indigo-700 mt-1">
-                  Change your role to unlock station management features.
+                  {canChangeRole
+                    ? "Station owners can request Manager access. Our team reviews every request to keep prices trustworthy."
+                    : "Your role was approved by the Qozob team. Contact support if it needs to change."}
                 </p>
               </div>
 
               <div className="p-6 md:p-8">
-                <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                <div className={`flex flex-col sm:flex-row gap-4 mb-8 ${canChangeRole ? '' : 'pointer-events-none opacity-70'}`}>
                   
                   {/* Option 1: Everyday User */}
                   <label 
@@ -237,17 +261,33 @@ function UserDashboardContent() {
 
                 </div>
 
-                <div className="flex items-center justify-between pt-6 border-t border-slate-100">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Current Status: <span className={currentRole === 'Manager' ? 'text-indigo-600' : 'text-emerald-600'}>{currentRole}</span>
-                  </p>
-                  <button 
-                    onClick={handleUpdateRole} 
-                    disabled={selectedRole === currentRole || isUpdatingRole} 
-                    className="bg-indigo-900 hover:bg-indigo-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 px-6 rounded-xl transition-colors flex items-center gap-2"
-                  >
-                    {isUpdatingRole ? "Saving..." : "Save Role Updates"} <ArrowRight className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-6 border-t border-slate-100">
+                  <div>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Current Status: <span className={currentRole === 'Manager' ? 'text-indigo-600' : 'text-emerald-600'}>{currentRole}</span>
+                      {isPending && <span className="text-amber-600"> · Manager request pending review</span>}
+                    </p>
+                    {roleRequest?.status === 'Rejected' && canChangeRole && (
+                      <p className="text-xs text-red-600 mt-1">
+                        Your last request was not approved{roleRequest.admin_notes ? `: ${roleRequest.admin_notes}` : '.'} You can request again.
+                      </p>
+                    )}
+                  </div>
+                  {canChangeRole && (
+                    <button 
+                      onClick={handleUpdateRole} 
+                      disabled={!roleActionNeeded || isUpdatingRole} 
+                      className="bg-indigo-900 hover:bg-indigo-800 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 px-6 rounded-xl transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isUpdatingRole
+                        ? "Saving..."
+                        : selectedRole === 'User' && isPending
+                          ? "Withdraw Request"
+                          : isPending
+                            ? "Request Sent"
+                            : "Request Manager Access"} <ArrowRight className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
               </div>

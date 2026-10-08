@@ -1,59 +1,46 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { 
-  ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, ExternalLink, RefreshCw, MapPin
+  ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, ExternalLink, RefreshCw, MapPin, UserPlus, Loader2
 } from 'lucide-react';
 
 // FIXED: Using your new secure utility instead of the raw library
 import { createClient } from '@/utils/supabase/client';
+import { getRole, signedCacUrl } from '@/lib/roles';
 
 // --- Supabase Setup ---
-// FIXED: Added '!' to tell TypeScript these definitely exist
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const supabase = createClient();
 
-// --- Prototype Master Password ---
-const ADMIN_PASSCODE = "qozob-admin-2026";
+// =========================================================================
+// SECURITY: The old hard-coded master passcode shipped inside the website's JavaScript,
+// so anyone could read it. Admins now sign in with their normal Qozob account, and the
+// DATABASE decides who is an admin (public.is_admin()). Approve/Reject run through
+// admin-only database functions, so even a tampered browser can't approve anything.
+// =========================================================================
+
+type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
 
 export default function AdminDashboard() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passcode, setPasscode] = useState("");
-  const [loginError, setLoginError] = useState("");
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const [adminEmail, setAdminEmail] = useState("");
   
   // FIXED: Explicitly typed the claims array
   const [claims, setClaims] = useState<any[]>([]);
+  const [roleRequests, setRoleRequests] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // --- Auth Handlers ---
-  // FIXED: Added 'React.FormEvent' to stop the "Implicit Any" error
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (passcode === ADMIN_PASSCODE) {
-      setIsAuthenticated(true);
-      setLoginError("");
-      fetchClaims();
-    } else {
-      setLoginError("Incorrect Master Passcode");
-    }
-  };
-
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-    setPasscode("");
-    setClaims([]);
-  };
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
 
   // --- Fetch Claims & Smart Merge with Station Addresses ---
-  const fetchClaims = async () => {
+  const fetchClaims = useCallback(async () => {
     setIsLoading(true);
     
-    // 1. Fetch all claims
-    const { data: claimsData, error: claimsError } = await supabase
-      .from('station_claims')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // 1. Fetch all claims (+ Manager access requests) — RLS only returns these to admins
+    const [{ data: claimsData, error: claimsError }, { data: requestsData, error: requestsError }] = await Promise.all([
+      supabase.from('station_claims').select('*').order('created_at', { ascending: false }),
+      supabase.from('role_requests').select('*').order('created_at', { ascending: false }),
+    ]);
 
     if (claimsError) {
       console.error("Error fetching claims:", claimsError.message);
@@ -61,6 +48,10 @@ export default function AdminDashboard() {
       setIsLoading(false);
       return;
     }
+    if (requestsError) {
+      console.warn("Could not load Manager access requests:", requestsError.message);
+    }
+    setRoleRequests(requestsData || []);
 
     // 2. Fetch stations for the physical address text (only the ones referenced by claims)
     const claimStationIds = Array.from(new Set((claimsData || []).map(c => c.station_id).filter(Boolean)));
@@ -83,6 +74,49 @@ export default function AdminDashboard() {
 
     setClaims(mergedClaims);
     setIsLoading(false);
+  }, []);
+
+  // --- Auth: signed in + confirmed admin by the database ---
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return setAuthState('signed-out');
+      setAdminEmail(user.email || "");
+
+      const { data: isAdmin, error } = await supabase.rpc('is_admin');
+      if (error) console.warn("Admin check failed:", error.message);
+      // Fall back to the (server-set) app_metadata role only for display if the RPC isn't deployed yet;
+      // the database still refuses every admin action for non-admins.
+      if (isAdmin === true || (error && getRole(user) === 'Admin')) {
+        setAuthState('admin');
+        fetchClaims();
+      } else {
+        setAuthState('not-admin');
+      }
+    })();
+  }, [fetchClaims]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setClaims([]);
+    setRoleRequests([]);
+    setAuthState('signed-out');
+  };
+
+  // CAC documents are private now: open them through a short-lived signed link
+  const openDocument = async (key: string, ref: string | null | undefined) => {
+    if (!ref) return;
+    const win = window.open('', '_blank');
+    setOpeningDocId(key);
+    const url = await signedCacUrl(supabase, ref);
+    setOpeningDocId(null);
+    if (url && win) {
+      win.opener = null;
+      win.location.href = url;
+    } else {
+      win?.close();
+      alert("Could not open this document. It may have been removed.");
+    }
   };
 
   // --- Action Handlers (Approve/Reject) ---
@@ -92,27 +126,16 @@ export default function AdminDashboard() {
 
     setIsProcessing(true);
     
-    // 1. Update the claim status
-    const { error: claimError } = await supabase
-      .from('station_claims')
-      .update({ status: 'Approved' })
-      .eq('id', claim.id);
+    // Approves the claim, verifies the station, links it to the claimant and makes them a Manager —
+    // all in one admin-only database function (all-or-nothing).
+    const { error } = await supabase.rpc('admin_review_claim', {
+      p_claim_id: String(claim.id),
+      p_status: 'Approved',
+      p_notes: null,
+    });
 
-    if (claimError) {
-      alert("Error updating claim: " + claimError.message);
-      setIsProcessing(false);
-      return;
-    }
-
-    // 2. Give the station official 'Owner' status, Verify it, and link it to the claimant
-    //    (the manager dashboard loads stations by manager_id)
-    const { error: stationError } = await supabase
-      .from('stations')
-      .update({ verified: true, updated_by_role: 'Owner', ...(claim.user_id ? { manager_id: claim.user_id } : {}) })
-      .eq('station_id', claim.station_id);
-
-    if (stationError) {
-      alert("Error updating station verification: " + stationError.message);
+    if (error) {
+      alert("Error approving claim: " + error.message);
     } else {
       alert("Station successfully claimed and verified!");
       fetchClaims(); 
@@ -125,10 +148,11 @@ export default function AdminDashboard() {
     if (!confirmReject) return;
 
     setIsProcessing(true);
-    const { error } = await supabase
-      .from('station_claims')
-      .update({ status: 'Rejected' })
-      .eq('id', claim.id);
+    const { error } = await supabase.rpc('admin_review_claim', {
+      p_claim_id: String(claim.id),
+      p_status: 'Rejected',
+      p_notes: null,
+    });
 
     if (error) {
       alert("Error rejecting claim: " + error.message);
@@ -139,35 +163,72 @@ export default function AdminDashboard() {
     setIsProcessing(false);
   };
 
+  const handleReviewRequest = async (request: any, status: 'Approved' | 'Rejected') => {
+    const who = request.full_name || request.email || 'this user';
+    const notes = window.prompt(
+      status === 'Approved'
+        ? `Approve Manager access for ${who}? Optional note:`
+        : `Reject Manager access for ${who}? Optional reason:`,
+      ""
+    );
+    if (notes === null) return; // cancelled
+
+    setIsProcessing(true);
+    const { error } = await supabase.rpc('admin_review_role_request', {
+      p_request_id: request.id,
+      p_status: status,
+      p_notes: notes || null,
+    });
+    if (error) {
+      alert("Error: " + error.message);
+    } else {
+      alert(status === 'Approved' ? "Manager access approved." : "Request rejected.");
+      fetchClaims();
+    }
+    setIsProcessing(false);
+  };
+
   // =========================================================================
-  // UI: LOGIN SCREEN
+  // UI: LOGIN / ACCESS SCREENS
   // =========================================================================
-  if (!isAuthenticated) {
+  if (authState !== 'admin') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full border border-slate-100">
           <div className="w-16 h-16 bg-indigo-900 rounded-full flex items-center justify-center mb-6 mx-auto shadow-inner">
-            <Lock className="w-8 h-8 text-emerald-400" />
+            {authState === 'checking'
+              ? <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+              : <Lock className="w-8 h-8 text-emerald-400" />}
           </div>
           <h1 className="text-2xl font-black text-center text-indigo-950 mb-2">Admin Portal</h1>
-          <p className="text-center text-slate-500 text-sm mb-6">Enter master passcode to view station claims.</p>
-          
-          <form onSubmit={handleLogin} className="flex flex-col gap-4">
-            <div>
-              <input 
-                type="password" 
-                value={passcode} 
-                onChange={(e) => setPasscode(e.target.value)}
-                placeholder="Enter Passcode..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl p-4 text-center font-bold outline-none focus:border-indigo-500 transition-colors"
-                autoFocus
-              />
-              {loginError && <p className="text-red-500 text-xs font-bold mt-2 text-center">{loginError}</p>}
-            </div>
-            <button type="submit" className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all shadow-md hover:shadow-lg">
-              Unlock Dashboard
-            </button>
-          </form>
+
+          {authState === 'checking' && (
+            <p className="text-center text-slate-500 text-sm">Checking your access...</p>
+          )}
+
+          {authState === 'signed-out' && (
+            <>
+              <p className="text-center text-slate-500 text-sm mb-6">Sign in with your Qozob admin account to view station claims.</p>
+              <Link href="/login?redirect=admin" className="block w-full text-center bg-indigo-900 hover:bg-indigo-800 text-white font-black py-4 rounded-xl transition-all shadow-md hover:shadow-lg">
+                Sign in
+              </Link>
+            </>
+          )}
+
+          {authState === 'not-admin' && (
+            <>
+              <p className="text-center text-slate-500 text-sm mb-2">
+                <strong className="text-slate-700">{adminEmail}</strong> is not an admin account.
+              </p>
+              <p className="text-center text-slate-400 text-xs mb-6">Admin access is granted from the Supabase database, not from the app.</p>
+              <div className="flex flex-col gap-2">
+                <button onClick={handleLogout} className="w-full bg-indigo-900 hover:bg-indigo-800 text-white font-black py-3 rounded-xl transition-all">
+                  Sign in with a different account
+                </button>
+                <Link href="/" className="w-full text-center text-sm font-bold text-slate-500 hover:text-indigo-700 py-2">Back to map</Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -178,6 +239,7 @@ export default function AdminDashboard() {
   // =========================================================================
   const pendingClaims = claims.filter(c => c.status === 'Pending Review');
   const pastClaims = claims.filter(c => c.status !== 'Pending Review');
+  const pendingRequests = roleRequests.filter(r => r.status === 'Pending');
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 pb-10">
@@ -191,9 +253,12 @@ export default function AdminDashboard() {
               <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Verification Headquarters</span>
             </div>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 text-indigo-200 hover:text-white transition-colors text-sm font-bold bg-white/10 px-4 py-2 rounded-full">
-            <LogOut className="w-4 h-4" /> Lock
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden sm:inline text-xs font-bold text-indigo-300 truncate max-w-[200px]">{adminEmail}</span>
+            <button onClick={handleLogout} className="flex items-center gap-2 text-indigo-200 hover:text-white transition-colors text-sm font-bold bg-white/10 px-4 py-2 rounded-full">
+              <LogOut className="w-4 h-4" /> Sign out
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -255,14 +320,14 @@ export default function AdminDashboard() {
 
                   <div className="flex flex-col gap-2 mt-auto">
                     <div className="grid grid-cols-2 gap-2 mb-2">
-                      <a 
-                        href={claim.document_url || "#"} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className={`flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-sm ${!claim.document_url ? 'opacity-50 pointer-events-none' : ''}`}
+                      <button 
+                        type="button"
+                        onClick={() => openDocument(`claim-${claim.id}`, claim.document_url)}
+                        disabled={!claim.document_url || openingDocId === `claim-${claim.id}`}
+                        className="flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-sm disabled:opacity-50"
                       >
-                        <FileText className="w-4 h-4" /> CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
-                      </a>
+                        {openingDocId === `claim-${claim.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
+                      </button>
 
                       <a 
                         href={claim.lat && claim.lng 
@@ -284,6 +349,68 @@ export default function AdminDashboard() {
                         <XCircle className="w-4 h-4" /> Reject
                       </button>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* MANAGER ACCESS REQUESTS (replaces the old self-serve "switch to Manager") */}
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <UserPlus className="w-5 h-5 text-indigo-500" />
+            <h3 className="text-xl font-black text-slate-800">Manager Access Requests ({pendingRequests.length})</h3>
+          </div>
+
+          {isLoading ? null : pendingRequests.length === 0 ? (
+            <div className="bg-white rounded-3xl p-6 text-center border border-slate-100 shadow-sm">
+              <p className="text-slate-500 font-bold text-sm">No pending Manager access requests.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {pendingRequests.map(req => (
+                <div key={req.id} className="bg-white rounded-3xl p-6 shadow-sm border border-indigo-200 relative overflow-hidden flex flex-col h-full">
+                  <div className="absolute top-0 right-0 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase px-3 py-1 rounded-bl-xl tracking-widest">Manager Request</div>
+                  <h4 className="font-black text-indigo-950 text-lg pr-24 leading-tight mb-1">{req.full_name || req.email || 'Unnamed user'}</h4>
+                  <p className="text-xs font-bold text-slate-500 mb-1 truncate">{req.email}</p>
+                  <p className="text-[10px] text-slate-400 mb-4 flex items-center gap-1"><Clock className="w-3 h-3"/> Requested {new Date(req.created_at).toLocaleDateString()}</p>
+
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-4 flex-1 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Company</p>
+                      <p className="font-bold text-slate-800">{req.company_name || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Phone</p>
+                      <p className="font-bold text-slate-800">{req.phone || '—'}</p>
+                    </div>
+                    {req.note && (
+                      <div className="col-span-2 pt-2 border-t border-slate-200">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Note</p>
+                        <p className="text-slate-700 text-xs">{req.note}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {req.document_url && (
+                    <button
+                      type="button"
+                      onClick={() => openDocument(`req-${req.id}`, req.document_url)}
+                      disabled={openingDocId === `req-${req.id}`}
+                      className="flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 font-bold py-2.5 rounded-xl transition-colors border border-indigo-200 text-xs shadow-sm mb-2 disabled:opacity-50"
+                    >
+                      {openingDocId === `req-${req.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} CAC Doc <ExternalLink className="w-3 h-3 opacity-50"/>
+                    </button>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 mt-auto">
+                    <button onClick={() => handleReviewRequest(req, 'Approved')} disabled={isProcessing} className="flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3 rounded-xl transition-colors disabled:opacity-50 text-sm">
+                      <CheckCircle className="w-4 h-4" /> Approve
+                    </button>
+                    <button onClick={() => handleReviewRequest(req, 'Rejected')} disabled={isProcessing} className="flex items-center justify-center gap-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold py-3 rounded-xl transition-colors disabled:opacity-50 text-sm border border-red-200">
+                      <XCircle className="w-4 h-4" /> Reject
+                    </button>
                   </div>
                 </div>
               ))}

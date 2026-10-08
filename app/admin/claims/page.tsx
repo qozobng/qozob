@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
+import { signedCacUrl } from '@/lib/roles';
 import { CheckCircle, XCircle, FileText, Loader2 } from 'lucide-react';
 
 export default function AdminClaimsDashboard() {
@@ -44,7 +45,7 @@ export default function AdminClaimsDashboard() {
       });
 
       const result = await res.json();
-      if (res.status === 403) throw new Error("You are not authorised as an admin. Ask the owner to add your email to ADMIN_EMAILS.");
+      if (res.status === 401 || res.status === 403) throw new Error("You are not authorised as an admin. Admin access is granted in the Supabase database.");
       if (!result.success) throw new Error(result.error);
       
       alert(`Claim successfully ${status}!`);
@@ -52,6 +53,20 @@ export default function AdminClaimsDashboard() {
     } catch (err: any) {
       alert("Error: " + err.message);
       setLoading(false);
+    }
+  };
+
+  // CAC documents are private: open them through a short-lived signed link
+  const openDocument = async (ref: string | null | undefined) => {
+    if (!ref) return;
+    const win = window.open('', '_blank');
+    const url = await signedCacUrl(supabase, ref);
+    if (url && win) {
+      win.opener = null;
+      win.location.href = url;
+    } else {
+      win?.close();
+      alert("Could not open this document.");
     }
   };
 
@@ -71,14 +86,13 @@ export default function AdminClaimsDashboard() {
                 <h2 className="text-xl font-bold text-indigo-900">{claim.station_name}</h2>
                 <p className="text-sm text-slate-500 mb-4">Applicant: {claim.applicant_name} | Phone: {claim.phone_number}</p>
                 <div className="flex gap-4">
-                  <a 
-                    href={claim.document_url} 
-                    target="_blank" 
-                    rel="noreferrer"
+                  <button 
+                    type="button"
+                    onClick={() => openDocument(claim.document_url)}
                     className="flex items-center gap-2 text-sm font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-lg hover:bg-indigo-100"
                   >
                     <FileText className="w-4 h-4" /> View CAC Document
-                  </a>
+                  </button>
                   <p className="text-sm px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
                     RC: {claim.business_reg_number}
                   </p>

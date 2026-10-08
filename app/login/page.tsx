@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { Droplet, Loader2, Lock, Mail, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
+import type { User } from '@supabase/supabase-js';
+import { homePathFor } from '@/lib/roles';
 
 // =========================================================================
 // 1. LOGIN CONTENT (Extracted to allow Suspense wrapping)
@@ -23,14 +25,16 @@ function LoginContent() {
   const redirectTarget = searchParams.get('redirect');
   const stationId = searchParams.get('stationId');
 
-  const routeUser = (role: string | null) => {
+  const routeUser = (user: User) => {
     // If they came from clicking "Claim" on the map, send them back to the map with auto-select
     if (redirectTarget === 'claim' && stationId) {
       router.push(`/?select=${stationId}`);
-    } else if (role === 'Manager') {
-      router.push('/dashboard');
+    } else if (redirectTarget === 'admin') {
+      router.push('/admin');
     } else {
-      router.push('/user-dashboard');
+      // Admin → /admin, Manager (or awaiting approval) → /dashboard, everyone else → /user-dashboard.
+      // Uses the trusted app_metadata role, not the user-editable user_metadata.
+      router.push(homePathFor(user));
     }
   };
 
@@ -51,7 +55,7 @@ function LoginContent() {
     }
 
     if (data.user) {
-      routeUser(data.user.user_metadata?.role);
+      routeUser(data.user);
     }
   };
 

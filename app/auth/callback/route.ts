@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { homePathFor } from '@/lib/roles';
 
 // =========================================================================
 // OAUTH CALLBACK (Google sign-in)
@@ -22,11 +23,12 @@ export async function GET(request: Request) {
 
     if (!error && data.user) {
       // Same routing rules as LoginContent.routeUser in app/login/page.tsx
-      let path = '/user-dashboard';
+      // (trusted app_metadata role — user_metadata is user-editable and never trusted)
+      let path = homePathFor(data.user);
       if (redirectTarget === 'claim' && stationId && stationId !== 'null' && stationId !== 'undefined') {
         path = `/?select=${encodeURIComponent(stationId)}`;
-      } else if (data.user.user_metadata?.role === 'Manager') {
-        path = '/dashboard';
+      } else if (redirectTarget === 'admin') {
+        path = '/admin';
       }
       return NextResponse.redirect(`${origin}${path}`);
     }
