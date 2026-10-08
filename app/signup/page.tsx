@@ -8,6 +8,8 @@ import Link from 'next/link';
 import { AuthShell } from '@/components/AuthShell';
 import { ui, cx } from '@/lib/ui';
 import { MAILING_CONSENT_TEXT } from '@/lib/mailingConsent';
+import { PhoneField } from '@/components/PhoneField';
+import { NIGERIAN_STATES, stateLabel, joinPhone } from '@/lib/nigeria';
 
 const ROLE_OPTIONS = [
   {
@@ -60,6 +62,8 @@ export default function SignupPage() {
   const [companyName, setCompanyName] = useState("");
   const [cacFile, setCacFile] = useState<File | null>(null);
 
+  const isNigeria = /^\s*nigeria\s*$/i.test(country);
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -67,6 +71,13 @@ export default function SignupPage() {
 
     if (role === 'Manager' && (!companyName || !cacFile)) {
       setErrorMsg("Station owners must provide a registered company name and CAC certificate.");
+      setLoading(false);
+      return;
+    }
+
+    const fullPhone = joinPhone(phoneCode, phone);
+    if (fullPhone.replace(/\D/g, '').length < phoneCode.replace(/\D/g, '').length + 7) {
+      setErrorMsg("Please enter a valid phone number.");
       setLoading(false);
       return;
     }
@@ -82,7 +93,7 @@ export default function SignupPage() {
             first_name: firstName,
             middle_name: middleName,
             last_name: lastName,
-            full_phone: `${phoneCode}${phone}`,
+            full_phone: fullPhone,
             address: address,
             state: state,
             country: country,
@@ -133,8 +144,8 @@ export default function SignupPage() {
         : "Account created. Taking you to sign in…");
       setTimeout(() => router.push('/login'), 2500);
 
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -224,23 +235,16 @@ export default function SignupPage() {
         {/* CONTACT DETAILS */}
         <Section title="Contact">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+            <div className="min-w-0">
               <label htmlFor="email" className={ui.label}>Email address</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle pointer-events-none" aria-hidden />
                 <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={cx(ui.input, ui.inputWithIcon)} placeholder="you@example.com" />
               </div>
             </div>
-            <div>
+            <div className="min-w-0">
               <label htmlFor="phone" className={ui.label}>Phone number</label>
-              <div className="flex gap-2">
-                <select aria-label="Country code" value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} className={cx(ui.select, 'w-[118px] shrink-0')}>
-                  <option value="+234">NG +234</option>
-                  <option value="+1">US +1</option>
-                  <option value="+44">UK +44</option>
-                </select>
-                <input id="phone" type="tel" autoComplete="tel-national" required value={phone} onChange={(e) => setPhone(e.target.value)} className={cx(ui.input, 'flex-1 min-w-0')} placeholder="801 234 5678" />
-              </div>
+              <PhoneField id="phone" code={phoneCode} onCodeChange={setPhoneCode} value={phone} onChange={setPhone} required />
             </div>
           </div>
         </Section>
@@ -248,15 +252,22 @@ export default function SignupPage() {
         {/* LOCATION DETAILS */}
         <Section title="Location">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
+            <div className="min-w-0">
               <label htmlFor="country" className={ui.label}>Country</label>
               <input id="country" type="text" autoComplete="country-name" required value={country} onChange={(e) => setCountry(e.target.value)} className={ui.input} placeholder="Nigeria" />
             </div>
-            <div>
+            <div className="min-w-0">
               <label htmlFor="state" className={ui.label}>State</label>
-              <input id="state" type="text" autoComplete="address-level1" required value={state} onChange={(e) => setState(e.target.value)} className={ui.input} placeholder="Lagos" />
+              {isNigeria ? (
+                <select id="state" required value={state} onChange={(e) => setState(e.target.value)} className={ui.select}>
+                  <option value="" disabled>Choose your state</option>
+                  {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{stateLabel(s)}</option>)}
+                </select>
+              ) : (
+                <input id="state" type="text" autoComplete="address-level1" required value={state} onChange={(e) => setState(e.target.value)} className={ui.input} placeholder="State / region" />
+              )}
             </div>
-            <div>
+            <div className="min-w-0">
               <label htmlFor="address" className={ui.label}>Address <span className="font-normal text-fg-subtle">(optional)</span></label>
               <input id="address" type="text" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} className={ui.input} />
             </div>

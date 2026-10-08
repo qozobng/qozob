@@ -5,6 +5,8 @@
 // Style: friendly-modern — soft 16–24px cards, pill buttons, Plus Jakarta Sans, indigo + emerald.
 // =========================================================================
 
+import { extendTailwindMerge } from 'tailwind-merge';
+
 export const ui = {
   // Layout
   card: 'bg-surface border border-line rounded-2xl shadow-[0_2px_10px_-4px_rgb(var(--shadow-color)/0.12)]',
@@ -56,7 +58,21 @@ export const ui = {
   modalClose: 'absolute top-4 right-4 p-1.5 rounded-full text-fg-subtle hover:text-fg hover:bg-surface-2 transition-colors',
 } as const;
 
-/** Joins class names, skipping falsy values. */
+/**
+ * Joins class names, skipping falsy values, and resolves Tailwind conflicts so the LAST class wins.
+ * e.g. cx(ui.select, 'w-[118px] h-10') drops the recipe's `w-full h-12` instead of leaving both
+ * (with both present, whichever Tailwind emits later in the CSS wins, regardless of the order written,
+ * which is what squashed the sign-up phone field).
+ */
+const merge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      // custom @utility classes in app/globals.css
+      'bg-image': ['bg-brand-grad'],
+    },
+  },
+});
+
 export function cx(...parts: Array<string | false | null | undefined>): string {
-  return parts.filter(Boolean).join(' ');
+  return merge(parts.filter(Boolean).join(' '));
 }
