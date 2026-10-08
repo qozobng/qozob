@@ -6,7 +6,7 @@ import {
   User as UserIcon, Settings, ShieldCheck, Map as MapIcon, 
   LogOut, Star, Droplet, ArrowRight, CheckCircle2, Loader2,
   TrendingDown, Bookmark, Fuel, Compass, AlertCircle, ArrowUpRight,
-  Sparkles, Navigation, Clock, Check, MapPin
+  Sparkles, Navigation, Clock, Check, MapPin, Trophy
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -19,6 +19,7 @@ import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { EmailUpdatesCard } from '@/components/EmailUpdatesCard';
+import { MyRewards } from '@/components/rewards/MyRewards';
 
 interface RatedStationItem {
   station_id: string;
@@ -42,7 +43,8 @@ function UserDashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  const defaultTab = searchParams.get('tab') === 'settings' ? 'settings' : 'overview';
+  const tabParam = searchParams.get('tab') || '';
+  const defaultTab = ['settings', 'contributions', 'watchlist', 'rewards'].includes(tabParam) ? tabParam : 'overview';
 
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -294,6 +296,11 @@ function UserDashboardContent() {
 
             <button onClick={() => setActiveTab('watchlist')} className={sideTab(activeTab === 'watchlist')} aria-current={activeTab === 'watchlist' ? 'page' : undefined}>
               <span className="flex items-center gap-3"><Bookmark className="w-4 h-4" aria-hidden /> Saved stations</span>
+            </button>
+
+            <button onClick={() => setActiveTab('rewards')} className={sideTab(activeTab === 'rewards')} aria-current={activeTab === 'rewards' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Trophy className="w-4 h-4" aria-hidden /> Rewards</span>
+              <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-xs font-bold ${activeTab === 'rewards' ? 'bg-brand text-on-brand' : 'bg-amber-300 text-slate-900'}`}>₦10k</span>
             </button>
 
             <button onClick={() => setActiveTab('settings')} className={sideTab(activeTab === 'settings')} aria-current={activeTab === 'settings' ? 'page' : undefined}>
@@ -611,6 +618,9 @@ function UserDashboardContent() {
             </div>
           </div>
         )}
+
+        {/* ======================= TAB: REWARDS ======================= */}
+        {activeTab === 'rewards' && <MyRewards />}
 
         {/* ======================= TAB 4: SETTINGS ======================= */}
         {activeTab === 'settings' && (

@@ -34,6 +34,8 @@ function LoginContent() {
       router.push(`/?select=${stationId}`);
     } else if (redirectTarget === 'admin') {
       router.push('/admin');
+    } else if (redirectTarget === 'rewards') {
+      router.push('/user-dashboard?tab=rewards');
     } else {
       // Admin → /admin, Manager (or awaiting approval) → /dashboard, everyone else → /user-dashboard.
       // Uses the trusted app_metadata role, not the user-editable user_metadata.

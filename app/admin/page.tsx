@@ -6,7 +6,7 @@ import {
   ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock, 
   ExternalLink, RefreshCw, MapPin, UserPlus, Loader2, Building2, 
   TrendingUp, Fuel, AlertTriangle, Search, Filter, Download, ArrowUpRight,
-  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight, Megaphone, Mail
+  Eye, Check, ShieldAlert, BarChart3, Users, CheckCircle2, ChevronRight, Megaphone, Mail, Trophy
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -20,11 +20,12 @@ import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { AdsManager } from '@/components/admin/AdsManager';
 import { MailingManager } from '@/components/admin/MailingManager';
+import { RewardsManager } from '@/components/admin/RewardsManager';
 
 const supabase = createClient();
 
 type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
-type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads' | 'mailing';
+type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads' | 'mailing' | 'rewards';
 
 interface StationRecord {
   station_id: string;
@@ -548,6 +549,11 @@ export default function AdminDashboard() {
           <button role="tab" aria-selected={activeTab === 'mailing'} onClick={() => setActiveTab('mailing')} className={tabClass(activeTab === 'mailing')}>
             <Mail className="w-4 h-4" aria-hidden />
             <span>Mailing</span>
+          </button>
+
+          <button role="tab" aria-selected={activeTab === 'rewards'} onClick={() => setActiveTab('rewards')} className={tabClass(activeTab === 'rewards')}>
+            <Trophy className="w-4 h-4" aria-hidden />
+            <span>Rewards</span>
           </button>
         </div>
       </nav>
@@ -1116,6 +1122,7 @@ export default function AdminDashboard() {
         {/* =================================================================== */}
         {activeTab === 'ads' && <AdsManager />}
         {activeTab === 'mailing' && <MailingManager />}
+        {activeTab === 'rewards' && <RewardsManager />}
 
       </main>
 

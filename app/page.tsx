@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2, LayoutDashboard
+  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -24,6 +24,8 @@ import { AdCarousel } from '@/components/AdCarousel';
 import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
+import { getPosition, recordPriceReport, describeReport } from '@/lib/rewards';
+import { LgaOverlay } from '@/components/rewards/LgaOverlay';
 
 // --- Map Visual Key ---
 // Prefer the env var (set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in .env.local / Vercel); the inline key is kept as a fallback.
@@ -242,6 +244,10 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
   useEscapeKey(onClose);
 
+  // Rewards: start a GPS fix as soon as the form opens so it is ready by the time the price is saved
+  const positionRef = useRef<Promise<GeolocationPosition | null> | null>(null);
+  useEffect(() => { positionRef.current = getPosition(); }, []);
+
   const handleSuggestPrice = async () => {
     if (!suggestedPrice || !station) return;
 
@@ -278,6 +284,12 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
     } else {
       onSaved(station.id, savedRow || payload, "Price updated successfully! Thanks for helping the community.");
       onClose();
+      // Rewards: score this update in the background (never blocks or undoes the saved price)
+      void (async () => {
+        const position = await (positionRef.current ?? Promise.resolve(null));
+        const result = await recordPriceReport(supabase, station.id, position);
+        if (result) onSaved(station.id, {}, describeReport(result));
+      })();
     }
   };
 
@@ -627,7 +639,7 @@ function QozobLanding() {
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+    toastTimerRef.current = setTimeout(() => setToast(null), Math.min(8000, Math.max(3500, message.length * 60)));
   }, []);
 
   // Sync Auth User
@@ -1221,6 +1233,9 @@ function QozobLanding() {
                           <button onClick={() => router.push('/user-dashboard?tab=contributions')} className={menuItem}>
                             <UserIcon className="w-4 h-4 text-fg-muted" aria-hidden /> My contributions
                           </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=rewards')} className={menuItem}>
+                            <Trophy className="w-4 h-4 text-warning" aria-hidden /> My rewards
+                          </button>
                           <button onClick={() => router.push('/user-dashboard?tab=settings')} className={menuItem}>
                             <Settings className="w-4 h-4 text-fg-muted" aria-hidden /> Account settings
                           </button>
@@ -1280,6 +1295,20 @@ function QozobLanding() {
           {nearestStation && renderHeroCompact(nearestStation, 'nearest')}
           {heroStation && renderHeroCard(heroStation, 'best')}
           {nearestStation && renderHeroCard(nearestStation, 'nearest')}
+
+          {/* REWARDS PROMO (desktop only, so the mobile landing view keeps the map in sight) */}
+          <a
+            href="/rewards"
+            className="hidden lg:flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-300 to-amber-400 text-slate-900 p-4 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 text-amber-300" aria-hidden>
+              <Trophy className="w-5 h-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-extrabold leading-tight">Win ₦10,000 every month</span>
+              <span className="block text-xs font-medium text-slate-800 mt-0.5">Be the top price updater in your LGA. See the leaderboard →</span>
+            </span>
+          </a>
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
@@ -1322,6 +1351,9 @@ function QozobLanding() {
             >
               <LocateFixed className="w-5 h-5" />
             </button>
+
+            {/* REWARDS CHIP + LGA BOUNDARIES TOGGLE (top-right, inside the map) */}
+            <LgaOverlay />
 
             <GoogleMap 
               id="main-map" 
@@ -1610,6 +1642,7 @@ function QozobLanding() {
             <span className="text-xs">© {new Date().getFullYear()} {SITE.name}. All rights reserved.</span>
           </div>
           <nav className="flex gap-x-6 gap-y-2 font-medium text-sm flex-wrap justify-center" aria-label="Footer">
+            <a href="/rewards" className="hover:text-on-brand transition-colors">Rewards</a>
             <a href="/privacy" className="hover:text-on-brand transition-colors">Privacy</a>
             <a href="/terms" className="hover:text-on-brand transition-colors">Terms</a>
             <a href={`mailto:${SITE.contactEmail}`} className="hover:text-on-brand transition-colors">Contact</a>

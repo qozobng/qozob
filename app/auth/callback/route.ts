@@ -29,6 +29,8 @@ export async function GET(request: Request) {
         path = `/?select=${encodeURIComponent(stationId)}`;
       } else if (redirectTarget === 'admin') {
         path = '/admin';
+      } else if (redirectTarget === 'rewards') {
+        path = '/user-dashboard?tab=rewards';
       }
       return NextResponse.redirect(`${origin}${path}`);
     }
