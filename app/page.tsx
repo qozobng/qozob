@@ -21,6 +21,7 @@ import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/r
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
+import { JoinPrompt, JoinNudge, type JoinReason } from '@/components/JoinPrompt';
 import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
@@ -592,6 +593,15 @@ export default function QozobApp() {
   );
 }
 
+// Sign-up nudge for engaged guests
+const NUDGE_KEY = 'qz_join_nudge_until';
+const NUDGE_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+/** Where to bring a guest back to after they sign up / in (the station + the action they tapped). */
+const returnPath = (stationId?: string | null, go?: string) => {
+  if (!stationId) return '/';
+  return `/?select=${encodeURIComponent(stationId)}${go ? `&go=${go}` : ''}`;
+};
+
 function QozobLanding() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -622,6 +632,15 @@ function QozobLanding() {
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [showRateForm, setShowRateForm] = useState(false);
+
+  // Sign-up prompts (guests) + resuming what they wanted after signing in (?go=directions|price|rate|claim)
+  const goAction = searchParams.get('go');
+  const [authReady, setAuthReady] = useState(false);
+  const [joinPrompt, setJoinPrompt] = useState<{ reason: JoinReason; station: Station | null } | null>(null);
+  const [showNudge, setShowNudge] = useState(false);
+  const [directionsReady, setDirectionsReady] = useState<Station | null>(null);
+  const guestViewsRef = useRef(0);
+  const goHandledRef = useRef(false);
 
   const map = useMap('main-map');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -657,6 +676,7 @@ function QozobLanding() {
     const fetchUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setUser(user);
+      setAuthReady(true);
       if (user) {
         setUserRole(getRole(user));
         setRequestedManager(hasRequestedManager(user));
@@ -881,8 +901,19 @@ function QozobLanding() {
 
   // The selected station is always derived from the latest data (live updates show immediately)
   const selectedStation = selectedId ? stationsById.get(selectedId) ?? null : null;
-  // Keeps the original call sites working: they pass a station object (or null)
-  const setSelectedStation = useCallback((station: Station | null) => setSelectedId(station ? station.id : null), []);
+  // Keeps the original call sites working: they pass a station object (or null).
+  // Guests who open 3 stations get a gentle sign-up nudge (at most once every 3 days).
+  const setSelectedStation = useCallback((station: Station | null) => {
+    setSelectedId(station ? station.id : null);
+    if (!station || user || !authReady) return;
+    guestViewsRef.current += 1;
+    if (guestViewsRef.current !== 3) return;
+    try {
+      if (Number(localStorage.getItem(NUDGE_KEY) || 0) > Date.now()) return;
+      localStorage.setItem(NUDGE_KEY, String(Date.now() + NUDGE_COOLDOWN_MS));
+    } catch { return; }
+    setTimeout(() => setShowNudge(true), 1200);
+  }, [user, authReady]);
 
   // Pan Map to Station when selected (depends on coordinates only, so live price updates don't re-pan)
   const selectedLat = selectedStation?.lat;
@@ -995,10 +1026,28 @@ function QozobLanding() {
 
   const getDirectionsUrl = (lat: number, lng: number) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
+  // Guests: ask them to join (one tap with Google) and remember what they wanted to do
+  const openJoin = (reason: JoinReason, station: Station | null = selectedStation) => {
+    setShowNudge(false);
+    setJoinPrompt({ reason, station });
+  };
+
+  // Directions are a members' perk. Signed-in users get the real Google Maps link; guests get the
+  // sign-up prompt (the href still points at sign-up, so long-press / new-tab behaves sensibly).
+  // While the session is still loading we don't block anyone.
+  const directionsProps = (station: Station): React.AnchorHTMLAttributes<HTMLAnchorElement> => (
+    user || !authReady
+      ? { href: getDirectionsUrl(station.lat, station.lng), target: '_blank', rel: 'noopener noreferrer' }
+      : {
+          href: `/signup?next=${encodeURIComponent(returnPath(station.id, 'directions'))}`,
+          onClick: (e) => { e.preventDefault(); openJoin('directions', station); },
+        }
+  );
+
   // Auth Protection Wrapper
-  const handleProtectedAction = (action: () => void) => {
+  const handleProtectedAction = (reason: JoinReason, action: () => void) => {
     if (!user) {
-      router.push(`/login?redirect=claim&stationId=${selectedStation?.id}`);
+      openJoin(reason);
     } else {
       action();
     }
@@ -1009,7 +1058,7 @@ function QozobLanding() {
     if (!selectedStation) return;
 
     if (!user) {
-      return router.push(`/login?redirect=claim&stationId=${selectedStation.id}`);
+      return openJoin('claim');
     }
 
     if (userRole !== 'Manager' && userRole !== 'Admin' && !requestedManager) {
@@ -1019,6 +1068,24 @@ function QozobLanding() {
 
     setShowClaimForm(true);
   };
+
+  // Back from sign-up / sign-in with ?select=ID&go=ACTION: pick up exactly where they left off
+  useEffect(() => {
+    if (!goAction || goHandledRef.current || !authReady || !user) return;
+    if (!selectedStation || selectedStation.id !== autoSelectId) return;
+    goHandledRef.current = true;
+    // Drop ?go so a refresh doesn't repeat the action
+    window.history.replaceState(null, '', returnPath(selectedStation.id));
+    if (goAction === 'directions') {
+      setDirectionsReady(selectedStation); // opening Google Maps needs a tap (pop-up blockers)
+    } else if (goAction === 'price') {
+      setShowPriceForm(true);
+    } else if (goAction === 'rate' && userRole === 'User' && selectedStation.price_pms) {
+      setShowRateForm(true);
+    } else if (goAction === 'claim' && selectedStation.claim_status === 'None' && (userRole === 'Manager' || userRole === 'Admin' || requestedManager)) {
+      setShowClaimForm(true);
+    }
+  }, [goAction, authReady, user, selectedStation, autoSelectId, userRole, requestedManager]);
 
   // Patch local state after a successful write (replaces full page reloads)
   const handleStationSaved = useCallback((stationId: string, patch: Record<string, any>, message: string) => {
@@ -1096,9 +1163,7 @@ function QozobLanding() {
           {formatPrice(station.price_pms, "text-xs")}
         </div>
         <a
-          href={getDirectionsUrl(station.lat, station.lng)}
-          target="_blank"
-          rel="noopener noreferrer"
+          {...directionsProps(station)}
           aria-label={`Directions to ${station.name}`}
           title="Directions"
           className={cx(
@@ -1162,9 +1227,7 @@ function QozobLanding() {
             )}
           </div>
           <a
-            href={getDirectionsUrl(station.lat, station.lng)}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...directionsProps(station)}
             className={cx(
               ui.btn, 'shrink-0 h-9 px-4 text-xs shadow-lg',
               isBest ? 'bg-accent-solid text-[#1E1B4B] hover:bg-accent-hover' : 'bg-brand-info text-[#1E1B4B] hover:brightness-110'
@@ -1270,12 +1333,20 @@ function QozobLanding() {
                 )}
               </div>
             ) : (
-              <button 
-                onClick={() => router.push('/login')} 
-                className={cx(ui.btn, 'h-9 px-4', ui.btnAccent, 'whitespace-nowrap')}
-              >
-                Sign in
-              </button>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <button
+                  onClick={() => router.push('/login')}
+                  className="h-9 px-2 sm:px-3 rounded-full text-sm font-semibold text-on-brand hover:bg-on-brand/10 transition-colors whitespace-nowrap"
+                >
+                  Sign in
+                </button>
+                <button 
+                  onClick={() => router.push('/signup')} 
+                  className={cx(ui.btn, 'h-9 px-3 sm:px-4', ui.btnAccent, 'whitespace-nowrap')}
+                >
+                  Join free
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1439,9 +1510,7 @@ function QozobLanding() {
                     
                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                       <a 
-                        href={getDirectionsUrl(selectedStation.lat, selectedStation.lng)} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
+                        {...directionsProps(selectedStation)}
                         className="text-accent text-xs font-semibold inline-flex items-center gap-1 hover:underline underline-offset-2"
                       >
                         <Navigation className="w-3 h-3" aria-hidden /> Directions{selectedStation.distance ? ` · ${selectedStation.distance} km` : ''}
@@ -1475,7 +1544,7 @@ function QozobLanding() {
 
                     <div className="mt-3 flex flex-col gap-2">
                       <button 
-                        onClick={() => handleProtectedAction(() => setShowPriceForm(true))} 
+                        onClick={() => handleProtectedAction('price', () => setShowPriceForm(true))} 
                         className={cx(ui.btn, 'h-9 px-3', ui.btnPrimary, 'w-full')}
                       >
                         {selectedStation.price_pms ? "Update price" : "Add the first price"}
@@ -1483,7 +1552,7 @@ function QozobLanding() {
                       
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
-                          onClick={() => handleProtectedAction(() => setShowRateForm(true))} 
+                          onClick={() => handleProtectedAction('rate', () => setShowRateForm(true))} 
                           className={cx(ui.btn, 'h-9 px-3', ui.btnSecondary, 'w-full')}
                         >
                           <Star className="w-4 h-4 fill-star text-star" aria-hidden /> Rate pump accuracy
@@ -1672,6 +1741,49 @@ function QozobLanding() {
       {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} />}
       {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} onSaved={handleClaimSaved} />}
       {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} onSaved={handleStationSaved} />}
+
+      {/* ======================= SIGN-UP PROMPTS (guests) ======================= */}
+      {joinPrompt && (
+        <JoinPrompt
+          reason={joinPrompt.reason}
+          stationName={joinPrompt.station?.name}
+          next={returnPath(joinPrompt.station?.id, joinPrompt.reason === 'nudge' ? undefined : joinPrompt.reason)}
+          onClose={() => setJoinPrompt(null)}
+        />
+      )}
+      {showNudge && !user && !joinPrompt && !showPriceForm && !showRateForm && !showClaimForm && (
+        <JoinNudge next={returnPath(selectedId)} onClose={() => setShowNudge(false)} />
+      )}
+
+      {/* Back from sign-up: one tap to open the directions they asked for */}
+      {directionsReady && (
+        <div className={cx(ui.overlay, 'z-[150]')} role="dialog" aria-modal="true" aria-labelledby="dir-ready-title" onClick={() => setDirectionsReady(null)}>
+          <div className={cx(ui.modal, 'max-w-sm p-6 text-center')} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setDirectionsReady(null)} className={ui.modalClose} aria-label="Close">
+              <X className="w-5 h-5" />
+            </button>
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-on-primary shadow-lg" aria-hidden>
+              <Navigation className="h-6 w-6" />
+            </span>
+            <h2 id="dir-ready-title" className="mt-4 text-xl font-bold tracking-tight text-fg">Your directions are ready 🎉</h2>
+            <p className="mt-2 text-sm text-fg-muted">
+              {directionsReady.name}{directionsReady.distance ? ` · ${directionsReady.distance} km away` : ''}
+            </p>
+            <a
+              href={getDirectionsUrl(directionsReady.lat, directionsReady.lng)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setDirectionsReady(null)}
+              className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full mt-6')}
+            >
+              Open in Google Maps
+            </a>
+            <button type="button" onClick={() => setDirectionsReady(null)} className="mt-3 w-full text-center text-sm font-medium text-fg-muted hover:text-fg py-1">
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ======================= TOAST NOTIFICATION ======================= */}
       {toast && (
