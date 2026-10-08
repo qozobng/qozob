@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy
+  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy, Pencil
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -1477,114 +1477,129 @@ function QozobLanding() {
               {/* ======================= MAP INFO WINDOW ======================= */}
               {selectedStation && (
                 <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
-                  {/* Info windows keep Google's white frame, so the content is pinned to the light palette */}
-                  <div className="theme-light p-4 min-w-[260px] max-w-[300px] relative text-fg font-sans">
-                    <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
-                      <button 
-                        onClick={() => handleShareStation(selectedStation)} 
-                        className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
-                        aria-label="Share station"
-                        title="Share this station"
-                      >
-                        <Share2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => setSelectedStation(null)} 
-                        className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
-                        aria-label="Close"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                    
-                    <div className="flex items-start gap-1.5 pr-16">
-                      <h3 className="font-semibold text-fg text-base leading-snug">{selectedStation.name}</h3>
-                      {selectedStation.verified && (
-                        <span title="Verified price" className="flex-shrink-0 mt-0.5">
-                          <ShieldCheck className="w-4 h-4 text-info" aria-label="Verified" />
-                        </span>
-                      )}
-                    </div>
-                    
-                    <p className="text-xs text-fg-muted mt-1">{selectedStation.address}</p>
-                    
-                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <a 
-                        {...directionsProps(selectedStation)}
-                        className="text-accent text-xs font-semibold inline-flex items-center gap-1 hover:underline underline-offset-2"
-                      >
-                        <Navigation className="w-3 h-3" aria-hidden /> Directions{selectedStation.distance ? ` · ${selectedStation.distance} km` : ''}
-                      </a>
-                      {selectedStation.accuracy_votes > 0 && (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-fg-muted">
-                          <Star className="w-3 h-3 fill-star text-star" aria-hidden /> Pump accuracy {selectedStation.pump_accuracy}/5
-                        </span>
-                      )}
-                    </div>
-                    
-                    <div className="mt-3 bg-surface-2 p-3 rounded-lg border border-line flex justify-between items-end gap-3">
-                      <div>
-                        <p className="text-xs font-medium text-fg-muted">PMS price</p>
-                        <div className="text-[28px] font-semibold tabular leading-tight flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role) }}>
-                          {formatPrice(selectedStation.price_pms, "text-base")}
+                  {/* Info windows keep Google's white frame, so the content is pinned to the light palette.
+                      Layout: the price and the "Update price" button sit right under the name, so they're
+                      visible without scrolling even on small phones; secondary actions follow as compact chips. */}
+                  <div className="theme-light p-3 w-[min(300px,calc(100vw-72px))] min-w-[240px] text-fg font-sans">
+                    {/* 1. Name, rating · distance · address, share/close */}
+                    <div className="flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1">
+                          <h3 className="font-semibold text-fg text-[15px] leading-snug truncate" title={selectedStation.name}>{selectedStation.name}</h3>
+                          {selectedStation.verified && (
+                            <span title="Verified price" className="flex-shrink-0">
+                              <ShieldCheck className="w-4 h-4 text-info" aria-label="Verified" />
+                            </span>
+                          )}
                         </div>
-                        {selectedStation.price_pms && (
-                          <div className="flex flex-wrap items-center gap-1 text-xs text-fg-muted">
-                            <Clock className="w-3 h-3" aria-hidden /> {timeAgo(selectedStation.last_updated)} · {PRICE_SOURCE_LABEL[priceSource(selectedStation.updated_by_role)]}
-                            {isStale(selectedStation.last_updated) && (
-                              <span className="text-warning font-medium">· may be outdated</span>
-                            )}
-                          </div>
-                        )}
+                        <p className="text-xs text-fg-muted truncate" title={selectedStation.address}>
+                          {selectedStation.accuracy_votes > 0 && (
+                            <span className="inline-flex items-center gap-0.5 font-medium text-fg mr-1" title="Pump accuracy rating">
+                              <Star className="w-3 h-3 fill-star text-star" aria-hidden /> {selectedStation.pump_accuracy}
+                            </span>
+                          )}
+                          {selectedStation.distance ? `${selectedStation.distance} km · ` : ''}{selectedStation.address}
+                        </p>
                       </div>
-                      <div className={`shrink-0 text-xs font-semibold px-2 py-1 rounded-md border ${selectedStation.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft border-success-line' : selectedStation.queue_status === 'Moderate' ? 'bg-warning-soft text-on-warning-soft border-warning-line' : selectedStation.queue_status === 'Heavy' ? 'bg-danger-soft text-on-danger-soft border-danger-line' : 'bg-surface-3 text-fg border-line'}`}>
-                        {selectedStation.queue_status}
+                      <div className="flex items-center shrink-0 -mr-1 -mt-1">
+                        <button 
+                          onClick={() => handleShareStation(selectedStation)} 
+                          className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
+                          aria-label="Share station"
+                          title="Share this station"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => setSelectedStation(null)} 
+                          className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
+                          aria-label="Close"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="mt-3 flex flex-col gap-2">
+                    {/* 2. Price + primary action (always in first view) */}
+                    <div className="mt-2 bg-surface-2 p-2.5 rounded-xl border border-line flex items-center gap-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-fg-muted">PMS</span>
+                          {selectedStation.queue_status && selectedStation.queue_status !== 'Unknown' && (
+                            <span className={`text-xs font-semibold px-1.5 rounded border leading-5 whitespace-nowrap ${selectedStation.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft border-success-line' : selectedStation.queue_status === 'Moderate' ? 'bg-warning-soft text-on-warning-soft border-warning-line' : selectedStation.queue_status === 'Heavy' ? 'bg-danger-soft text-on-danger-soft border-danger-line' : 'bg-surface-3 text-fg border-line'}`}>
+                              {selectedStation.queue_status}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-2xl font-bold tabular leading-tight flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role) }}>
+                          {formatPrice(selectedStation.price_pms, "text-sm")}
+                        </div>
+                        {selectedStation.price_pms ? (
+                          <div className="flex items-center gap-1 text-xs text-fg-muted min-w-0">
+                            <Clock className="w-3 h-3 shrink-0" aria-hidden />
+                            <span className="truncate">
+                              {timeAgo(selectedStation.last_updated)} · {PRICE_SOURCE_LABEL[priceSource(selectedStation.updated_by_role)]}
+                              {isStale(selectedStation.last_updated) && <span className="text-warning font-medium"> · outdated?</span>}
+                            </span>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-fg-muted">Be the first to add it</p>
+                        )}
+                      </div>
                       <button 
                         onClick={() => handleProtectedAction('price', () => setShowPriceForm(true))} 
-                        className={cx(ui.btn, 'h-9 px-3', ui.btnPrimary, 'w-full')}
+                        className={cx(ui.btn, 'h-11 px-3 text-sm shrink-0 gap-1.5', ui.btnPrimary)}
                       >
-                        {selectedStation.price_pms ? "Update price" : "Add the first price"}
+                        <Pencil className="w-4 h-4" aria-hidden />
+                        {selectedStation.price_pms ? (
+                          <>
+                            <span className="min-[360px]:hidden">Update</span>
+                            <span className="hidden min-[360px]:inline">Update price</span>
+                          </>
+                        ) : "Add price"}
                       </button>
-                      
+                    </div>
+
+                    {/* 3. Secondary actions */}
+                    <div className="mt-2 flex gap-2">
+                      <a 
+                        {...directionsProps(selectedStation)}
+                        className={cx(ui.btn, 'h-9 px-3 text-xs flex-1 gap-1.5', ui.btnSecondary, 'text-accent')}
+                      >
+                        <Navigation className="w-3.5 h-3.5" aria-hidden /> Directions
+                      </a>
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
                           onClick={() => handleProtectedAction('rate', () => setShowRateForm(true))} 
-                          className={cx(ui.btn, 'h-9 px-3', ui.btnSecondary, 'w-full')}
+                          className={cx(ui.btn, 'h-9 px-3 text-xs flex-1 gap-1.5', ui.btnSecondary)}
                         >
-                          <Star className="w-4 h-4 fill-star text-star" aria-hidden /> Rate pump accuracy
+                          <Star className="w-3.5 h-3.5 fill-star text-star" aria-hidden /> Rate pump
                         </button>
                       )}
-
-                      {/* DYNAMIC CLAIM LOGIC */}
-                      {selectedStation.claim_status === 'None' && (
-                        <button 
-                          onClick={handleDynamicClaimAction} 
-                          className={cx(ui.btn, 'h-9 px-3', ui.btnGhost, 'w-full border border-dashed border-line-strong')}
-                        >
-                          <ShieldCheck className="w-4 h-4" aria-hidden /> Own this station? Claim it
-                        </button>
-                      )}
-                      
-                      {selectedStation.claim_status === 'Pending Review' && (
-                        <button 
-                          onClick={() => alert("This station is currently under review by our team.")} 
-                          className="w-full h-9 rounded-lg bg-accent-soft text-on-accent-soft text-sm font-medium flex items-center justify-center gap-2 border border-accent-line"
-                        >
-                          <Clock className="w-4 h-4" aria-hidden /> Claim under review
-                        </button>
-                      )}
-
-                      {selectedStation.claim_status === 'Claimed' && (
-                         <div className="w-full h-9 rounded-lg bg-success-soft text-on-success-soft text-sm font-medium flex items-center justify-center gap-1.5 border border-success-line">
-                           <ShieldCheck className="w-4 h-4" aria-hidden /> Verified owner
-                         </div>
-                      )}
-
                     </div>
+
+                    {/* 4. DYNAMIC CLAIM LOGIC (compact) */}
+                    {selectedStation.claim_status === 'None' && (
+                      <button 
+                        onClick={handleDynamicClaimAction} 
+                        className="mt-2 w-full inline-flex items-center justify-center gap-1.5 text-xs font-medium text-fg-muted hover:text-fg py-1 rounded-md hover:bg-surface-2 transition-colors"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" aria-hidden /> Own this station? <span className="underline underline-offset-2">Claim it</span>
+                      </button>
+                    )}
+                    {selectedStation.claim_status === 'Pending Review' && (
+                      <button 
+                        onClick={() => alert("This station is currently under review by our team.")} 
+                        className="mt-2 w-full h-8 rounded-lg bg-accent-soft text-on-accent-soft text-xs font-medium flex items-center justify-center gap-1.5 border border-accent-line"
+                      >
+                        <Clock className="w-3.5 h-3.5" aria-hidden /> Claim under review
+                      </button>
+                    )}
+                    {selectedStation.claim_status === 'Claimed' && (
+                      <div className="mt-2 w-full h-8 rounded-lg bg-success-soft text-on-success-soft text-xs font-medium flex items-center justify-center gap-1.5 border border-success-line">
+                        <ShieldCheck className="w-3.5 h-3.5" aria-hidden /> Verified owner
+                      </div>
+                    )}
                   </div>
                 </InfoWindow>
               )}
