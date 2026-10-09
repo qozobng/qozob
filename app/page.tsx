@@ -20,6 +20,7 @@ import { createClient } from '@/utils/supabase/client';
 import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
 import { displayName, initialOf } from '@/lib/profile';
+import { CommunityNotice } from '@/components/CommunityNotice';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
@@ -1961,6 +1962,9 @@ function QozobLanding() {
           </div>
         </div>
       )}
+
+      {/* ======================= COMMUNITY DATA NOTICE (once per device) ======================= */}
+      <CommunityNotice />
 
       {/* ======================= TOAST NOTIFICATION ======================= */}
       {toast && (
