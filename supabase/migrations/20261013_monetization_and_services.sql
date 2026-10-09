@@ -374,3 +374,4 @@ begin
 end $$;
 
 grant execute on function public.lga_reward_status(integer) to anon, authenticated;
+

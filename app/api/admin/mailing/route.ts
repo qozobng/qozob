@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET() {
-  const admin = await requireAdmin();
+  const admin = await requireAdmin('mailing');
   if (!admin) return json({ error: 'Admins only.' }, 403);
   const cfg = mailConfig();
   const serviceKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -33,7 +33,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin('mailing');
     if (!admin) return json({ error: 'Admins only.' }, 403);
     const body = await readJson(req);
     const action = body.action;

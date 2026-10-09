@@ -5,6 +5,8 @@ export const SITE = {
   domain: 'qozob.com',
   url: 'https://www.qozob.com',
   contactEmail: 'support@qozob.com',
+  // Support WhatsApp in international format without "+" (e.g. 2348012345678). Set NEXT_PUBLIC_SUPPORT_WHATSAPP in Vercel.
+  whatsapp: (process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || '').replace(/\D/g, ''),
   country: 'Nigeria',
   legalLastUpdated: '9 October 2026',
 } as const;

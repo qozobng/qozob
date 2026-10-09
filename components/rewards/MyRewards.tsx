@@ -28,7 +28,10 @@ interface Summary {
   phone: string | null;
   bank: null | { bank_name: string; account_name: string; last4: string };
   verified: boolean;
-  wins: { kind: 'monthly' | 'annual'; period_start: string; lga: string | null; state: string | null; gross_ngn: number; net_ngn: number; status: string; paid_at: string | null }[];
+  wins: {
+    kind: 'monthly' | 'annual'; period_start: string; lga: string | null; state: string | null; gross_ngn: number; net_ngn: number; status: string; paid_at: string | null;
+    payout_type?: 'cash' | 'voucher' | null; voucher_code?: string | null; voucher_value_ngn?: number | null; voucher_redeemed_at?: string | null;
+  }[];
 }
 interface ReportRow { id: number; station_id: string; price: number; status: string; coins: number; reasons: string[]; created_at: string; station_name?: string }
 
@@ -38,7 +41,7 @@ const STATUS_STYLE: Record<string, string> = {
   rejected: 'bg-danger-soft text-on-danger-soft border-danger-line',
   no_reward: 'bg-surface-2 text-fg-muted border-line',
 };
-const STATUS_LABEL: Record<string, string> = { accepted: 'Coins earned', held: 'Under review', rejected: 'Rejected', no_reward: 'No coins' };
+const STATUS_LABEL: Record<string, string> = { accepted: 'Coins earned', held: 'Under review (not live yet)', rejected: 'Rejected', no_reward: 'No coins' };
 
 /** 0803 123 4567 / 234803... / +234803... → +2348031234567 (null if not a Nigerian mobile number). */
 export function normaliseNgPhone(input: string): string | null {
@@ -201,6 +204,8 @@ export function MyRewards() {
         </ul>
       </div>
 
+      {!suspended && <PayoutChoice />}
+
       <div className="grid lg:grid-cols-2 gap-4">
         {/* LGA STANDINGS */}
         <div className={cx(ui.card, 'p-5 sm:p-6')}>
@@ -236,7 +241,19 @@ export function MyRewards() {
                 <li key={i} className="py-3 flex items-center justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-fg">{w.kind === 'annual' ? `Grand prize ${w.period_start.slice(0, 4)}` : `${new Date(w.period_start + 'T00:00:00Z').toLocaleDateString('en-NG', { month: 'long', year: 'numeric', timeZone: 'UTC' })}${w.lga ? ` · ${w.lga}` : ''}`}</span>
-                    <span className="block text-xs text-fg-muted">{naira(w.net_ngn)}{w.gross_ngn !== w.net_ngn ? ` after tax (${naira(w.gross_ngn)} prize)` : ''}</span>
+                    <span className="block text-xs text-fg-muted">
+                      {w.payout_type === 'voucher'
+                        ? `Service voucher worth ${naira(w.voucher_value_ngn ?? w.gross_ngn)}`
+                        : `${naira(w.net_ngn)}${w.gross_ngn !== w.net_ngn ? ` after tax (${naira(w.gross_ngn)} prize)` : ''}`}
+                    </span>
+                    {w.payout_type === 'voucher' && w.voucher_code && (
+                      <span className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-success-line bg-success-soft px-2 py-0.5 text-xs font-mono font-bold text-on-success-soft">
+                        {w.voucher_code}{w.voucher_redeemed_at ? ' · used' : ''}
+                      </span>
+                    )}
+                    {w.payout_type === 'voucher' && w.voucher_code && !w.voucher_redeemed_at && (
+                      <Link href="/services" className="block mt-1 text-xs font-semibold text-primary hover:underline">Use it on Auto services →</Link>
+                    )}
                   </span>
                   <span className={cx('rounded-full px-2.5 py-0.5 text-xs font-bold border capitalize', w.status === 'paid' ? STATUS_STYLE.accepted : STATUS_STYLE.held)}>{w.status === 'paid' ? 'Paid' : w.status === 'approved' ? 'Approved' : 'Processing'}</span>
                 </li>
@@ -272,6 +289,64 @@ export function MyRewards() {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Cash or auto-service voucher (worth more) for prizes won from now on. */
+function PayoutChoice() {
+  const [supabase] = useState(() => createClient());
+  const [info, setInfo] = useState<{ preference: 'cash' | 'voucher'; monthly_prize_ngn: number; voucher_bonus_pct: number; voucher_value_ngn: number } | null>(null);
+  const [missing, setMissing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    supabase.rpc('my_payout_preference').then(({ data, error }) => {
+      if (error || !data) { setMissing(true); return; }
+      setInfo(data as typeof info);
+    });
+  }, [supabase]);
+
+  if (missing || !info) return null;
+
+  const choose = async (pref: 'cash' | 'voucher') => {
+    if (pref === info.preference) return;
+    setBusy(true); setMsg(null);
+    const { error } = await supabase.rpc('set_payout_preference', { p_pref: pref });
+    setBusy(false);
+    if (error) return setMsg({ ok: false, text: errText(error) });
+    setInfo({ ...info, preference: pref });
+    setMsg({ ok: true, text: pref === 'voucher' ? 'Saved. Future prizes will be issued as an auto-service voucher.' : 'Saved. Future prizes will be paid by bank transfer.' });
+  };
+
+  const option = (key: 'cash' | 'voucher', title: string, value: string, detail: string) => (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => choose(key)}
+      aria-pressed={info.preference === key}
+      className={cx('flex-1 text-left rounded-xl border p-4 transition-colors',
+        info.preference === key ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-line hover:bg-surface-2')}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-fg">{title}</span>
+        {info.preference === key ? <CheckCircle2 className="w-5 h-5 text-primary" aria-label="Selected" /> : <Circle className="w-5 h-5 text-fg-subtle" aria-hidden />}
+      </span>
+      <span className="block mt-1 text-lg font-bold tabular text-fg">{value}</span>
+      <span className="block text-xs text-fg-muted mt-0.5">{detail}</span>
+    </button>
+  );
+
+  return (
+    <div className={cx(ui.card, 'p-5 sm:p-6')}>
+      <h3 className={ui.h2}>How would you like to receive a prize?</h3>
+      <p className={cx(ui.body, 'mt-1')}>Applies to prizes from months that have not closed yet. You can change it any time before the month closes.</p>
+      <div className="mt-4 flex flex-col sm:flex-row gap-3">
+        {option('cash', 'Cash', naira(info.monthly_prize_ngn), 'Bank transfer to your verified account (tax may apply).')}
+        {option('voucher', 'Auto-service voucher', naira(info.voucher_value_ngn), `${info.voucher_bonus_pct}% extra value for vehicle papers, insurance or a tracker on Qozob Auto services.`)}
+      </div>
+      {msg && <p className={cx('mt-3 text-sm', msg.ok ? 'text-success' : 'text-danger')} role="status">{msg.text}</p>}
     </div>
   );
 }

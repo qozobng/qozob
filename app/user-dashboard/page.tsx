@@ -6,7 +6,7 @@ import {
   User as UserIcon, Settings, ShieldCheck, Map as MapIcon, 
   LogOut, Star, Droplet, ArrowRight, CheckCircle2, Loader2,
   TrendingDown, Bookmark, Fuel, Compass, AlertCircle, ArrowUpRight,
-  Sparkles, Navigation, Clock, Check, MapPin, Trophy, Car
+  Sparkles, Navigation, Clock, Check, MapPin, Trophy, Car, Trash2
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -22,6 +22,7 @@ import { EmailUpdatesCard } from '@/components/EmailUpdatesCard';
 import { MyRewards } from '@/components/rewards/MyRewards';
 import { MyGarage } from '@/components/garage/MyGarage';
 import { FuelLogbook } from '@/components/fuellog/FuelLogbook';
+import { listSavedStations, unsaveStation } from '@/lib/savedStations';
 
 interface RatedStationItem {
   station_id: string;
@@ -38,7 +39,16 @@ interface FavoriteStation {
   address: string;
   price_pms: number | null;
   queue_status: string;
+  last_updated?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }
+
+/** Price benchmark from recent community prices (cheapest 10%, average, priciest 10%). */
+interface Benchmark { low: number; avg: number; high: number; n: number }
+
+const percentile = (sorted: number[], p: number) =>
+  sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)))];
 
 function UserDashboardContent() {
   const supabase = createClient();
@@ -55,8 +65,12 @@ function UserDashboardContent() {
   // Data State
   const [userRatings, setUserRatings] = useState<RatedStationItem[]>([]);
   const [favoriteStations, setFavoriteStations] = useState<FavoriteStation[]>([]);
-  const [nationalAvgPrice, setNationalAvgPrice] = useState<number>(915);
-  const [bestPriceNearby, setBestPriceNearby] = useState<number>(875);
+  const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
+  const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  const flash = (text: string, tone: 'ok' | 'error' = 'ok') => {
+    setNotice({ text, tone });
+    window.setTimeout(() => setNotice(n => (n?.text === text ? null : n)), 6000);
+  };
 
   // Settings States
   const [currentRole, setCurrentRole] = useState<string>("User");
@@ -80,20 +94,23 @@ function UserDashboardContent() {
       const { data: ratingsData, error: ratingsError } = await supabase
         .from('station_ratings')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (ratingsError) {
         console.warn("Could not load user ratings:", ratingsError.message);
       }
 
-      // 2. Fetch station names for the rated stations
+      // 2. Saved stations (bookmarked on the map) + rated stations: fetch live details in one go
+      const { rows: savedRows } = await listSavedStations(supabase);
       const ratedIds = (ratingsData || []).map(r => r.station_id);
+      const lookupIds = Array.from(new Set([...ratedIds, ...savedRows.map(s => s.station_id)]));
       const stationsMap = new Map<string, any>();
-      if (ratedIds.length > 0) {
+      if (lookupIds.length > 0) {
         const { data: stationsData } = await supabase
           .from('stations')
-          .select('station_id, name, address, price_pms')
-          .in('station_id', ratedIds);
+          .select('station_id, name, address, price_pms, queue_status, last_updated, lat, lng')
+          .in('station_id', lookupIds);
         
         (stationsData || []).forEach(s => stationsMap.set(s.station_id, s));
       }
@@ -111,33 +128,37 @@ function UserDashboardContent() {
       });
       setUserRatings(mergedRatings);
 
-      // 3. Load sample stations for price benchmarking & favorites
-      const { data: benchmarkSample } = await supabase
+      setFavoriteStations(savedRows.map(saved => {
+        const s = stationsMap.get(saved.station_id);
+        return {
+          station_id: saved.station_id,
+          name: s?.name || saved.name || 'Fuel station',
+          address: s?.address || saved.address || '',
+          price_pms: s?.price_pms != null ? Number(s.price_pms) : null,
+          queue_status: s?.queue_status || 'Unknown',
+          last_updated: s?.last_updated ?? null,
+          lat: s?.lat ?? saved.lat,
+          lng: s?.lng ?? saved.lng,
+        };
+      }));
+
+      // 3. Price benchmark from the most recently updated community prices
+      const { data: recent } = await supabase
         .from('stations')
-        .select('station_id, name, address, price_pms, queue_status')
+        .select('price_pms')
         .not('price_pms', 'is', null)
-        .limit(20);
-
-      if (benchmarkSample && benchmarkSample.length > 0) {
-        const prices = benchmarkSample.map(s => s.price_pms).filter((p): p is number => typeof p === 'number' && p > 0);
-        if (prices.length > 0) {
-          const avg = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
-          const min = Math.min(...prices);
-          setNationalAvgPrice(avg);
-          setBestPriceNearby(min);
-        }
-
-        // Default watchlist if none stored in localStorage
-        const storedFavs = typeof window !== 'undefined' ? localStorage.getItem('qozob_fav_stations') : null;
-        if (storedFavs) {
-          try {
-            setFavoriteStations(JSON.parse(storedFavs));
-          } catch {
-            setFavoriteStations(benchmarkSample.slice(0, 3) as FavoriteStation[]);
-          }
-        } else {
-          setFavoriteStations(benchmarkSample.slice(0, 3) as FavoriteStation[]);
-        }
+        .gte('price_pms', 300)
+        .lte('price_pms', 3000)
+        .order('last_updated', { ascending: false, nullsFirst: false })
+        .limit(500);
+      const prices = (recent || []).map(s => Number(s.price_pms)).filter(p => Number.isFinite(p) && p > 0).sort((a, b) => a - b);
+      if (prices.length >= 5) {
+        setBenchmark({
+          low: Math.round(percentile(prices, 0.1)),
+          avg: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+          high: Math.round(percentile(prices, 0.9)),
+          n: prices.length,
+        });
       }
 
       // 4. Role requests check
@@ -171,24 +192,39 @@ function UserDashboardContent() {
       const result = await requestManagerAccess(supabase, user);
       setIsUpdatingRole(false);
       if (!result.ok) {
-        return alert("Error sending request: " + result.error);
+        return flash("Could not send your request: " + result.error, 'error');
       }
       setRoleRequest(await getLatestRoleRequest(supabase, user.id));
-      alert("Request submitted! Our team will review your station ownership credentials.");
+      flash("Request sent. Our team will review it and email you.");
     } else {
       if (roleRequest) {
         const { error } = await supabase.from('role_requests').delete().eq('id', roleRequest.id).eq('status', 'Pending');
         if (error) {
           setIsUpdatingRole(false);
-          return alert("Error withdrawing request: " + error.message);
+          return flash("Could not withdraw your request: " + error.message, 'error');
         }
       }
       await supabase.auth.updateUser({ data: { role: 'User' } });
       setIsUpdatingRole(false);
       setRoleRequest(null);
-      alert("Your Manager access request has been withdrawn.");
+      flash("Your station-owner access request has been withdrawn.");
     }
   };
+
+  const removeSaved = async (stationId: string) => {
+    const before = favoriteStations;
+    setFavoriteStations(prev => prev.filter(s => s.station_id !== stationId));
+    const err = await unsaveStation(supabase, stationId);
+    if (err) {
+      setFavoriteStations(before);
+      flash(err, 'error');
+    }
+  };
+
+  const directionsUrl = (s: FavoriteStation) =>
+    s.lat != null && s.lng != null
+      ? `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`
+      : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.name} ${s.address}`.trim())}`;
 
   // Gamification: Calculate Scout Rank & Points
   const userRank = useMemo(() => {
@@ -208,9 +244,9 @@ function UserDashboardContent() {
     return { points, title, badgeColor };
   }, [userRatings]);
 
-  // Savings Calculator
+  // Savings Calculator: buying at the cheaper end (cheapest 10%) instead of the average price
   const savingsEstimate = useMemo(() => {
-    const spreadPerLiter = Math.max(0, nationalAvgPrice - bestPriceNearby);
+    const spreadPerLiter = benchmark ? Math.max(0, benchmark.avg - benchmark.low) : 0;
     const savingsPerTank50L = spreadPerLiter * 50; // 50 Liters
     const monthlySavings = savingsPerTank50L * 4; // 4 refills a month
     return {
@@ -218,34 +254,35 @@ function UserDashboardContent() {
       savingsPerTank50L,
       monthlySavings
     };
-  }, [nationalAvgPrice, bestPriceNearby]);
+  }, [benchmark]);
 
   // Savings Comparison Chart
   const savingsChartBars: BarItem[] = useMemo(() => {
+    if (!benchmark) return [];
     return [
       {
-        label: 'Best Local Price',
-        value: bestPriceNearby,
-        formattedValue: `₦${bestPriceNearby}/L`,
-        secondaryLabel: `Save ₦${savingsEstimate.spreadPerLiter}/L`,
+        label: 'Cheaper stations (lowest 10%)',
+        value: benchmark.low,
+        formattedValue: `₦${benchmark.low.toLocaleString()}/L`,
+        secondaryLabel: `Save ₦${savingsEstimate.spreadPerLiter.toLocaleString()}/L`,
         color: 'var(--chart-pos)',
       },
       {
-        label: 'National Average',
-        value: nationalAvgPrice,
-        formattedValue: `₦${nationalAvgPrice}/L`,
+        label: 'Average price',
+        value: benchmark.avg,
+        formattedValue: `₦${benchmark.avg.toLocaleString()}/L`,
         secondaryLabel: 'Benchmark',
         color: 'var(--chart-1)',
       },
       {
-        label: 'High Price Station',
-        value: nationalAvgPrice + 45,
-        formattedValue: `₦${nationalAvgPrice + 45}/L`,
-        secondaryLabel: `Overpaying ₦${savingsEstimate.spreadPerLiter + 45}/L`,
+        label: 'Pricier stations (highest 10%)',
+        value: benchmark.high,
+        formattedValue: `₦${benchmark.high.toLocaleString()}/L`,
+        secondaryLabel: `₦${Math.max(0, benchmark.high - benchmark.low).toLocaleString()}/L more than the cheaper end`,
         color: 'var(--chart-warn)',
       },
     ];
-  }, [bestPriceNearby, nationalAvgPrice, savingsEstimate]);
+  }, [benchmark, savingsEstimate]);
 
   if (loading) {
     return (
@@ -346,6 +383,16 @@ function UserDashboardContent() {
 
       {/* ======================= MAIN CONTENT AREA ======================= */}
       <main className="flex-1 p-4 sm:p-6 lg:p-10 overflow-y-auto">
+        {notice && (
+          <div
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+            className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] sm:max-w-md px-4 py-3 rounded-xl border shadow-lg text-sm font-medium animate-in fade-in slide-in-from-bottom-2 duration-200 ${
+              notice.tone === 'error' ? 'bg-danger-soft text-on-danger-soft border-danger-line' : 'bg-success-soft text-on-success-soft border-success-line'
+            }`}
+          >
+            {notice.text}
+          </div>
+        )}
         
         {/* ======================= TAB 1: OVERVIEW & SAVINGS ======================= */}
         {activeTab === 'overview' && (
@@ -369,18 +416,18 @@ function UserDashboardContent() {
               />
 
               <StatCard
-                title="Est. Savings / Month"
-                value={`₦${savingsEstimate.monthlySavings.toLocaleString()}`}
-                subtitle={`Based on ₦${savingsEstimate.spreadPerLiter}/L spread`}
+                title="Potential Savings / Month"
+                value={benchmark ? `₦${savingsEstimate.monthlySavings.toLocaleString()}` : '—'}
+                subtitle={benchmark ? `Cheaper 10% vs average · 50 L × 4 refills` : 'Not enough recent prices yet'}
                 icon={TrendingDown}
                 badge={{ text: 'Savings', variant: 'positive' }}
                 colorTheme="emerald"
               />
 
               <StatCard
-                title="Pumps Verified"
+                title="Pumps Rated"
                 value={userRatings.length}
-                subtitle="Calibration reviews filed"
+                subtitle="Pump accuracy ratings you shared"
                 icon={Star}
                 badge={userRatings.length > 0 ? { text: 'Active', variant: 'positive' } : { text: 'Get Started', variant: 'neutral' }}
                 colorTheme="amber"
@@ -388,9 +435,9 @@ function UserDashboardContent() {
               />
 
               <StatCard
-                title="Watched Stations"
+                title="Saved Stations"
                 value={favoriteStations.length}
-                subtitle="Monitored for cheap prices"
+                subtitle={favoriteStations.length ? 'Live prices in one place' : 'Tap 🔖 on any station to save it'}
                 icon={Bookmark}
                 colorTheme="blue"
                 onClick={() => setActiveTab('watchlist')}
@@ -400,14 +447,22 @@ function UserDashboardContent() {
             {/* Price Spread & Savings Analytical Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <BarChart
-                  title="Fuel Price Savings Per Tank (₦ / Litre)"
-                  subtitle={`Filling a typical 50-litre tank at best local rate saves ≈ ₦${savingsEstimate.savingsPerTank50L.toLocaleString()}`}
-                  data={savingsChartBars}
-                  layout="horizontal"
-                  valuePrefix=""
-                  valueSuffix=""
-                />
+                {benchmark ? (
+                  <BarChart
+                    title="Fuel price spread (₦ / litre)"
+                    subtitle={`From the ${benchmark.n} most recently updated prices on Qozob. Filling a 50-litre tank at the cheaper end saves about ₦${savingsEstimate.savingsPerTank50L.toLocaleString()}.`}
+                    data={savingsChartBars}
+                    layout="horizontal"
+                    valuePrefix=""
+                    valueSuffix=""
+                  />
+                ) : (
+                  <div className="h-full min-h-40 bg-surface rounded-xl p-6 border border-line shadow-xs flex flex-col items-center justify-center text-center">
+                    <TrendingDown className="w-8 h-8 text-fg-subtle mb-2" aria-hidden />
+                    <p className="text-sm font-semibold text-fg">Price comparison coming together</p>
+                    <p className="text-xs text-fg-muted mt-1 max-w-sm">We show this once enough recent prices have been shared. Add prices at stations you visit to help build it.</p>
+                  </div>
+                )}
               </div>
 
               {/* Monthly Savings Calculator Card */}
@@ -455,26 +510,28 @@ function UserDashboardContent() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {favoriteStations.slice(0, 3).map((fav, i) => (
-                    <div key={i} className="bg-surface rounded-xl p-4 border border-line shadow-xs flex flex-col justify-between">
+                  {favoriteStations.slice(0, 3).map((fav) => (
+                    <div key={fav.station_id} className="bg-surface rounded-xl p-4 border border-line shadow-xs flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start gap-2 mb-1">
                           <h4 className="font-semibold text-fg text-sm truncate">{fav.name}</h4>
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                            fav.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
-                          }`}>
-                            {fav.queue_status || 'Smooth'}
-                          </span>
+                          {fav.queue_status && fav.queue_status !== 'Unknown' && (
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                              fav.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
+                            }`}>
+                              {fav.queue_status}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-fg-muted truncate mb-3">{fav.address}</p>
                       </div>
 
                       <div className="flex justify-between items-center pt-3 border-t border-line">
                         <span className="text-lg font-semibold text-fg font-mono">
-                          {fav.price_pms ? `₦${fav.price_pms}` : 'Unset'}
+                          {fav.price_pms ? `₦${fav.price_pms.toLocaleString()}` : 'No price yet'}
                         </span>
                         <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fav.name)}`}
+                          href={directionsUrl(fav)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs font-semibold text-on-success-soft bg-success-soft hover:bg-success-soft px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
@@ -579,44 +636,77 @@ function UserDashboardContent() {
             <div>
               <h2 className="text-2xl sm:text-3xl font-semibold text-fg">Saved stations</h2>
               <p className="text-fg-muted text-xs sm:text-sm mt-0.5">
-                Quick access to the stations you use most.
+                Stations you saved on the map, with their latest prices. Tap the bookmark on any station card to add more.
               </p>
             </div>
 
+            {favoriteStations.length === 0 ? (
+              <div className="bg-surface border border-line rounded-xl p-12 text-center shadow-xs">
+                <Bookmark className="w-14 h-14 text-fg-subtle mx-auto mb-3" aria-hidden />
+                <h4 className="text-base font-semibold text-fg mb-1">No saved stations yet</h4>
+                <p className="text-fg-muted text-xs max-w-sm mx-auto mb-5">
+                  Open a station on the map and tap the bookmark next to its name. It will show up here on any device you sign in on.
+                </p>
+                <button
+                  onClick={() => router.push('/')}
+                  className="bg-primary hover:bg-primary-hover text-on-primary font-semibold py-2.5 px-5 rounded-lg text-xs transition-colors shadow-sm"
+                >
+                  Explore the map
+                </button>
+              </div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {favoriteStations.map((station, i) => (
-                <div key={i} className="bg-surface rounded-xl p-5 border border-line shadow-xs flex flex-col justify-between">
+              {favoriteStations.map((station) => (
+                <div key={station.station_id} className="bg-surface rounded-xl p-5 border border-line shadow-xs flex flex-col justify-between animate-in fade-in duration-200">
                   <div>
                     <div className="flex justify-between items-start gap-2 mb-1.5">
                       <h4 className="font-semibold text-fg text-base leading-tight">{station.name}</h4>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${
-                        station.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
-                      }`}>
-                        {station.queue_status || 'Smooth'}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {station.queue_status && station.queue_status !== 'Unknown' && (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            station.queue_status === 'No Queue' ? 'bg-success-soft text-on-success-soft' : 'bg-warning-soft text-on-warning-soft'
+                          }`}>
+                            {station.queue_status}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeSaved(station.station_id)}
+                          className="p-1.5 rounded-md text-fg-muted hover:text-danger hover:bg-surface-2 transition-colors"
+                          aria-label={`Remove ${station.name} from saved stations`}
+                          title="Remove"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden />
+                        </button>
+                      </div>
                     </div>
                     <p className="text-xs text-fg-muted mb-4">{station.address}</p>
                   </div>
 
                   <div className="bg-surface-2 rounded-xl p-4 border border-line flex justify-between items-center mb-4">
                     <div>
-                      <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">Official Price</span>
+                      <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">PMS price</span>
                       <span className="text-2xl font-semibold text-fg font-mono">
-                        {station.price_pms ? `₦${station.price_pms}` : 'Unset'}
+                        {station.price_pms ? `₦${station.price_pms.toLocaleString()}` : 'No price yet'}
                       </span>
+                      {station.price_pms && station.last_updated && !Number.isNaN(Date.parse(station.last_updated)) && (
+                        <span className="block text-xs text-fg-muted mt-0.5">
+                          Updated {new Date(station.last_updated).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+                        </span>
+                      )}
                     </div>
                     <Fuel className="w-6 h-6 text-fg-subtle" aria-hidden />
                   </div>
 
                   <div className="flex gap-2">
                     <button
-                      onClick={() => router.push(`/?select=${station.station_id}`)}
+                      onClick={() => router.push(`/?select=${encodeURIComponent(station.station_id)}`)}
                       className="flex-1 bg-accent-soft hover:bg-surface-2 text-on-accent-soft font-semibold py-2.5 rounded-lg text-xs transition-colors"
                     >
-                      Focus Map
+                      Show on map
                     </button>
                     <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(station.name)}`}
+                      href={directionsUrl(station)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="bg-success-soft hover:bg-success-soft text-on-success-soft font-semibold px-4 py-2.5 rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
@@ -627,6 +717,7 @@ function UserDashboardContent() {
                 </div>
               ))}
             </div>
+            )}
           </div>
         )}
 

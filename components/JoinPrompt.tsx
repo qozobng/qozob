@@ -15,7 +15,7 @@ import { ui, cx } from '@/lib/ui';
 // station and the action they wanted (via ?next=/?select=ID&go=ACTION).
 // =========================================================================
 
-export type JoinReason = 'directions' | 'price' | 'rate' | 'claim' | 'nudge';
+export type JoinReason = 'directions' | 'price' | 'rate' | 'claim' | 'save' | 'nudge';
 
 const COPY: Record<JoinReason, { title: string; text: (station?: string) => string }> = {
   directions: {
@@ -33,6 +33,10 @@ const COPY: Record<JoinReason, { title: string; text: (station?: string) => stri
   claim: {
     title: 'Own this station? 🏪',
     text: () => 'Create a free station-owner account to claim it, publish official prices and see insights.',
+  },
+  save: {
+    title: 'Save your favourite stations 🔖',
+    text: (s) => `Create a free account to save${s ? ` ${s}` : ' stations'} and check their latest prices from your dashboard on any device.`,
   },
   nudge: {
     title: 'Make Qozob yours 🙌',

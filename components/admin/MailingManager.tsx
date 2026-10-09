@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Mail, Users, UserCheck, UserMinus, Send, Plus, Pencil, Trash2, Loader2, X, AlertTriangle, Download,
-  Search, Copy, RotateCcw, Ban, FlaskConical, CheckCircle2, Clock, Eye,
+  Copy, RotateCcw, Ban, FlaskConical, CheckCircle2, Clock, Eye,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { ui, cx } from '@/lib/ui';
@@ -11,6 +11,9 @@ import { renderEmail } from '@/lib/emailTemplate';
 import { StatCard } from '@/components/analytics/StatCard';
 import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
 import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
+import { fetchAllRows } from '@/lib/fetchAll';
+import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
+import { ReportTable, type ReportColumn } from './ReportTable';
 
 // =========================================================================
 // ADMIN → MAILING LIST
@@ -64,14 +67,14 @@ function matchesAudience(s: Subscriber, a: Audience) {
   return true;
 }
 
-function toCsv(rows: Subscriber[]) {
-  const head = ['email', 'full_name', 'state', 'lga', 'status', 'source', 'consent_at', 'confirmed_at', 'unsubscribed_at', 'last_emailed_at', 'created_at'];
-  const esc = (v: unknown) => {
-    let s = v === null || v === undefined ? '' : String(v);
-    if (/^[=+\-@]/.test(s)) s = `'${s}`;          // stop spreadsheet formula injection
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return [head.join(','), ...rows.map(r => head.map(h => esc((r as unknown as Record<string, unknown>)[h])).join(','))].join('\n');
+const SUB_STATUS_LABEL: Record<SubStatus, string> = {
+  subscribed: 'Subscribed', pending: 'Awaiting confirmation', unsubscribed: 'Unsubscribed', bounced: 'Bounced', complained: 'Marked as spam',
+};
+
+/** Excel download stamped with the exporting admin's email and the generation time. */
+async function exportXlsx(base: string, sheets: XlsxSheet[]) {
+  const { data } = await supabase.auth.getSession();
+  downloadXlsx(base, sheets, { generatedBy: data.session?.user?.email });
 }
 
 async function postJson(url: string, body: unknown) {
@@ -89,6 +92,7 @@ export function MailingManager() {
   const [sent30, setSent30] = useState(0);
   const [setup, setSetup] = useState<Setup | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Partial<Campaign> | null>(null);
@@ -99,9 +103,9 @@ export function MailingManager() {
     setError(null);
     const since = new Date(Date.now() - 30 * 86400000).toISOString();
     const [subRes, campRes, sentRes, setupRes] = await Promise.all([
-      supabase.from('mailing_subscribers')
+      fetchAllRows<Subscriber>((a, b) => supabase.from('mailing_subscribers')
         .select('id, email, full_name, state, lga, source, status, consent_at, confirmed_at, unsubscribed_at, last_emailed_at, created_at')
-        .order('created_at', { ascending: false }).limit(10000),
+        .order('created_at', { ascending: false }).range(a, b)),
       supabase.from('mail_campaigns').select('*').order('created_at', { ascending: false }),
       supabase.from('mail_deliveries').select('id', { count: 'exact', head: true }).gte('sent_at', since),
       fetch('/api/admin/mailing').then(r => (r.ok ? r.json() : null)).catch(() => null),
@@ -111,10 +115,11 @@ export function MailingManager() {
         ? 'The mailing tables are not set up yet. Run supabase/migrations/20261010_mailing.sql in the Supabase SQL editor.'
         : subRes.error.message);
     }
-    setSubs((subRes.data as Subscriber[]) || []);
+    setSubs(subRes.rows);
     setCampaigns((campRes.data as Campaign[]) || []);
     setSent30(sentRes.count ?? 0);
     setSetup(setupRes as Setup | null);
+    setLoadedAt(new Date());
     setLoading(false);
   }, []);
 
@@ -260,9 +265,10 @@ export function MailingManager() {
           onAction={runAction}
           onCancel={cancel}
           onDelete={removeCampaign}
+          loadedAt={loadedAt}
         />
       ) : (
-        <SubscriberList subs={subs} onUnsubscribe={unsubscribeOne} onErase={eraseOne} />
+        <SubscriberList subs={subs} loadedAt={loadedAt} onRefresh={load} onUnsubscribe={unsubscribeOne} onErase={eraseOne} />
       )}
 
       {editing && (
@@ -279,12 +285,48 @@ export function MailingManager() {
 }
 
 // ---------------------------------------------------------------------------------------
-function CampaignList({ campaigns, busyId, canSend, onEdit, onDuplicate, onAction, onCancel, onDelete }: {
+function CampaignList({ campaigns, busyId, canSend, onEdit, onDuplicate, onAction, onCancel, onDelete, loadedAt }: {
   campaigns: Campaign[]; busyId: string | null; canSend: boolean;
   onEdit: (c: Campaign) => void; onDuplicate: (c: Campaign) => void;
   onAction: (c: Campaign, a: 'queue' | 'next' | 'retry_failed') => void;
   onCancel: (c: Campaign) => void; onDelete: (c: Campaign) => void;
+  loadedAt: Date | null;
 }) {
+  const [logBusy, setLogBusy] = useState<string | null>(null);
+  const [logError, setLogError] = useState<string | null>(null);
+
+  const exportSummary = () => exportXlsx('qozob-mail-campaigns', [{
+    name: 'Messages',
+    title: 'Bulk email messages',
+    meta: [`Messages: ${campaigns.length}`, ...(loadedAt ? [`Data as of: ${loadedAt.toLocaleString('en-GB', { timeZone: 'Africa/Lagos' })} WAT`] : [])],
+    columns: [
+      { header: 'Subject', width: 40 }, { header: 'Status' }, { header: 'Audience', width: 24 },
+      { header: 'Recipients', type: 'integer' }, { header: 'Sent', type: 'integer' }, { header: 'Failed', type: 'integer' }, { header: 'Delivered %', type: 'number' },
+      { header: 'Created', type: 'datetime' }, { header: 'Queued', type: 'datetime' }, { header: 'Finished', type: 'datetime' },
+      { header: 'Button label' }, { header: 'Button link', width: 36 }, { header: 'Message ID' },
+    ],
+    rows: campaigns.map(c => [
+      c.subject, c.status, audienceLabel(c.audience), c.total, c.sent_count, c.failed_count,
+      c.total ? Math.round((c.sent_count / c.total) * 1000) / 10 : null,
+      c.created_at, c.queued_at, c.completed_at, c.cta_label, c.cta_url, c.id,
+    ]),
+  }]);
+
+  const exportLog = async (c: Campaign) => {
+    setLogBusy(c.id); setLogError(null);
+    const res = await fetchAllRows<{ email: string; status: string; error: string | null; provider_id: string | null; created_at: string; sent_at: string | null }>(
+      (a, b) => supabase.from('mail_deliveries').select('email, status, error, provider_id, created_at, sent_at').eq('campaign_id', c.id).order('id').range(a, b));
+    setLogBusy(null);
+    if (res.error) { setLogError(`Could not load the delivery log: ${res.error.message}`); return; }
+    await exportXlsx(`qozob-mail-log-${c.subject.slice(0, 30)}`, [{
+      name: 'Delivery log',
+      title: `Delivery log · ${c.subject}`,
+      meta: [`Audience: ${audienceLabel(c.audience)}`, `Status: ${c.status}`, `Rows: ${res.rows.length}`, 'Contains personal data: store securely and delete when done.'],
+      columns: [{ header: 'Email', width: 32 }, { header: 'Status' }, { header: 'Queued', type: 'datetime' }, { header: 'Sent', type: 'datetime' }, { header: 'Error', width: 40 }, { header: 'Provider ID', width: 28 }],
+      rows: res.rows.map(d => [d.email, d.status, d.created_at, d.sent_at, d.error, d.provider_id]),
+    }]);
+  };
+
   if (campaigns.length === 0) {
     return (
       <div className={cx(ui.card, 'p-10 text-center')}>
@@ -296,6 +338,11 @@ function CampaignList({ campaigns, busyId, canSend, onEdit, onDuplicate, onActio
   }
   return (
     <section className={cx(ui.card, 'overflow-hidden')}>
+      <div className="px-5 py-3 border-b border-line flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-fg-muted">{loadedAt ? `Data as of ${loadedAt.toLocaleString('en-GB', { timeZone: 'Africa/Lagos', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} WAT` : ''}</p>
+        <button type="button" onClick={exportSummary} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Download className="w-4 h-4" aria-hidden /> Excel</button>
+      </div>
+      {logError && <div className={cx(ui.alertError, 'm-4')}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> {logError}</div>}
       <ul className="divide-y divide-line">
         {campaigns.map(c => {
           const pct = c.total > 0 ? Math.round(((c.sent_count + c.failed_count) / c.total) * 100) : 0;
@@ -341,7 +388,12 @@ function CampaignList({ campaigns, busyId, canSend, onEdit, onDuplicate, onActio
                   </button>
                 )}
                 {c.status !== 'draft' && (
-                  <button onClick={() => onDuplicate(c)} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Copy className="w-4 h-4" aria-hidden /> Duplicate</button>
+                  <>
+                    <button onClick={() => exportLog(c)} disabled={logBusy === c.id} className={cx(ui.btn, ui.btnSm, ui.btnGhost)} title="Download who it was sent to (Excel)">
+                      {logBusy === c.id ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Download className="w-4 h-4" aria-hidden />} Log
+                    </button>
+                    <button onClick={() => onDuplicate(c)} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Copy className="w-4 h-4" aria-hidden /> Duplicate</button>
+                  </>
                 )}
                 {(c.status === 'draft' || c.status === 'cancelled') && (
                   <button onClick={() => onDelete(c)} disabled={busy} className={cx(ui.btn, ui.btnSm, ui.btnDanger)} aria-label={`Delete ${c.subject}`}><Trash2 className="w-4 h-4" aria-hidden /></button>
@@ -356,100 +408,61 @@ function CampaignList({ campaigns, busyId, canSend, onEdit, onDuplicate, onActio
 }
 
 // ---------------------------------------------------------------------------------------
-function SubscriberList({ subs, onUnsubscribe, onErase }: {
-  subs: Subscriber[]; onUnsubscribe: (s: Subscriber) => void; onErase: (s: Subscriber) => void;
+function SubscriberList({ subs, loadedAt, onRefresh, onUnsubscribe, onErase }: {
+  subs: Subscriber[]; loadedAt: Date | null; onRefresh: () => void;
+  onUnsubscribe: (s: Subscriber) => void; onErase: (s: Subscriber) => void;
 }) {
-  const [q, setQ] = useState('');
   const [status, setStatus] = useState<'all' | SubStatus>('all');
-  const [limit, setLimit] = useState(50);
+  const rows = useMemo(() => (status === 'all' ? subs : subs.filter(s => s.status === status)), [subs, status]);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return subs.filter(s =>
-      (status === 'all' || s.status === status) &&
-      (!needle || [s.email, s.full_name, s.state, s.lga].some(v => (v || '').toLowerCase().includes(needle))));
-  }, [subs, q, status]);
-
-  const exportCsv = () => {
-    const blob = new Blob([toCsv(filtered)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `qozob-subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const columns = useMemo<ReportColumn<Subscriber>[]>(() => [
+    {
+      key: 'email', header: 'Email', get: s => s.email, width: 32,
+      render: s => <span><span className="font-medium text-fg break-all block">{s.email}</span>{s.full_name && <span className="text-xs text-fg-muted">{s.full_name}</span>}</span>,
+    },
+    { key: 'name', header: 'Name', get: s => s.full_name, defaultVisible: false, width: 24 },
+    {
+      key: 'status', header: 'Status', get: s => SUB_STATUS_LABEL[s.status] ?? s.status,
+      render: s => <span className={cx('inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap', SUB_STATUS_CLASS[s.status])}>{SUB_STATUS_LABEL[s.status] ?? s.status}</span>,
+    },
+    { key: 'state', header: 'State', get: s => s.state },
+    { key: 'lga', header: 'LGA', get: s => s.lga },
+    { key: 'source', header: 'Source', get: s => SOURCE_LABEL[s.source] || s.source },
+    { key: 'consent', header: 'Consent given', get: s => s.consent_at, type: 'datetime' },
+    { key: 'confirmed', header: 'Confirmed', get: s => s.confirmed_at, type: 'datetime', defaultVisible: false },
+    { key: 'unsubscribed', header: 'Unsubscribed', get: s => s.unsubscribed_at, type: 'datetime', defaultVisible: false },
+    { key: 'last', header: 'Last emailed', get: s => s.last_emailed_at, type: 'datetime', defaultVisible: false },
+    { key: 'created', header: 'Joined', get: s => s.created_at, type: 'datetime', defaultVisible: false },
+  ], []);
 
   return (
-    <section className={cx(ui.card, 'overflow-hidden')}>
-      <div className="px-5 py-4 border-b border-line flex flex-col md:flex-row gap-3 md:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-fg-subtle" aria-hidden />
-          <input value={q} onChange={e => { setQ(e.target.value); setLimit(50); }} placeholder="Search email, name, state or LGA" aria-label="Search subscribers" className={cx(ui.input, ui.inputWithIcon, 'h-10')} />
-        </div>
-        <select value={status} onChange={e => { setStatus(e.target.value as 'all' | SubStatus); setLimit(50); }} aria-label="Filter by status" className={cx(ui.select, 'h-10 md:w-48')}>
+    <ReportTable
+      id="admin-mail-subscribers"
+      title="Mailing list subscribers"
+      rows={rows}
+      columns={columns}
+      rowKey={s => s.id}
+      loadedAt={loadedAt}
+      onRefresh={onRefresh}
+      meta={[`Status: ${status === 'all' ? 'All' : SUB_STATUS_LABEL[status]}`, 'Contains personal data: store securely and delete when done.']}
+      initialSort={{ key: 'consent', dir: 'desc' }}
+      searchPlaceholder="Search email, name, state or LGA"
+      emptyText={subs.length === 0 ? 'No subscribers yet. People join from the website footer, the sign-up page or their dashboard settings.' : 'No matches. Try a different search or filter.'}
+      toolbar={(
+        <select value={status} onChange={e => setStatus(e.target.value as 'all' | SubStatus)} aria-label="Filter by status" className={cx(ui.select, 'h-10 w-auto')}>
           <option value="all">All statuses</option>
-          <option value="subscribed">Subscribed</option>
-          <option value="pending">Awaiting confirmation</option>
-          <option value="unsubscribed">Unsubscribed</option>
-          <option value="bounced">Bounced</option>
-          <option value="complained">Marked as spam</option>
+          {(Object.keys(SUB_STATUS_LABEL) as SubStatus[]).map(k => <option key={k} value={k}>{SUB_STATUS_LABEL[k]}</option>)}
         </select>
-        <button onClick={exportCsv} disabled={filtered.length === 0} className={cx(ui.btn, ui.btnMd, ui.btnSecondary)} title="Contains personal data: store it securely and delete when done">
-          <Download className="w-4 h-4" aria-hidden /> Export CSV
-        </button>
-      </div>
-      {filtered.length === 0 ? (
-        <div className="p-10 text-center">
-          <Users className="w-8 h-8 mx-auto text-fg-subtle mb-2" aria-hidden />
-          <p className="text-sm font-semibold text-fg">{subs.length === 0 ? 'No subscribers yet' : 'No matches'}</p>
-          <p className="text-sm text-fg-muted mt-1">{subs.length === 0 ? 'People join from the website footer, the sign-up page or their dashboard settings.' : 'Try a different search or filter.'}</p>
-        </div>
-      ) : (
-        <>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-surface-2 text-left text-xs uppercase tracking-wide text-fg-muted">
-                <tr>
-                  <th className="px-5 py-3 font-semibold">Email</th>
-                  <th className="px-3 py-3 font-semibold">Status</th>
-                  <th className="px-3 py-3 font-semibold hidden md:table-cell">Location</th>
-                  <th className="px-3 py-3 font-semibold hidden lg:table-cell">Source</th>
-                  <th className="px-3 py-3 font-semibold hidden lg:table-cell">Consent given</th>
-                  <th className="px-5 py-3 font-semibold text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {filtered.slice(0, limit).map(s => (
-                  <tr key={s.id}>
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-fg break-all">{s.email}</p>
-                      {s.full_name && <p className="text-xs text-fg-muted">{s.full_name}</p>}
-                    </td>
-                    <td className="px-3 py-3"><span className={cx('inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold capitalize', SUB_STATUS_CLASS[s.status])}>{s.status}</span></td>
-                    <td className="px-3 py-3 hidden md:table-cell text-fg-muted">{[s.lga, s.state].filter(Boolean).join(', ') || '—'}</td>
-                    <td className="px-3 py-3 hidden lg:table-cell text-fg-muted">{SOURCE_LABEL[s.source] || s.source}</td>
-                    <td className="px-3 py-3 hidden lg:table-cell text-fg-muted">{fmtDay(s.confirmed_at || s.consent_at)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex justify-end gap-2">
-                        {(s.status === 'subscribed' || s.status === 'pending') && (
-                          <button onClick={() => onUnsubscribe(s)} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}>Unsubscribe</button>
-                        )}
-                        <button onClick={() => onErase(s)} className={cx(ui.btn, ui.btnSm, ui.btnDanger)} aria-label={`Erase ${s.email}`} title="Erase (data-deletion request)"><Trash2 className="w-4 h-4" aria-hidden /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-5 py-3 border-t border-line flex items-center justify-between text-xs text-fg-muted">
-            <span>Showing {Math.min(limit, filtered.length).toLocaleString()} of {filtered.length.toLocaleString()}</span>
-            {filtered.length > limit && <button onClick={() => setLimit(l => l + 100)} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}>Show more</button>}
-          </div>
-        </>
       )}
-    </section>
+      rowActions={s => (
+        <div className="flex justify-end gap-2">
+          {(s.status === 'subscribed' || s.status === 'pending') && (
+            <button onClick={() => onUnsubscribe(s)} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}>Unsubscribe</button>
+          )}
+          <button onClick={() => onErase(s)} className={cx(ui.btn, ui.btnSm, ui.btnDanger)} aria-label={`Erase ${s.email}`} title="Erase (data-deletion request)"><Trash2 className="w-4 h-4" aria-hidden /></button>
+        </div>
+      )}
+    />
   );
 }
 

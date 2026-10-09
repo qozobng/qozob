@@ -34,10 +34,18 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
     if (!error) {
+      // Password reset → choose a new password. Admin invitation → set a password, then the admin panel.
+      if (type === 'recovery') return NextResponse.redirect(`${origin}/reset-password`);
+      if (type === 'invite') {
+        return NextResponse.redirect(`${origin}/reset-password?mode=invite&next=${encodeURIComponent(next === '/' ? '/admin' : next)}`);
+      }
       const dest = WELCOME_TYPES.includes(type) ? `/welcome?next=${encodeURIComponent(next)}` : next;
       return NextResponse.redirect(`${origin}${dest}`);
     }
     console.error('Email confirmation failed:', error.message);
+    if (type === 'recovery' || type === 'invite') {
+      return NextResponse.redirect(`${origin}/reset-password${type === 'invite' ? '?mode=invite' : ''}`);
+    }
     return NextResponse.redirect(`${origin}/welcome?error=${encodeURIComponent(error.code || 'otp_expired')}`);
   }
 

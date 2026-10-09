@@ -71,8 +71,18 @@ export function StatCard({
   return (
     <div
       onClick={onClick}
+      {...(isClickable
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            title: 'View details',
+            onKeyDown: (e: React.KeyboardEvent) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
+            },
+          }
+        : {})}
       className={`bg-surface rounded-xl p-5 border ${theme.border} shadow-xs transition-all duration-200 ${
-        isClickable ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5' : ''
+        isClickable ? 'cursor-pointer hover:shadow-md hover:-translate-y-0.5 outline-none focus-visible:ring-4 focus-visible:ring-primary/25' : ''
       } flex flex-col justify-between`}
     >
       <div className="flex items-start justify-between gap-3 mb-3">

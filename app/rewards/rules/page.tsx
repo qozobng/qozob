@@ -46,10 +46,11 @@ export default function RewardsRulesPage() {
           <li>Your phone&apos;s location must show you are <strong>at the station</strong> (within about 1 km), with a reasonable GPS signal.</li>
           <li>An update that passes earns <strong>10 coins</strong>, plus a <strong>5-coin bonus</strong> if no one has earned coins at that station in the previous 24 hours.</li>
           <li>You can earn coins at the same station <strong>once every 6 hours</strong>, and for up to <strong>20 updates a day</strong>.</li>
-          <li>The price must be within a believable range. Prices very different from other recent prices nearby are <strong>held for review</strong>; their coins count only if a reviewer approves them.</li>
+          <li>The price must be within a believable range. Prices very different from other recent prices nearby are <strong>held for review</strong>. A held price is <strong>not shown on the map</strong> until a reviewer approves it, and its coins count only if it is approved. Approved coins are dated to when you originally sent the update.</li>
           <li>Location jumps that are not physically possible (for example, two far-apart stations minutes apart) are held for review.</li>
+          <li>You can only update a price when you are near the station. If you run or work for a station, you can <strong>claim it</strong> from the map; once approved, you can update its details from anywhere (updates to your own station do not earn coins).</li>
         </ul>
-        <p>The exact numbers above can change (see section 10). The current values are always shown on the <Link href="/rewards">Rewards page</Link>. Your price is published straight away even when it earns no coins.</p>
+        <p>The exact numbers above can change (see section 10). The current values are always shown on the <Link href="/rewards">Rewards page</Link>. A price that passes the checks is published straight away, even when it earns no coins.</p>
       </section>
 
       <section>
@@ -80,7 +81,8 @@ export default function RewardsRulesPage() {
           <li>We pay only into the verified Nigerian bank account in the winner&apos;s own name. The account name must match the name on your ID.</li>
           <li>Prizes are subject to any taxes the law requires. Where required, we will deduct tax (such as withholding tax) at source and give you evidence of the deduction.</li>
           <li>If we cannot verify a winner, or the winner cannot be paid within 60 days after reasonable attempts to contact them, the prize is forfeited and may pass to the next qualified person.</li>
-          <li>Prizes cannot be transferred or exchanged.</li>
+          <li>Prizes cannot be transferred or exchanged for anything other than the options below.</li>
+          <li><strong>Cash or service voucher:</strong> on your Rewards page you can choose to receive a monthly prize as a bank transfer (default) or as a {SITE.name} Auto services voucher, which may be worth more than the cash prize (the current value is shown when you choose). A voucher is tied to your account, can be used once on a request you make while signed in, and has no cash value. You can change your choice until the month is closed.</li>
           <li>To protect your payment, bank details cannot be changed in the app while a prize is being processed. Contact support instead.</li>
         </ul>
       </section>

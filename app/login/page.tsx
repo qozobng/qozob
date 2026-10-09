@@ -95,6 +95,11 @@ function LoginContent() {
           <span>{errorMsg}</span>
         </div>
       )}
+      {!errorMsg && searchParams.get('notice') === 'password_updated' && (
+        <div role="status" className={cx(ui.alertSuccess, 'mb-6')}>
+          <span>Your password was updated. Sign in with your new password.</span>
+        </div>
+      )}
 
       {/* OAUTH GOOGLE BUTTON */}
       <button
@@ -139,6 +144,12 @@ function LoginContent() {
         <div>
           <div className="flex items-center justify-between">
             <label htmlFor="password" className={ui.label}>Password</label>
+            <Link
+              href={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`}
+              className="mb-1.5 text-xs font-semibold text-primary underline-offset-4 hover:underline"
+            >
+              Forgot password?
+            </Link>
           </div>
           <div className="relative">
             <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-subtle pointer-events-none" aria-hidden />

@@ -18,6 +18,7 @@ import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
 import { RatingDistribution } from '@/components/analytics/RatingDistribution';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { QUEUE_OPTIONS, normaliseQueue } from '@/lib/queue';
 
 // =========================================================================
 // TYPES
@@ -40,6 +41,11 @@ interface Station {
   last_updated?: string | null;
 }
 
+const PRICE_MIN = 300;
+const PRICE_MAX = 3000;
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
 function generateStationCode(stationId: string) {
   if (!stationId) return "QZB-XXXX";
   return `QZB-${stationId.slice(-6).toUpperCase()}`;
@@ -50,7 +56,7 @@ function parseCSV(str: string) {
   let quote = false;
   let row = 0, col = 0;
   for (let c = 0; c < str.length; c++) {
-    let cc = str[c], nc = str[c+1];
+    const cc = str[c], nc = str[c+1];
     arr[row] = arr[row] || [];
     arr[row][col] = arr[row][col] || '';
     if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; continue; }
@@ -98,6 +104,13 @@ export default function DashboardPage() {
   const [editPrice, setEditPrice] = useState("");
   const [editQueue, setEditQueue] = useState("Unknown");
   const [editLogoUrl, setEditLogoUrl] = useState("");
+  const [editError, setEditError] = useState("");
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const flash = (ok: boolean, text: string) => {
+    setNotice({ ok, text });
+    window.setTimeout(() => setNotice(null), 6000);
+  };
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -180,135 +193,136 @@ export default function DashboardPage() {
 
   const openEditModal = (station: Station) => {
     if (station.claim_status === 'Pending Review') {
-      return alert("This station is awaiting verification. You can modify details once approved.");
+      return flash(false, "This station is awaiting verification. You can edit its details once it is approved.");
     }
     setEditingStation(station);
+    setEditError("");
     setEditName(station.name || "");
     setEditAddress(station.address || "");
     setEditPrice(station.price_pms ? station.price_pms.toString() : "");
-    setEditQueue(station.queue_status || "Unknown");
+    setEditQueue(normaliseQueue(station.queue_status));
     setEditLogoUrl(station.custom_logo_url || "");
   };
 
+  /** Validates a price typed by the owner. Empty = keep the current price. */
+  const parsePrice = (raw: string): { ok: true; value: number | null } | { ok: false } => {
+    const t = raw.trim().replace(/[₦,\s]/g, '');
+    if (!t) return { ok: true, value: null };
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < PRICE_MIN || n > PRICE_MAX) return { ok: false };
+    return { ok: true, value: Math.round(n * 100) / 100 };
+  };
+
+  /** Applies the row the database actually saved (its rules may adjust some fields). */
+  const applySaved = (saved: Partial<Station> & { station_id: string }) => {
+    setStations(prev => prev.map(s => s.station_id === saved.station_id ? { ...s, ...saved, claim_status: s.claim_status } : s));
+  };
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    setEditError("");
+    if (!LOGO_TYPES.includes(file.type)) {
+      setEditError("Logo must be a PNG, JPG or WebP image.");
+      input.value = '';
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setEditError("Logo is too large. Please use an image under 2 MB.");
+      input.value = '';
+      return;
+    }
     try {
       setUploadingLogo(true);
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const fileExt = file.name.split('.').pop();
-      const fileName = `logo_${Date.now()}.${fileExt}`;
-      const filePath = `${user.id}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage.from('station_logos').upload(filePath, file);
+      const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg';
+      const filePath = `${user.id}/logo_${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from('station_logos')
+        .upload(filePath, file, { contentType: file.type, cacheControl: '31536000', upsert: false });
       if (uploadError) throw uploadError;
-
       const { data } = supabase.storage.from('station_logos').getPublicUrl(filePath);
       setEditLogoUrl(data.publicUrl);
-    } catch (error: any) { 
-      alert('Error uploading logo: ' + error.message); 
-    } finally { 
-      setUploadingLogo(false); 
+    } catch (error: unknown) {
+      setEditError('Could not upload the logo: ' + (error instanceof Error ? error.message : 'please try again.'));
+    } finally {
+      setUploadingLogo(false);
+      input.value = '';
     }
   };
 
-  // Full Station Save (from Modal)
+  // Full Station Save (from Modal). Goes live on the map straight away.
   const saveStationUpdates = async () => {
     if (!editingStation) return;
+    const name = editName.trim();
+    if (name.length < 2) return setEditError("Please enter the station name.");
+    const price = parsePrice(editPrice);
+    if (!price.ok) return setEditError(`Enter a realistic PMS price between ₦${PRICE_MIN.toLocaleString()} and ₦${PRICE_MAX.toLocaleString()}, or leave it empty to keep the current price.`);
+    setEditError("");
     setIsSaving(true);
 
-    const priceNum = editPrice ? parseFloat(editPrice) : null;
-    const { error } = await supabase
+    const patch: Record<string, string | number | null> = {
+      name,
+      address: editAddress.trim(),
+      custom_logo_url: editLogoUrl || null,
+    };
+    if (price.value !== null) patch.price_pms = price.value;
+    if (editQueue !== 'Unknown') patch.queue_status = editQueue;
+
+    const { data, error } = await supabase
       .from('stations')
-      .update({
-        name: editName,
-        address: editAddress,
-        price_pms: priceNum,
-        queue_status: editQueue,
-        custom_logo_url: editLogoUrl,
-        updated_by_role: 'Owner', 
-        verified: true,           
-        last_updated: new Date().toISOString()
-      })
+      .update(patch)
       .eq('station_id', editingStation.station_id)
-      .eq('manager_id', user.id); 
+      .eq('manager_id', user.id)
+      .select('station_id, name, address, price_pms, queue_status, custom_logo_url, last_updated')
+      .maybeSingle();
 
     setIsSaving(false);
 
-    if (error) { 
-      alert("Error saving updates: " + error.message); 
-    } else {
-      const savedId = editingStation.station_id;
-      setEditingStation(null);
-      setStations(prev => prev.map(s => s.station_id === savedId ? {
-        ...s, 
-        name: editName, 
-        address: editAddress, 
-        price_pms: priceNum, 
-        queue_status: editQueue,
-        custom_logo_url: editLogoUrl,
-        last_updated: new Date().toISOString()
-      } : s));
-    }
+    if (error) return setEditError("Could not save: " + error.message);
+    if (!data) return setEditError("This station is no longer linked to your account. Please contact support@qozob.com.");
+    applySaved(data as Station);
+    setEditingStation(null);
+    const logoRejected = !!editLogoUrl && data.custom_logo_url !== editLogoUrl;
+    flash(!logoRejected, logoRejected
+      ? 'Saved, but the logo was not accepted. Upload it again from this screen.'
+      : `${data.name} updated. Drivers now see the new details on the map.`);
   };
 
   // Quick Inline Price Save
   const handleInlinePriceSave = async (station: Station) => {
-    if (!inlinePriceVal) {
-      setEditingPriceId(null);
-      return;
-    }
-    const parsed = parseFloat(inlinePriceVal);
-    if (!Number.isFinite(parsed) || parsed < 300 || parsed > 3000) {
-      alert("Please enter a realistic fuel price between ₦300 and ₦3,000.");
-      return;
-    }
+    const price = parsePrice(inlinePriceVal);
+    if (!price.ok) return flash(false, `Please enter a realistic fuel price between ₦${PRICE_MIN.toLocaleString()} and ₦${PRICE_MAX.toLocaleString()}.`);
+    if (price.value === null || price.value === station.price_pms) { setEditingPriceId(null); return; }
 
     setIsSavingInline(true);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('stations')
-      .update({
-        price_pms: parsed,
-        updated_by_role: 'Owner',
-        verified: true,
-        last_updated: new Date().toISOString()
-      })
+      .update({ price_pms: price.value })
       .eq('station_id', station.station_id)
-      .eq('manager_id', user.id);
-
+      .eq('manager_id', user.id)
+      .select('station_id, price_pms, last_updated')
+      .maybeSingle();
     setIsSavingInline(false);
-    if (error) {
-      alert("Failed to update price: " + error.message);
-    } else {
-      setStations(prev => prev.map(s => s.station_id === station.station_id ? {
-        ...s,
-        price_pms: parsed,
-        last_updated: new Date().toISOString()
-      } : s));
-      setEditingPriceId(null);
-    }
+
+    if (error || !data) return flash(false, "Failed to update price: " + (error?.message ?? 'station not linked to your account.'));
+    applySaved(data as Station);
+    setEditingPriceId(null);
+    flash(true, `Price updated to ₦${Number(data.price_pms).toLocaleString()}. It is live on the map.`);
   };
 
   // Quick Queue Status Toggle
   const handleQueueChange = async (station: Station, newQueue: string) => {
-    const { error } = await supabase
+    if (newQueue === 'Unknown') return;
+    const { data, error } = await supabase
       .from('stations')
-      .update({
-        queue_status: newQueue,
-        updated_by_role: 'Owner',
-        last_updated: new Date().toISOString()
-      })
+      .update({ queue_status: newQueue })
       .eq('station_id', station.station_id)
-      .eq('manager_id', user.id);
+      .eq('manager_id', user.id)
+      .select('station_id, queue_status, last_updated')
+      .maybeSingle();
 
-    if (error) {
-      alert("Failed to update queue: " + error.message);
-    } else {
-      setStations(prev => prev.map(s => s.station_id === station.station_id ? {
-        ...s,
-        queue_status: newQueue
-      } : s));
-    }
+    if (error || !data) return flash(false, "Failed to update queue: " + (error?.message ?? 'station not linked to your account.'));
+    applySaved(data as Station);
   };
 
   // Bulk CSV Actions
@@ -335,57 +349,57 @@ export default function DashboardPage() {
   };
 
   const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
     setBulkProcessing(true);
     const reader = new FileReader();
-    
+
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
         const data = parseCSV(text);
-        let successCount = 0; 
+        let successCount = 0;
         let errorCount = 0;
-        const timestamp = new Date().toISOString();
+        const mine = new Set(stations.filter(s => s.claim_status === 'Approved').map(s => String(s.station_id)));
 
-        const updates: { systemId: string; name: string; address: string; price: number | null }[] = [];
+        const updates: { systemId: string; patch: Record<string, string | number> }[] = [];
         for (let i = 1; i < data.length; i++) {
           const row = data[i];
-          if (row.length < 5 || !row[0]) continue; 
-          
+          if (row.length < 5 || !row[0]?.trim()) continue;
           const systemId = row[0].trim();
-          const newName = row[2].trim();
-          const newAddress = row[3].trim();
-          const newPriceRaw = row[4].trim();
-          const newPrice = newPriceRaw ? parseFloat(newPriceRaw.replace(/[₦,\s]/g, '')) : null;
-
-          if (newPrice !== null && !Number.isFinite(newPrice)) { errorCount++; continue; }
-          updates.push({ systemId, name: newName, address: newAddress, price: newPrice });
+          if (!mine.has(systemId)) { errorCount++; continue; }
+          const price = parsePrice(row[4] || '');
+          if (!price.ok) { errorCount++; continue; }
+          const patch: Record<string, string | number> = {};
+          if (row[2]?.trim()) patch.name = row[2].trim();
+          if (row[3]?.trim()) patch.address = row[3].trim();
+          if (price.value !== null) patch.price_pms = price.value;   // blank price = keep the current one
+          if (Object.keys(patch).length) updates.push({ systemId, patch });
         }
 
+        const saved: Station[] = [];
         const BATCH_SIZE = 10;
         for (let i = 0; i < updates.length; i += BATCH_SIZE) {
           const batch = updates.slice(i, i + BATCH_SIZE);
           const results = await Promise.all(batch.map(u =>
-            supabase.from('stations').update({
-                name: u.name, 
-                address: u.address, 
-                price_pms: u.price, 
-                updated_by_role: 'Owner', 
-                verified: true, 
-                last_updated: timestamp
-            }).eq('station_id', u.systemId).eq('manager_id', user.id)
+            supabase.from('stations').update(u.patch).eq('station_id', u.systemId).eq('manager_id', user.id)
+              .select('station_id, name, address, price_pms, last_updated').maybeSingle()
           ));
-          results.forEach(({ error }) => { if (error) errorCount++; else successCount++; });
+          results.forEach(({ data: row, error }) => {
+            if (error || !row) errorCount++;
+            else { successCount++; saved.push(row as Station); }
+          });
         }
-        alert(`Bulk Update Complete!\n\nSuccessfully updated: ${successCount} stations.\nFailed: ${errorCount} stations.`);
-        window.location.reload();
-      } catch (err) { 
-        alert("Error processing CSV."); 
-      } finally { 
-        setBulkProcessing(false); 
-        setShowBulkModal(false); 
+        saved.forEach(applySaved);
+        flash(errorCount === 0, `Bulk update finished: ${successCount} station(s) updated${errorCount ? `, ${errorCount} row(s) skipped (unknown station or price outside ₦${PRICE_MIN}–₦${PRICE_MAX})` : ''}.`);
+      } catch {
+        flash(false, "Could not read that file. Please upload the CSV template you downloaded.");
+      } finally {
+        setBulkProcessing(false);
+        setShowBulkModal(false);
+        input.value = '';
       }
     };
     reader.readAsText(file);
@@ -407,20 +421,21 @@ export default function DashboardPage() {
     const rated = approved.filter(s => (s.accuracy_votes || 0) > 0);
     const avgAccuracy = rated.length > 0
       ? rated.reduce((acc, s) => acc + (s.pump_accuracy || 0), 0) / rated.length
-      : 4.8;
+      : 0;
     const totalVotes = approved.reduce((acc, s) => acc + (s.accuracy_votes || 0), 0);
 
-    // Queue distribution across managed stations
-    const noQueue = approved.filter(s => s.queue_status === 'No Queue' || s.queue_status === 'Normal').length;
-    const moderate = approved.filter(s => s.queue_status === 'Moderate Queue').length;
-    const severe = approved.filter(s => s.queue_status === 'Long Queue').length;
+    // Queue distribution across managed stations (legacy names are mapped to the current ones)
+    const q = approved.map(s => normaliseQueue(s.queue_status));
+    const noQueue = q.filter(v => v === 'No Queue').length;
+    const moderate = q.filter(v => v === 'Moderate').length;
+    const severe = q.filter(v => v === 'Heavy' || v === 'No Fuel').length;
     const other = approved.length - noQueue - moderate - severe;
 
     const queueDonut: DonutSegment[] = [
-      { label: 'No Queue (Smooth)', value: noQueue, color: 'var(--chart-pos)' },
-      { label: 'Moderate Queue', value: moderate, color: 'var(--chart-warn)' },
-      { label: 'Long Queue', value: severe, color: 'var(--chart-neg)' },
-      { label: 'Unspecified', value: Math.max(0, other), color: 'var(--chart-neutral)' },
+      { label: 'No queue', value: noQueue, color: 'var(--chart-pos)' },
+      { label: 'Moderate', value: moderate, color: 'var(--chart-warn)' },
+      { label: 'Heavy / no fuel', value: severe, color: 'var(--chart-neg)' },
+      { label: 'Not reported', value: Math.max(0, other), color: 'var(--chart-neutral)' },
     ];
 
     // Price comparison bars for each station vs market benchmark
@@ -539,6 +554,14 @@ export default function DashboardPage() {
 
       {/* ======================= MAIN CONTENT ======================= */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6 flex flex-col gap-6">
+
+        {notice && (
+          <div role="status" className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[min(92vw,32rem)] shadow-lg flex items-start gap-2.5 rounded-xl border p-4 text-sm animate-in fade-in slide-in-from-bottom-2 duration-200 ${notice.ok ? 'bg-success-soft border-success-line text-on-success-soft' : 'bg-danger-soft border-danger-line text-on-danger-soft'}`}>
+            {notice.ok ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />}
+            <span className="flex-1">{notice.text}</span>
+            <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="opacity-70 hover:opacity-100"><X className="w-4 h-4" /></button>
+          </div>
+        )}
         
         {/* Pending Access Notification */}
         {accessPending && (
@@ -620,10 +643,12 @@ export default function DashboardPage() {
 
           <StatCard
             title="Pump Accuracy"
-            value={managerAnalytics.totalVotes > 0 ? `${managerAnalytics.avgAccuracy.toFixed(1)} ★` : '5.0 ★'}
-            subtitle={`${managerAnalytics.totalVotes} customer reviews`}
+            value={managerAnalytics.totalVotes > 0 ? `${managerAnalytics.avgAccuracy.toFixed(1)} ★` : '—'}
+            subtitle={managerAnalytics.totalVotes > 0 ? `${managerAnalytics.totalVotes} customer reviews` : 'No customer ratings yet'}
             icon={Star}
-            badge={{ text: 'Calibrated', variant: 'positive' }}
+            badge={managerAnalytics.totalVotes > 0
+              ? (managerAnalytics.avgAccuracy >= 4 ? { text: 'Trusted', variant: 'positive' } : { text: 'Check pumps', variant: 'warning' })
+              : undefined}
             colorTheme="amber"
           />
 
@@ -770,14 +795,13 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between pt-2 border-t border-line text-xs">
                           <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider">Queue</span>
                           <select
-                            value={station.queue_status || 'Unknown'}
+                            value={normaliseQueue(station.queue_status)}
                             onChange={e => handleQueueChange(station, e.target.value)}
+                            aria-label={`Queue at ${station.name}`}
                             className="text-xs font-semibold bg-surface border border-line rounded-lg px-2 py-0.5 text-fg outline-none cursor-pointer focus:border-primary"
                           >
-                            <option value="No Queue">No Queue</option>
-                            <option value="Moderate Queue">Moderate Queue</option>
-                            <option value="Long Queue">Long Queue</option>
-                            <option value="Unknown">Unknown</option>
+                            {normaliseQueue(station.queue_status) === 'Unknown' && <option value="Unknown" disabled>Not reported</option>}
+                            {QUEUE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </select>
                         </div>
                       </div>
@@ -880,77 +904,97 @@ export default function DashboardPage() {
             <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block mb-5">
               Code: {generateStationCode(editingStation.station_id)}
             </span>
+            <p className="text-xs text-fg-muted -mt-3 mb-5">Changes go live on the map straight away and replace what drivers see on this station&apos;s card.</p>
 
             <div className="flex flex-col gap-3.5">
               <div>
-                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Station Name</label>
+                <label htmlFor="ed-name" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Station Name</label>
                 <input 
+                  id="ed-name"
                   type="text" 
                   value={editName} 
+                  maxLength={120}
                   onChange={(e) => setEditName(e.target.value)} 
                   className="w-full bg-surface-2 border border-line rounded-lg p-3 outline-none focus:border-primary font-semibold text-fg text-sm" 
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Address</label>
+                <label htmlFor="ed-address" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Address</label>
                 <textarea 
+                  id="ed-address"
                   value={editAddress} 
+                  maxLength={300}
                   onChange={(e) => setEditAddress(e.target.value)} 
                   className="w-full bg-surface-2 border border-line rounded-lg p-3 outline-none focus:border-primary text-xs text-fg resize-none h-18" 
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">PMS Price (₦)</label>
+                  <label htmlFor="ed-price" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">PMS Price (₦/L)</label>
                   <input 
+                    id="ed-price"
                     type="number" 
+                    inputMode="decimal"
+                    min={PRICE_MIN}
+                    max={PRICE_MAX}
                     step="0.01" 
                     value={editPrice} 
                     onChange={(e) => setEditPrice(e.target.value)} 
                     className="w-full bg-surface-2 border border-line rounded-lg p-3 text-lg font-semibold outline-none focus:border-primary text-fg font-mono" 
-                    placeholder="950" 
+                    placeholder={editingStation.price_pms ? String(editingStation.price_pms) : '950'} 
                   />
+                  <p className="text-[11px] text-fg-subtle mt-1">₦{PRICE_MIN.toLocaleString()}–₦{PRICE_MAX.toLocaleString()}. Leave empty to keep the current price.</p>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Queue State</label>
+                  <label htmlFor="ed-queue" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Queue</label>
                   <select
+                    id="ed-queue"
                     value={editQueue}
                     onChange={(e) => setEditQueue(e.target.value)}
                     className="w-full bg-surface-2 border border-line rounded-lg p-3 text-xs font-semibold outline-none focus:border-primary text-fg h-[52px]"
                   >
-                    <option value="No Queue">No Queue</option>
-                    <option value="Moderate Queue">Moderate</option>
-                    <option value="Long Queue">Long Queue</option>
-                    <option value="Unknown">Unknown</option>
+                    {editQueue === 'Unknown' && <option value="Unknown">Not reported</option>}
+                    {QUEUE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Custom Brand Logo</label>
+                <span className="text-xs font-semibold text-fg-muted uppercase mb-1 block">Station Logo</span>
                 <div className="flex items-center gap-3 bg-accent-soft p-3.5 rounded-lg border border-accent-line">
                   {editLogoUrl ? (
-                    <img src={editLogoUrl} alt="Preview" className="w-10 h-10 rounded-full border border-line object-contain bg-surface" />
+                    <img src={editLogoUrl} alt="Logo preview" className="w-12 h-12 rounded-full border border-line object-contain bg-surface shrink-0" />
                   ) : (
-                    <div className="w-10 h-10 rounded-full bg-surface flex items-center justify-center border border-line">
+                    <div className="w-12 h-12 rounded-full bg-surface flex items-center justify-center border border-line shrink-0">
                       <ImageIcon className="w-4 h-4 text-fg-subtle" />
                     </div>
                   )}
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <input 
                       type="file" 
-                      accept="image/png, image/jpeg" 
+                      accept="image/png, image/jpeg, image/webp" 
+                      aria-label="Upload station logo"
                       onChange={handleLogoUpload} 
                       disabled={uploadingLogo} 
                       className="w-full text-xs text-fg-muted file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary file:text-on-primary hover:file:bg-primary-hover cursor-pointer disabled:opacity-50" 
                     />
+                    <p className="text-[11px] text-fg-subtle mt-1">PNG, JPG or WebP, under 2 MB. A square image looks best.</p>
                     {uploadingLogo && <p className="text-xs text-accent mt-1 font-semibold animate-pulse">Uploading logo...</p>}
+                    {editLogoUrl && !uploadingLogo && (
+                      <button type="button" onClick={() => setEditLogoUrl('')} className="text-[11px] font-semibold text-danger hover:underline mt-1">Remove logo (use brand default)</button>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {editError && (
+                <div role="alert" className="flex items-start gap-2 bg-danger-soft border border-danger-line text-on-danger-soft rounded-lg p-3 text-xs">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden /> {editError}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2.5 mt-6">

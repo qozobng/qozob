@@ -6,38 +6,49 @@ export async function submitServiceRequest(
   payload: Omit<ServiceRequest, 'id' | 'status' | 'payment_status' | 'created_at' | 'updated_at'>
 ): Promise<{ data: ServiceRequest | null; error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('service_requests')
-      .insert({
-        user_id: payload.user_id || null,
-        service_category: payload.service_category,
-        service_name: payload.service_name,
-        full_name: payload.full_name.trim(),
-        phone: payload.phone.trim(),
-        email: payload.email.trim().toLowerCase(),
-        state: payload.state || null,
-        lga: payload.lga || null,
-        delivery_address: payload.delivery_address || null,
-        vehicle_make: payload.vehicle_make || null,
-        vehicle_model: payload.vehicle_model || null,
-        vehicle_year: payload.vehicle_year || null,
-        plate_number: payload.plate_number ? payload.plate_number.toUpperCase().trim() : null,
-        chassis_number: payload.chassis_number ? payload.chassis_number.toUpperCase().trim() : null,
-        details: payload.details || {},
-        estimated_price: payload.estimated_price || null,
-        voucher_code: payload.voucher_code ? payload.voucher_code.trim().toUpperCase() : null,
-        status: 'pending',
-        payment_status: payload.voucher_code ? 'voucher_used' : 'unpaid'
-      })
-      .select('*')
-      .single();
+    // The id is generated here so guests (who cannot read rows back under RLS) still get a reference.
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+          const r = (Math.random() * 16) | 0;
+          return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+        });
+    const row = {
+      id,
+      user_id: payload.user_id || null,
+      service_category: payload.service_category,
+      service_name: payload.service_name,
+      full_name: payload.full_name.trim(),
+      phone: payload.phone.trim(),
+      email: payload.email.trim().toLowerCase(),
+      state: payload.state || null,
+      lga: payload.lga || null,
+      delivery_address: payload.delivery_address || null,
+      vehicle_make: payload.vehicle_make || null,
+      vehicle_model: payload.vehicle_model || null,
+      vehicle_year: payload.vehicle_year || null,
+      plate_number: payload.plate_number ? payload.plate_number.toUpperCase().trim() : null,
+      chassis_number: payload.chassis_number ? payload.chassis_number.toUpperCase().trim() : null,
+      details: payload.details || {},
+      estimated_price: payload.estimated_price || null,
+      voucher_code: payload.voucher_code ? payload.voucher_code.trim().toUpperCase() : null,
+      // New requests are always pending/unpaid (enforced by RLS). A voucher is applied by
+      // the services team when they confirm the request (Admin -> Auto services -> Redeem).
+      status: 'pending' as const,
+      payment_status: 'unpaid' as const,
+    };
 
+    const { error } = await supabase.from('service_requests').insert(row);
     if (error) {
       return { data: null, error: error.message };
     }
-    return { data, error: null };
-  } catch (err: any) {
-    return { data: null, error: err.message || 'Network error submitting service request' };
+    const now = new Date().toISOString();
+    return {
+      data: { ...row, quoted_price: null, paid_price: null, admin_notes: null, assigned_to: null, created_at: now, updated_at: now } as unknown as ServiceRequest,
+      error: null,
+    };
+  } catch (err: unknown) {
+    return { data: null, error: err instanceof Error ? err.message : 'Network error submitting service request' };
   }
 }
 
@@ -202,3 +213,4 @@ export async function deleteFuelLog(
 
   return !error;
 }
+

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy, Pencil, FileText, Car, Fuel
+  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy, Pencil, FileText, Car, Fuel, Bookmark, BookmarkCheck
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -27,7 +27,9 @@ import { normaliseState } from '@/lib/nigeria';
 import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
-import { getPosition, recordPriceReport, describeReport } from '@/lib/rewards';
+import { getPosition, recordPriceReport, describeReport, submitPrice, describeSubmission, SubmitPriceError, type SubmitErrorCode } from '@/lib/rewards';
+import { QUEUE_OPTIONS } from '@/lib/queue';
+import { listSavedStations, saveStation, unsaveStation } from '@/lib/savedStations';
 import { LgaOverlay } from '@/components/rewards/LgaOverlay';
 
 // --- Map Visual Key ---
@@ -117,6 +119,19 @@ function useEscapeKey(onEscape: () => void) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onEscape]);
+}
+
+/** true while the CSS media query matches (false during server render). */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(query);
+    const update = () => setMatches(mql.matches);
+    update();
+    mql.addEventListener('change', update);
+    return () => mql.removeEventListener('change', update);
+  }, [query]);
+  return matches;
 }
 
 function timeAgo(dateString: string | null | undefined): string {
@@ -239,24 +254,41 @@ const ListLogo = memo(function ListLogo({ name, customLogoUrl }: { name: string,
 // MODALS
 // =========================================================================
 
-function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onClose: () => void, onSaved: OnStationSaved }) {
+function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Station, onClose: () => void, onSaved: OnStationSaved, onClaim?: () => void }) {
   const supabase = createClient();
   
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [suggestedQueue, setSuggestedQueue] = useState("Moderate");
   const [isSubmittingPrice, setIsSubmittingPrice] = useState(false);
+  const [problem, setProblem] = useState<{ code: SubmitErrorCode; message: string } | null>(null);
   useEscapeKey(onClose);
 
-  // Rewards: start a GPS fix as soon as the form opens so it is ready by the time the price is saved
+  // Start a GPS fix as soon as the form opens so it is ready by the time the price is sent
   const positionRef = useRef<Promise<GeolocationPosition | null> | null>(null);
   useEffect(() => { positionRef.current = getPosition(); }, []);
 
+  // Old flow, only used if the database update (20261014) has not been run yet
+  const legacySave = async (priceNum: number, position: GeolocationPosition | null) => {
+    const payload = {
+      station_id: station.id, name: station.name, address: station.address, lat: station.lat, lng: station.lng,
+      price_pms: priceNum, queue_status: suggestedQueue, last_updated: new Date().toISOString(),
+      updated_by_role: 'User', verified: false,
+    };
+    const { data: savedRow, error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' }).select().maybeSingle();
+    if (error) throw new SubmitPriceError('unknown', error.message);
+    onSaved(station.id, savedRow || payload, "Price updated. Thanks for helping the community.");
+    onClose();
+    const result = await recordPriceReport(supabase, station.id, position);
+    if (result) onSaved(station.id, {}, describeReport(result));
+  };
+
   const handleSuggestPrice = async () => {
     if (!suggestedPrice || !station) return;
+    setProblem(null);
 
     const priceNum = parseFloat(suggestedPrice);
     if (!Number.isFinite(priceNum) || priceNum <= 0) {
-      return alert("Please enter a valid price.");
+      return setProblem({ code: 'invalid_price', message: 'Please enter a valid price per litre.' });
     }
     // Soft sanity check to catch typos (e.g. 95 or 95000) without blocking genuine outliers
     if ((priceNum < PRICE_SANITY_MIN || priceNum > PRICE_SANITY_MAX) &&
@@ -265,34 +297,35 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
     }
 
     setIsSubmittingPrice(true);
-
-    const payload = {
-      station_id: station.id,
-      name: station.name,
-      address: station.address,
-      lat: station.lat,
-      lng: station.lng,
-      price_pms: priceNum,
-      queue_status: suggestedQueue,
-      last_updated: new Date().toISOString(), 
-      updated_by_role: 'User', 
-      verified: false
-    };
-    // The database decides the final label (Owner / Qozob rep / User) — use the row it actually saved
-    const { data: savedRow, error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' }).select().maybeSingle();
-
-    setIsSubmittingPrice(false);
-    if (error) {
-      alert("Error saving price: " + error.message);
-    } else {
-      onSaved(station.id, savedRow || payload, "Price updated successfully! Thanks for helping the community.");
-      onClose();
-      // Rewards: score this update in the background (never blocks or undoes the saved price)
-      void (async () => {
-        const position = await (positionRef.current ?? Promise.resolve(null));
-        const result = await recordPriceReport(supabase, station.id, position);
-        if (result) onSaved(station.id, {}, describeReport(result));
-      })();
+    try {
+      const position = await (positionRef.current ?? getPosition());
+      try {
+        const r = await submitPrice(supabase, {
+          stationId: station.id, price: priceNum, queue: suggestedQueue, position,
+          station: { name: station.name, address: station.address, lat: station.lat, lng: station.lng },
+        });
+        // Held prices are NOT shown until reviewed, so only patch the map when it is live
+        const patch = r.status === 'live'
+          ? { price_pms: r.price, queue_status: r.queue_status, last_updated: r.last_updated, updated_by_role: r.updated_by_role, verified: r.verified, lat: station.lat, lng: station.lng }
+          : {};
+        onSaved(station.id, patch, describeSubmission(r));
+        onClose();
+      } catch (e) {
+        if (e instanceof SubmitPriceError && e.code === 'not_deployed') return await legacySave(priceNum, position);
+        throw e;
+      }
+    } catch (e) {
+      if (e instanceof SubmitPriceError) {
+        // A blocked location permission is the most common reason for 'no_location'
+        const message = e.code === 'no_location'
+          ? 'We need your location to accept a price update. Allow location for qozob.com in your browser settings, then try again.'
+          : e.message;
+        setProblem({ code: e.code, message });
+      } else {
+        setProblem({ code: 'unknown', message: 'Could not save the price. Check your connection and try again.' });
+      }
+    } finally {
+      setIsSubmittingPrice(false);
     }
   };
 
@@ -316,7 +349,7 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
               inputMode="decimal"
               step="0.01" 
               value={suggestedPrice} 
-              onChange={(e) => setSuggestedPrice(e.target.value)} 
+              onChange={(e) => { setSuggestedPrice(e.target.value); setProblem(null); }} 
               className={cx(ui.input, 'h-14 text-2xl font-semibold tabular')} 
               placeholder="e.g. 950" 
             />
@@ -330,20 +363,31 @@ function PriceUpdateModal({ station, onClose, onSaved }: { station: Station, onC
               onChange={(e) => setSuggestedQueue(e.target.value)} 
               className={ui.select}
             >
-              <option value="No Queue">No queue</option>
-              <option value="Moderate">Moderate</option>
-              <option value="Heavy">Heavy queue</option>
-              <option value="No Fuel">No fuel</option>
+              {QUEUE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
+
+          {problem && (
+            <div role="alert" className="rounded-xl border border-warning-line bg-warning-soft px-3.5 py-3 text-sm text-on-warning-soft animate-in fade-in slide-in-from-top-1 duration-200">
+              <p className="flex gap-2"><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> <span>{problem.message}</span></p>
+              {problem.code === 'too_far' && onClaim && (
+                <button type="button" onClick={() => { onClose(); onClaim(); }} className={cx(ui.btn, ui.btnSm, ui.btnSecondary, 'mt-3 w-full')}>
+                  <ShieldCheck className="w-4 h-4" aria-hidden /> I run this station: claim it
+                </button>
+              )}
+            </div>
+          )}
 
           <button 
             onClick={handleSuggestPrice} 
             disabled={!suggestedPrice || isSubmittingPrice} 
             className={cx(ui.btn, ui.btnLg, ui.btnPrimary, 'w-full mt-2')}
           >
-            {isSubmittingPrice ? "Saving…" : "Submit price"}
+            {isSubmittingPrice ? "Checking your location…" : "Submit price"}
           </button>
+          <p className={cx(ui.hint, 'text-center')}>
+            To keep prices honest, updates are accepted when you are at the station. Unusual prices are checked by our team before they show.
+          </p>
         </div>
       </div>
     </div>
@@ -643,11 +687,26 @@ function QozobLanding() {
   const [directionsReady, setDirectionsReady] = useState<Station | null>(null);
   const guestViewsRef = useRef(0);
   const goHandledRef = useRef(false);
+  // Stations this member has saved (bookmarks), synced to their account
+  const [savedIds, setSavedIds] = useState<Set<string>>(() => new Set());
 
   const map = useMap('main-map');
   const menuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Station details: Google's pop-up on roomy screens; a bottom sheet on phones / short screens, where a
+  // pop-up inside the small map would have to scroll. The sheet only shows while the map is on screen.
+  const showMapPopup = useMediaQuery('(min-width: 640px) and (min-height: 600px)');
+  const mapBoxRef = useRef<HTMLDivElement>(null);
+  const [mapInView, setMapInView] = useState(true);
+  useEffect(() => {
+    const el = mapBoxRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([entry]) => setMapInView(entry.isIntersecting), { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   // Fetch bookkeeping (refs, so they never trigger re-renders)
   const fetchedCentersRef = useRef<{ lat: number; lng: number }[]>([]); // areas already loaded
@@ -870,7 +929,8 @@ function QozobLanding() {
     const distance = userLoc ? getDistanceFromLatLonInKm(userLoc.lat, userLoc.lng, statLat, statLng) : null;
 
     let computedClaimStatus = "None";
-    if (dbData?.verified || dbData?.manager_id) {
+    // "Claimed" = has an approved owner. (verified only means the price came from an owner/Qozob rep.)
+    if (dbData?.manager_id || dbData?.claim_status === 'Claimed') {
       computedClaimStatus = "Claimed";
     } else if (claimStatus) {
       computedClaimStatus = claimStatus;
@@ -917,14 +977,15 @@ function QozobLanding() {
     setTimeout(() => setShowNudge(true), 1200);
   }, [user, authReady]);
 
-  // Pan Map to Station when selected (depends on coordinates only, so live price updates don't re-pan)
+  // Pan Map to Station when selected (depends on coordinates only, so live price updates don't re-pan).
+  // With the pop-up, Google's own auto-pan moves the map just enough to show the whole card.
   const selectedLat = selectedStation?.lat;
   const selectedLng = selectedStation?.lng;
   useEffect(() => {
-    if (map && selectedLat && selectedLng) {
+    if (map && selectedLat && selectedLng && !showMapPopup) {
       map.panTo({ lat: selectedLat, lng: selectedLng });
     }
-  }, [map, selectedLat, selectedLng]);
+  }, [map, selectedLat, selectedLng, showMapPopup]);
 
   // Auto-Select from URL parameters (runs once, as soon as the station is loaded)
   useEffect(() => {
@@ -1055,21 +1116,55 @@ function QozobLanding() {
     }
   };
 
-  // Dynamic Claim Logic Handler
+  // Dynamic Claim Logic Handler. Any signed-in person may claim: every claim (with CAC document) is
+  // reviewed, and approving it is what grants Manager access.
   const handleDynamicClaimAction = () => {
     if (!selectedStation) return;
 
     if (!user) {
       return openJoin('claim');
     }
-
-    if (userRole !== 'Manager' && userRole !== 'Admin' && !requestedManager) {
-      alert("Only Station Owners/Managers can claim stations. Please request Manager access in Settings.");
-      return router.push('/user-dashboard?tab=settings');
+    if (['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status)) {
+      return showToast(selectedStation.claim_status === 'Pending Review'
+        ? 'A claim for this station is already being reviewed.'
+        : 'This station already has a verified owner. Contact support@qozob.com if that is wrong.', 'error');
     }
 
     setShowClaimForm(true);
   };
+
+  // Saved stations: load the member's bookmarks (ids only; the dashboard shows the details)
+  const userId: string | null = user?.id ?? null;
+  useEffect(() => {
+    if (!userId) { setSavedIds(new Set()); return; }
+    let cancelled = false;
+    listSavedStations(supabase).then(({ rows }) => {
+      if (!cancelled) setSavedIds(new Set(rows.map(r => r.station_id)));
+    });
+    return () => { cancelled = true; };
+  }, [userId, supabase]);
+
+  const toggleSaved = useCallback(async (station: Station) => {
+    const wasSaved = savedIds.has(station.id);
+    // Optimistic: flip now, undo if the database says no
+    setSavedIds(prev => {
+      const next = new Set(prev);
+      if (wasSaved) next.delete(station.id); else next.add(station.id);
+      return next;
+    });
+    const err = wasSaved
+      ? await unsaveStation(supabase, station.id)
+      : await saveStation(supabase, { id: station.id, name: station.name, address: station.address, lat: station.lat, lng: station.lng });
+    if (err) {
+      setSavedIds(prev => {
+        const next = new Set(prev);
+        if (wasSaved) next.add(station.id); else next.delete(station.id);
+        return next;
+      });
+      return showToast(err, 'error');
+    }
+    showToast(wasSaved ? 'Removed from your saved stations.' : 'Saved. Find it any time in your dashboard → Saved stations.');
+  }, [savedIds, supabase, showToast]);
 
   // Back from sign-up / sign-in with ?select=ID&go=ACTION: pick up exactly where they left off
   useEffect(() => {
@@ -1082,12 +1177,19 @@ function QozobLanding() {
       setDirectionsReady(selectedStation); // opening Google Maps needs a tap (pop-up blockers)
     } else if (goAction === 'price') {
       setShowPriceForm(true);
+    } else if (goAction === 'save') {
+      saveStation(supabase, { id: selectedStation.id, name: selectedStation.name, address: selectedStation.address, lat: selectedStation.lat, lng: selectedStation.lng })
+        .then(err => {
+          if (err) return showToast(err, 'error');
+          setSavedIds(prev => new Set(prev).add(selectedStation.id));
+          showToast('Saved. Find it any time in your dashboard → Saved stations.');
+        });
     } else if (goAction === 'rate' && userRole === 'User' && selectedStation.price_pms) {
       setShowRateForm(true);
-    } else if (goAction === 'claim' && selectedStation.claim_status === 'None' && (userRole === 'Manager' || userRole === 'Admin' || requestedManager)) {
+    } else if (goAction === 'claim' && !['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status)) {
       setShowClaimForm(true);
     }
-  }, [goAction, authReady, user, selectedStation, autoSelectId, userRole, requestedManager]);
+  }, [goAction, authReady, user, selectedStation, autoSelectId, userRole, supabase, showToast]);
 
   // Patch local state after a successful write (replaces full page reloads)
   const handleStationSaved = useCallback((stationId: string, patch: Record<string, any>, message: string) => {
@@ -1246,263 +1348,11 @@ function QozobLanding() {
   // Local adverts: the map position decides the LGA; the profile state is the fallback
   const viewerState = normaliseState(user?.user_metadata?.state);
 
-  return (
-    <div className="min-h-screen bg-canvas text-fg flex flex-col relative pb-20 lg:pb-0">
-      
-      {/* ======================= RESPONSIVE HEADER ======================= */}
-      <header className="bg-brand-grad text-on-brand sticky top-0 z-50 shadow-[0_1px_0_var(--brand-line)]">
-
-        {/* 1. TOP ROW: Wordmark, desktop ad space, theme + account */}
-        <div className="max-w-7xl mx-auto px-4 py-2 sm:py-3 flex items-center justify-between gap-4 sm:gap-6">
-          
-          <button
-            type="button"
-            className="flex-shrink-0 rounded-md"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            aria-label="Qozob — back to top"
-          >
-            <Wordmark tone="brand" size="lg" />
-          </button>
-          
-          {/* DESKTOP AD SPACE (Hidden on Mobile) */}
-          <div className="hidden lg:flex flex-1 justify-center mx-4 min-w-0">
-            <AdCarousel placement="desktop_header" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
-          </div>
-
-          {/* THEME + USER PROFILE & MENU */}
-          <div className="flex-shrink-0 flex items-center gap-2">
-            <Link
-              href="/services"
-              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-xs font-bold text-on-brand hover:bg-on-brand/10 border border-on-brand/20 transition-colors whitespace-nowrap"
-              title="Vehicle paper renewal, NIID insurance & 4G GPS tracking"
-            >
-              <FileText className="w-3.5 h-3.5 text-brand-accent" />
-              <span>Services</span>
-            </Link>
-
-            <ThemeToggle tone="brand" />
-            {user ? (
-              <div className="relative" ref={menuRef}>
-                <button 
-                  onClick={() => setIsMenuOpen(!isMenuOpen)} 
-                  aria-label="Account menu"
-                  aria-expanded={isMenuOpen}
-                  className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-full border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
-                >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
-                    {(user.email || '?').charAt(0)}
-                  </span>
-                  <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
-                  <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
-                </button>
-
-                {isMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-surface text-fg rounded-xl shadow-lg border border-line overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
-                    <div className="p-4 border-b border-line">
-                      <p className={ui.eyebrow}>Signed in as</p>
-                      <p className="text-sm font-medium text-fg truncate mt-1">{user.email}</p>
-                      <p className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-md bg-surface-2 border border-line px-2 py-0.5 text-xs font-medium text-fg-muted">
-                        {userRole}{requestedManager && <span className="text-warning">· Manager access pending</span>}
-                      </p>
-                    </div>
-                    <div className="p-2 flex flex-col gap-0.5">
-                      
-                      {userRole === 'Admin' && (
-                        <button onClick={() => router.push('/admin')} className={menuItem}>
-                          <ShieldCheck className="w-4 h-4 text-accent" aria-hidden /> Admin dashboard
-                        </button>
-                      )}
-
-                      {(userRole === 'Manager' || requestedManager) ? (
-                        <button onClick={() => router.push('/dashboard')} className={menuItem}>
-                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> Station dashboard
-                        </button>
-                      ) : (
-                        <button onClick={() => router.push('/user-dashboard')} className={menuItem}>
-                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> My dashboard
-                        </button>
-                      )}
-
-                      {userRole !== 'Manager' && (
-                        <>
-                          <button onClick={() => router.push('/user-dashboard?tab=contributions')} className={menuItem}>
-                            <UserIcon className="w-4 h-4 text-fg-muted" aria-hidden /> My contributions
-                          </button>
-                          <button onClick={() => router.push('/user-dashboard?tab=rewards')} className={menuItem}>
-                            <Trophy className="w-4 h-4 text-warning" aria-hidden /> My rewards
-                          </button>
-                          <button onClick={() => router.push('/user-dashboard?tab=garage')} className={menuItem}>
-                            <Car className="w-4 h-4 text-accent" aria-hidden /> My garage (papers)
-                          </button>
-                          <button onClick={() => router.push('/user-dashboard?tab=fuellog')} className={menuItem}>
-                            <Fuel className="w-4 h-4 text-fg-muted" aria-hidden /> Fuel logbook
-                          </button>
-                          <button onClick={() => router.push('/services')} className={menuItem}>
-                            <FileText className="w-4 h-4 text-fg-muted" aria-hidden /> Vehicle services
-                          </button>
-                          <button onClick={() => router.push('/user-dashboard?tab=settings')} className={menuItem}>
-                            <Settings className="w-4 h-4 text-fg-muted" aria-hidden /> Account settings
-                          </button>
-                        </>
-                      )}
-
-                      <div className="h-px bg-line my-1"></div>
-                      <button onClick={handleSignOut} className={cx(menuItem, 'text-danger hover:bg-danger-soft')}>
-                        <LogOut className="w-4 h-4" aria-hidden /> Sign out
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 sm:gap-2">
-                <button
-                  onClick={() => router.push('/login')}
-                  className="h-9 px-2 sm:px-3 rounded-full text-sm font-semibold text-on-brand hover:bg-on-brand/10 transition-colors whitespace-nowrap"
-                >
-                  Sign in
-                </button>
-                <button 
-                  onClick={() => router.push('/signup')} 
-                  className={cx(ui.btn, 'h-9 px-3 sm:px-4', ui.btnAccent, 'whitespace-nowrap')}
-                >
-                  Join free
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 2. BOTTOM ROW: Location search */}
-        <div className="bg-brand-2 border-t border-brand-line/60 px-4 py-2 sm:py-3">
-          <div className="w-full max-w-2xl mx-auto relative">
-             <input 
-                type="text" 
-                id="smart-search-input"
-                ref={searchInputRef}
-                aria-label="Search location"
-                enterKeyHint="search"
-                placeholder="Where to? Search a street or landmark" 
-                onKeyDown={(e) => { 
-                  if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
-                }}
-                className="w-full h-10 sm:h-11 bg-white/10 border border-white/20 rounded-full pl-10 pr-24 text-sm font-medium text-white caret-[#34D399] placeholder:text-on-brand-muted outline-none focus:bg-white/15 focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
-              />
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-brand-muted pointer-events-none" aria-hidden />
-              <button 
-                onClick={() => handleLocationSearch(searchInputRef.current?.value || "")} 
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 sm:h-8 px-4 rounded-full bg-accent-solid text-on-accent text-sm font-semibold hover:bg-accent-hover transition-colors"
-              >
-                Search
-              </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto w-full px-4 pt-3 pb-4 sm:p-4 flex flex-col lg:grid lg:grid-cols-3 gap-3 sm:gap-6 sm:mt-2 flex-grow">
-        
-        {/* ======================= HERO CARDS SECTION ======================= */}
-        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-2 lg:gap-4 h-fit lg:h-full z-10">
-          {heroStation && renderHeroCompact(heroStation, 'best')}
-          {nearestStation && renderHeroCompact(nearestStation, 'nearest')}
-          {heroStation && renderHeroCard(heroStation, 'best')}
-          {nearestStation && renderHeroCard(nearestStation, 'nearest')}
-
-          {/* REWARDS PROMO (desktop only, so the mobile landing view keeps the map in sight) */}
-          <a
-            href="/rewards"
-            className="hidden lg:flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-300 to-amber-400 text-slate-900 p-4 shadow-sm hover:shadow-md transition-shadow"
-          >
-            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 text-amber-300" aria-hidden>
-              <Trophy className="w-5 h-5" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-extrabold leading-tight">Win ₦10,000 every month</span>
-              <span className="block text-xs font-medium text-slate-800 mt-0.5">Be the top price updater in your LGA. See the leaderboard →</span>
-            </span>
-          </a>
-        </div>
-
-        {/* ======================= MAIN MAP CONTAINER ======================= */}
-        <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
-          <div className="bg-surface-3 rounded-2xl h-[clamp(200px,calc(100svh_-_27rem),520px)] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden border border-line shadow-[0_1px_2px_rgb(var(--shadow-color)/0.06)] group">
-            
-            {isFetchingDynamic && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand text-on-brand text-xs font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
-                <span className="w-2 h-2 bg-brand-accent rounded-full animate-pulse" aria-hidden></span> Loading stations…
-              </div>
-            )}
-
-            {/* LIVE INDICATOR: shown while the realtime price channel is connected */}
-            {isLive && (
-              <div className="theme-light absolute top-4 left-4 z-40 bg-white/95 backdrop-blur text-fg text-xs font-semibold px-2.5 py-1 rounded-full shadow-md border border-line flex items-center gap-1.5 pointer-events-none" title="Prices update live as the community reports them">
-                <span className="relative flex h-2 w-2" aria-hidden>
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping"></span>
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success"></span>
-                </span>
-                Live
-              </div>
-            )}
-
-            {/* PRICE SOURCE LEGEND (matches the pill colours on the map) */}
-            <div className="theme-light absolute bottom-6 right-14 sm:right-16 z-40 hidden sm:flex items-center gap-3 bg-white/95 backdrop-blur border border-line rounded-lg shadow-md px-3 py-2 pointer-events-none">
-              {(['community', 'owner', 'rep'] as PriceSource[]).map((s) => (
-                <span key={s} className="inline-flex items-center gap-1.5 text-xs font-medium text-fg">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PILL_COLORS[s] }} aria-hidden />
-                  {PRICE_SOURCE_LABEL[s]}
-                </span>
-              ))}
-            </div>
-
-            {/* LOCATE ME BUTTON */}
-            <button
-              onClick={handleLocateMe}
-              className="theme-light absolute bottom-6 left-4 z-40 bg-white hover:bg-surface-2 text-fg p-2.5 rounded-full shadow-lg border border-line transition-colors"
-              aria-label="Center map on my location"
-              title="My location"
-            >
-              <LocateFixed className="w-5 h-5" />
-            </button>
-
-            {/* REWARDS CHIP + LGA BOUNDARIES TOGGLE (top-right, inside the map) */}
-            <LgaOverlay />
-
-            <GoogleMap 
-              id="main-map" 
-              defaultZoom={13} 
-              defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
-              mapId="QOZOB_MAIN_MAP" 
-              disableDefaultUI={false} 
-              zoomControl={true} 
-              mapTypeControl={false} 
-              streetViewControl={false} 
-              fullscreenControl={false} 
-              gestureHandling={'greedy'} 
-              onClick={() => setSelectedStation(null)} 
-              onIdle={handleMapIdle}
-            >
-              <UserLocationMarker position={userLoc} />
-              
-              {mergedStations.map((station) => (
-                <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
-                  <StationMarker 
-                    name={station.name} 
-                    hasPrice={station.price_pms !== null} 
-                    customLogoUrl={station.custom_logo_url} 
-                    price={station.price_pms} 
-                    role={station.updated_by_role} 
-                    lastUpdated={station.last_updated} 
-                  />
-                </AdvancedMarker>
-              ))}
-
-              {/* ======================= MAP INFO WINDOW ======================= */}
-              {selectedStation && (
-                <InfoWindow position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
-                  {/* Info windows keep Google's white frame, so the content is pinned to the light palette.
-                      Layout: the price and the "Update price" button sit right under the name, so they're
-                      visible without scrolling even on small phones; secondary actions follow as compact chips. */}
-                  <div className="theme-light p-3 w-[min(300px,calc(100vw-72px))] min-w-[240px] text-fg font-sans">
+  // Station details card, shared by the map pop-up (roomy screens) and the bottom sheet (phones).
+  // The price and the "Update price" button sit right under the name, so they are seen at first glance;
+  // secondary actions follow as compact chips. Everything fits without scrolling.
+  const stationCardBody = selectedStation ? (
+                  <>
                     {/* 1. Name, rating · distance · address, share/close */}
                     <div className="flex items-start gap-2">
                       <div className="min-w-0 flex-1">
@@ -1524,6 +1374,20 @@ function QozobLanding() {
                         </p>
                       </div>
                       <div className="flex items-center shrink-0 -mr-1 -mt-1">
+                        {(() => {
+                          const isSaved = savedIds.has(selectedStation.id);
+                          return (
+                            <button
+                              onClick={() => handleProtectedAction('save', () => toggleSaved(selectedStation))}
+                              className={cx('rounded-md p-1.5 transition-colors hover:bg-surface-2', isSaved ? 'text-accent' : 'text-fg-muted hover:text-fg')}
+                              aria-label={isSaved ? 'Remove from saved stations' : 'Save station'}
+                              aria-pressed={isSaved}
+                              title={isSaved ? 'Saved — tap to remove' : 'Save this station'}
+                            >
+                              {isSaved ? <BookmarkCheck className="w-4 h-4 animate-in zoom-in-75 duration-200" /> : <Bookmark className="w-4 h-4" />}
+                            </button>
+                          );
+                        })()}
                         <button 
                           onClick={() => handleShareStation(selectedStation)} 
                           className="text-fg-muted hover:text-fg hover:bg-surface-2 rounded-md p-1.5 transition-colors"
@@ -1601,7 +1465,7 @@ function QozobLanding() {
                     </div>
 
                     {/* 4. DYNAMIC CLAIM LOGIC (compact) */}
-                    {selectedStation.claim_status === 'None' && (
+                    {!['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status) && (
                       <button 
                         onClick={handleDynamicClaimAction} 
                         className="mt-2 w-full inline-flex items-center justify-center gap-1.5 text-xs font-medium text-fg-muted hover:text-fg py-1 rounded-md hover:bg-surface-2 transition-colors"
@@ -1611,17 +1475,277 @@ function QozobLanding() {
                     )}
                     {selectedStation.claim_status === 'Pending Review' && (
                       <button 
-                        onClick={() => alert("This station is currently under review by our team.")} 
+                        onClick={() => showToast('This claim is being reviewed by our team. We will email you.')} 
                         className="mt-2 w-full h-8 rounded-lg bg-accent-soft text-on-accent-soft text-xs font-medium flex items-center justify-center gap-1.5 border border-accent-line"
                       >
                         <Clock className="w-3.5 h-3.5" aria-hidden /> Claim under review
                       </button>
                     )}
-                    {selectedStation.claim_status === 'Claimed' && (
+                    {(selectedStation.claim_status === 'Claimed' || selectedStation.claim_status === 'Approved') && (
                       <div className="mt-2 w-full h-8 rounded-lg bg-success-soft text-on-success-soft text-xs font-medium flex items-center justify-center gap-1.5 border border-success-line">
                         <ShieldCheck className="w-3.5 h-3.5" aria-hidden /> Verified owner
                       </div>
                     )}
+                  </>
+  ) : null;
+
+  return (
+    <div className="min-h-screen bg-canvas text-fg flex flex-col relative pb-20 lg:pb-0">
+      
+      {/* ======================= RESPONSIVE HEADER ======================= */}
+      <header className="bg-brand-grad text-on-brand sticky top-0 z-50 shadow-[0_1px_0_var(--brand-line)]">
+
+        {/* 1. TOP ROW: Wordmark, desktop ad space, theme + account */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-3 flex items-center justify-between gap-2 sm:gap-6">
+          
+          <button
+            type="button"
+            className="flex-shrink-0 rounded-md"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            aria-label="Qozob — back to top"
+          >
+            <Wordmark tone="brand" size="lg" className="max-sm:h-6" />
+          </button>
+          
+          {/* DESKTOP AD SPACE (Hidden on Mobile) */}
+          <div className="hidden lg:flex flex-1 justify-center mx-4 min-w-0">
+            <AdCarousel placement="desktop_header" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
+          </div>
+
+          {/* THEME + USER PROFILE & MENU */}
+          <div className="min-w-0 flex items-center justify-end gap-1.5 sm:gap-2">
+            <Link
+              href="/services"
+              className="max-[359px]:hidden inline-flex items-center justify-center gap-1.5 h-9 w-9 sm:w-auto sm:px-3 rounded-full text-xs font-bold text-on-brand hover:bg-on-brand/10 border border-on-brand/20 transition-colors whitespace-nowrap flex-shrink-0"
+              title="Vehicle paper renewal, NIID insurance & 4G GPS tracking"
+              aria-label="Vehicle services"
+            >
+              <FileText className="w-3.5 h-3.5 text-brand-accent" aria-hidden />
+              <span className="hidden sm:inline">Services</span>
+            </Link>
+
+            <ThemeToggle tone="brand" />
+            {user ? (
+              <div className="relative" ref={menuRef}>
+                <button 
+                  onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                  aria-label="Account menu"
+                  aria-expanded={isMenuOpen}
+                  className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-full border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
+                    {(user.email || '?').charAt(0)}
+                  </span>
+                  <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
+                  <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
+                </button>
+
+                {isMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 bg-surface text-fg rounded-xl shadow-lg border border-line overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="p-4 border-b border-line">
+                      <p className={ui.eyebrow}>Signed in as</p>
+                      <p className="text-sm font-medium text-fg truncate mt-1">{user.email}</p>
+                      <p className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-md bg-surface-2 border border-line px-2 py-0.5 text-xs font-medium text-fg-muted">
+                        {userRole}{requestedManager && <span className="text-warning">· Manager access pending</span>}
+                      </p>
+                    </div>
+                    <div className="p-2 flex flex-col gap-0.5">
+                      
+                      {userRole === 'Admin' && (
+                        <button onClick={() => router.push('/admin')} className={menuItem}>
+                          <ShieldCheck className="w-4 h-4 text-accent" aria-hidden /> Admin dashboard
+                        </button>
+                      )}
+
+                      {(userRole === 'Manager' || requestedManager) ? (
+                        <button onClick={() => router.push('/dashboard')} className={menuItem}>
+                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> Station dashboard
+                        </button>
+                      ) : (
+                        <button onClick={() => router.push('/user-dashboard')} className={menuItem}>
+                          <LayoutDashboard className="w-4 h-4 text-fg-muted" aria-hidden /> My dashboard
+                        </button>
+                      )}
+
+                      {userRole !== 'Manager' && (
+                        <>
+                          <button onClick={() => router.push('/user-dashboard?tab=contributions')} className={menuItem}>
+                            <UserIcon className="w-4 h-4 text-fg-muted" aria-hidden /> My contributions
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=rewards')} className={menuItem}>
+                            <Trophy className="w-4 h-4 text-warning" aria-hidden /> My rewards
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=garage')} className={menuItem}>
+                            <Car className="w-4 h-4 text-accent" aria-hidden /> My garage (papers)
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=fuellog')} className={menuItem}>
+                            <Fuel className="w-4 h-4 text-fg-muted" aria-hidden /> Fuel logbook
+                          </button>
+                          <button onClick={() => router.push('/services')} className={menuItem}>
+                            <FileText className="w-4 h-4 text-fg-muted" aria-hidden /> Vehicle services
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=settings')} className={menuItem}>
+                            <Settings className="w-4 h-4 text-fg-muted" aria-hidden /> Account settings
+                          </button>
+                        </>
+                      )}
+
+                      <div className="h-px bg-line my-1"></div>
+                      <button onClick={handleSignOut} className={cx(menuItem, 'text-danger hover:bg-danger-soft')}>
+                        <LogOut className="w-4 h-4" aria-hidden /> Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                <button
+                  onClick={() => router.push('/login')}
+                  className="h-9 px-2 sm:px-3 rounded-full text-sm font-semibold text-on-brand hover:bg-on-brand/10 transition-colors whitespace-nowrap"
+                >
+                  Sign in
+                </button>
+                <button 
+                  onClick={() => router.push('/signup')} 
+                  className={cx(ui.btn, 'h-9 px-3 sm:px-4', ui.btnAccent, 'whitespace-nowrap flex-shrink-0')}
+                >
+                  Join free
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. BOTTOM ROW: Location search */}
+        <div className="bg-brand-2 border-t border-brand-line/60 px-4 py-2 sm:py-3">
+          <div className="w-full max-w-2xl mx-auto relative">
+             <input 
+                type="text" 
+                id="smart-search-input"
+                ref={searchInputRef}
+                aria-label="Search location"
+                enterKeyHint="search"
+                placeholder="Where to? Search a street or landmark" 
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter') handleLocationSearch((e.target as HTMLInputElement).value) 
+                }}
+                className="w-full h-10 sm:h-11 bg-white/10 border border-white/20 rounded-full pl-10 pr-24 text-sm font-medium text-white caret-[#34D399] placeholder:text-on-brand-muted outline-none focus:bg-white/15 focus:border-brand-accent focus:ring-4 focus:ring-brand-accent/20 transition-colors"
+              />
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-on-brand-muted pointer-events-none" aria-hidden />
+              <button 
+                onClick={() => handleLocationSearch(searchInputRef.current?.value || "")} 
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 sm:h-8 px-4 rounded-full bg-accent-solid text-on-accent text-sm font-semibold hover:bg-accent-hover transition-colors"
+              >
+                Search
+              </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto w-full px-4 pt-3 pb-4 sm:p-4 flex flex-col lg:grid lg:grid-cols-3 gap-3 sm:gap-6 sm:mt-2 flex-grow">
+        
+        {/* ======================= HERO CARDS SECTION ======================= */}
+        <div className="order-1 lg:order-2 lg:col-start-3 flex flex-col gap-2 lg:gap-4 h-fit lg:h-full z-10">
+          {heroStation && renderHeroCompact(heroStation, 'best')}
+          {nearestStation && renderHeroCompact(nearestStation, 'nearest')}
+          {heroStation && renderHeroCard(heroStation, 'best')}
+          {nearestStation && renderHeroCard(nearestStation, 'nearest')}
+
+          {/* REWARDS PROMO (desktop only, so the mobile landing view keeps the map in sight) */}
+          <a
+            href="/rewards"
+            className="hidden lg:flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-300 to-amber-400 text-slate-900 p-4 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 text-amber-300" aria-hidden>
+              <Trophy className="w-5 h-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-extrabold leading-tight">Win ₦10,000 every month</span>
+              <span className="block text-xs font-medium text-slate-800 mt-0.5">Be the top price updater in your LGA. See the leaderboard →</span>
+            </span>
+          </a>
+        </div>
+
+        {/* ======================= MAIN MAP CONTAINER ======================= */}
+        <div className="order-2 lg:order-1 lg:col-span-2 lg:col-start-1 h-full">
+          <div ref={mapBoxRef} className="bg-surface-3 rounded-2xl h-[clamp(200px,calc(100svh_-_27rem),520px)] sm:h-[50vh] lg:h-[65vh] relative overflow-hidden border border-line shadow-[0_1px_2px_rgb(var(--shadow-color)/0.06)] group">
+            
+            {isFetchingDynamic && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand text-on-brand text-xs font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
+                <span className="w-2 h-2 bg-brand-accent rounded-full animate-pulse" aria-hidden></span> Loading stations…
+              </div>
+            )}
+
+            {/* LIVE INDICATOR: shown while the realtime price channel is connected */}
+            {isLive && (
+              <div className="theme-light absolute top-4 left-4 z-40 bg-white/95 backdrop-blur text-fg text-xs font-semibold px-2.5 py-1 rounded-full shadow-md border border-line flex items-center gap-1.5 pointer-events-none" title="Prices update live as the community reports them">
+                <span className="relative flex h-2 w-2" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping"></span>
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-success"></span>
+                </span>
+                Live
+              </div>
+            )}
+
+            {/* PRICE SOURCE LEGEND (matches the pill colours on the map) */}
+            <div className="theme-light absolute bottom-6 right-14 sm:right-16 z-40 hidden sm:flex items-center gap-3 bg-white/95 backdrop-blur border border-line rounded-lg shadow-md px-3 py-2 pointer-events-none">
+              {(['community', 'owner', 'rep'] as PriceSource[]).map((s) => (
+                <span key={s} className="inline-flex items-center gap-1.5 text-xs font-medium text-fg">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: PILL_COLORS[s] }} aria-hidden />
+                  {PRICE_SOURCE_LABEL[s]}
+                </span>
+              ))}
+            </div>
+
+            {/* LOCATE ME BUTTON */}
+            <button
+              onClick={handleLocateMe}
+              className="theme-light absolute bottom-6 left-4 z-40 bg-white hover:bg-surface-2 text-fg p-2.5 rounded-full shadow-lg border border-line transition-colors"
+              aria-label="Center map on my location"
+              title="My location"
+            >
+              <LocateFixed className="w-5 h-5" />
+            </button>
+
+            {/* REWARDS CHIP + LGA BOUNDARIES TOGGLE (top-right, inside the map) */}
+            <LgaOverlay />
+
+            <GoogleMap 
+              id="main-map" 
+              defaultZoom={13} 
+              defaultCenter={{ lat: 6.5244, lng: 3.3792 }} 
+              mapId="QOZOB_MAIN_MAP" 
+              disableDefaultUI={false} 
+              zoomControl={true} 
+              mapTypeControl={false} 
+              streetViewControl={false} 
+              fullscreenControl={false} 
+              gestureHandling={'greedy'} 
+              onClick={() => setSelectedStation(null)} 
+              onIdle={handleMapIdle}
+            >
+              <UserLocationMarker position={userLoc} />
+              
+              {mergedStations.map((station) => (
+                <AdvancedMarker key={station.id} position={{ lat: station.lat, lng: station.lng }} onClick={() => setSelectedStation(station)}>
+                  <StationMarker 
+                    name={station.name} 
+                    hasPrice={station.price_pms !== null} 
+                    customLogoUrl={station.custom_logo_url} 
+                    price={station.price_pms} 
+                    role={station.updated_by_role} 
+                    lastUpdated={station.last_updated} 
+                  />
+                </AdvancedMarker>
+              ))}
+
+              {/* ======================= MAP INFO WINDOW ======================= */}
+              {selectedStation && showMapPopup && (
+                <InfoWindow key={selectedStation.id} position={{ lat: selectedStation.lat, lng: selectedStation.lng }} onCloseClick={() => setSelectedStation(null)} headerDisabled={true}>
+                  {/* Info windows keep Google's white frame, so the content is pinned to the light palette. */}
+                  <div className="theme-light p-3 w-[min(300px,calc(100vw-72px))] min-w-[240px] text-fg font-sans">
+                    {stationCardBody}
                   </div>
                 </InfoWindow>
               )}
@@ -1749,6 +1873,19 @@ function QozobLanding() {
         </div>
       </main>
 
+      {/* ======================= STATION SHEET (phones / short screens) ======================= */}
+      {selectedStation && !showMapPopup && mapInView && (
+        <div className="fixed inset-x-0 bottom-[78px] lg:bottom-4 z-[90] px-2 pointer-events-none">
+          <div
+            role="dialog"
+            aria-label={`${selectedStation.name} details`}
+            className="pointer-events-auto mx-auto max-w-md bg-surface text-fg border border-line rounded-2xl shadow-[0_-6px_28px_-8px_rgb(var(--shadow-color)/0.35)] p-3 animate-in fade-in slide-in-from-bottom-3 duration-200"
+          >
+            {stationCardBody}
+          </div>
+        </div>
+      )}
+
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
       <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand-grad border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
         <div className="px-2 pt-1">
@@ -1776,7 +1913,7 @@ function QozobLanding() {
         </div>
       </footer>
 
-      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} />}
+      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} onClaim={['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status) ? undefined : handleDynamicClaimAction} />}
       {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} onSaved={handleClaimSaved} />}
       {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} onSaved={handleStationSaved} />}
 

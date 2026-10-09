@@ -11,7 +11,7 @@ const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max
 
 export async function POST(req: Request) {
   try {
-    const admin = await requireAdmin();
+    const admin = await requireAdmin('mailing');
     if (!admin?.email) return json({ error: 'Admins only.' }, 403);
     const b = await readJson(req);
     const subject = str(b.subject, 150).trim();

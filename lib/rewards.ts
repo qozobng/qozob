@@ -53,7 +53,8 @@ export const REASON_TEXT: Record<string, string> = {
   fresh_bonus: 'Bonus: first update at this station in 24 hours',
   not_eligible: 'Qozob staff, reps and station owners/managers do not earn coins',
   programme_paused: 'The rewards programme is paused right now',
-  price_out_of_range: 'That price is outside the believable range',
+  price_out_of_range: 'That price is outside the usual range, so a reviewer will check it',
+  reporter_suspended: 'Your rewards account is suspended, so your updates are reviewed first',
   no_location: 'Turn on location so we can confirm you are at the station',
   too_far: 'You need to be at the station (within about 1 km) to earn coins',
   weak_gps: 'Your GPS signal was too weak to confirm you are at the station',
@@ -121,7 +122,7 @@ export function getPosition(timeoutMs = 9000): Promise<GeolocationPosition | nul
   });
 }
 
-/** Records the reward report for a price the signed-in person has just saved. */
+/** Records the reward report for a price the signed-in person has just saved (pre-20261014 flow). */
 export async function recordPriceReport(
   supabase: SupabaseClient,
   stationId: string,
@@ -136,4 +137,78 @@ export async function recordPriceReport(
   if (error) return null;   // rewards not set up yet, or not signed in: the price itself is already saved
   return data as ReportResult;
 }
+
+// -------------------------------------------------------------------------
+// Price submission (20261014): the database checks distance, holds unusual
+// prices for review and decides coins, all in one step.
+// -------------------------------------------------------------------------
+
+export interface SubmitResult {
+  id?: number;
+  /** live = on the map now; held = waiting for an admin before it shows */
+  status: 'live' | 'held';
+  report_status: 'accepted' | 'held' | 'no_reward' | null;
+  coins: number;
+  reasons: string[];
+  distance_m?: number | null;
+  lga?: string | null;
+  price: number;
+  queue_status: string;
+  last_updated: string | null;
+  updated_by_role: string;
+  verified: boolean;
+}
+
+export type SubmitErrorCode =
+  | 'auth' | 'too_far' | 'no_location' | 'weak_gps' | 'too_soon' | 'invalid_price'
+  | 'station_location_unknown' | 'station_not_found' | 'not_deployed' | 'unknown';
+
+export class SubmitPriceError extends Error {
+  code: SubmitErrorCode;
+  constructor(code: SubmitErrorCode, message: string) { super(message); this.code = code; }
+}
+
+export interface SubmitPriceInput {
+  stationId: string;
+  price: number;
+  queue: string;
+  position: GeolocationPosition | null;
+  station: { name: string; address: string; lat: number; lng: number };
+}
+
+export async function submitPrice(supabase: SupabaseClient, input: SubmitPriceInput): Promise<SubmitResult> {
+  const { data, error } = await supabase.rpc('submit_price', {
+    p_station_id: input.stationId,
+    p_price: input.price,
+    p_queue: input.queue,
+    p_lat: input.position?.coords.latitude ?? null,
+    p_lng: input.position?.coords.longitude ?? null,
+    p_accuracy: input.position?.coords.accuracy ?? null,
+    p_name: input.station.name,
+    p_address: input.station.address,
+    p_station_lat: input.station.lat,
+    p_station_lng: input.station.lng,
+  });
+  if (error) {
+    // PGRST202 = function not found (database update 20261014 not run yet)
+    if (error.code === 'PGRST202') throw new SubmitPriceError('not_deployed', error.message);
+    const known: SubmitErrorCode[] = ['auth', 'too_far', 'no_location', 'weak_gps', 'too_soon', 'invalid_price', 'station_location_unknown', 'station_not_found'];
+    const code = (known as string[]).includes(error.hint || '') ? (error.hint as SubmitErrorCode) : 'unknown';
+    throw new SubmitPriceError(code, error.message || 'Could not save the price. Please try again.');
+  }
+  return data as SubmitResult;
+}
+
+/** Friendly toast text for a successful submission. */
+export function describeSubmission(r: SubmitResult): string {
+  if (r.status === 'held') {
+    const coins = r.coins > 0 ? ` Your ${r.coins} coins are reserved until then.` : '';
+    return `Thanks! This price is unusual, so a reviewer will check it before it shows on the map.${coins}`;
+  }
+  if (r.report_status === null) return 'Price updated. It is live on the map now.';
+  if (r.report_status === 'accepted') return `Price is live! +${r.coins} coins${r.lga ? ` in ${r.lga}` : ''}. Thanks for keeping prices fresh.`;
+  const why = r.reasons.filter(x => x !== 'fresh_bonus').map(x => REASON_TEXT[x]).filter(Boolean)[0];
+  return `Price is live. No coins this time${why ? `: ${why.charAt(0).toLowerCase()}${why.slice(1)}` : ''}.`;
+}
+
 

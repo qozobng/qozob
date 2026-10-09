@@ -17,6 +17,7 @@ import { NIGERIAN_STATES, joinPhone } from '@/lib/nigeria';
 import { AUTO_SERVICE_CATALOG, ServiceCategory } from '@/types/services';
 import { submitServiceRequest } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
+import { SITE } from '@/lib/site';
 
 export default function ServicesPage() {
   const supabase = createClient();
@@ -122,7 +123,29 @@ export default function ServicesPage() {
       return;
     }
 
+    const code = voucherCode.trim().toUpperCase();
+    if (code && !user) {
+      setErrorMessage('Reward vouchers are linked to the winner\'s account. Please sign in to use your voucher, or clear the voucher field to continue as a guest.');
+      return;
+    }
+
     setIsSubmitting(true);
+
+    if (code) {
+      const { data: check, error: checkErr } = await supabase.rpc('check_voucher', { p_code: code });
+      // If the check function is not installed yet, let the services team verify the code manually.
+      const missingFn = checkErr && /function|schema cache/i.test(checkErr.message);
+      if (checkErr && !missingFn) {
+        setIsSubmitting(false);
+        setErrorMessage(checkErr.message);
+        return;
+      }
+      if (check && (check as { valid?: boolean }).valid === false) {
+        setIsSubmitting(false);
+        setErrorMessage((check as { message?: string }).message || 'This voucher code is not valid.');
+        return;
+      }
+    }
 
     const category: ServiceCategory = activeTab === 'tracker' ? 'gps_tracker' : 'papers_renewal';
     const serviceName = activeTab === 'tracker' 
@@ -290,25 +313,34 @@ export default function ServicesPage() {
               </div>
               {submittedRequest.voucher_code && (
                 <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                  <span>Voucher Applied:</span>
+                  <span>Voucher (applied on confirmation):</span>
                   <span>{submittedRequest.voucher_code}</span>
                 </div>
               )}
             </div>
 
             <p className="text-xs text-fg-subtle mt-4">
-              Our auto-services desk has received your details and will call / WhatsApp you within 15–30 minutes to confirm vehicle details and arrange processing.
+              Our auto-services desk has received your details and will call or WhatsApp you during working hours to confirm your vehicle details, the final price and how to pay.
             </p>
 
             <div className="mt-6 flex flex-col sm:flex-row gap-3">
-              <a
-                href={`https://wa.me/2348000000000?text=${encodeURIComponent(`Hello Qozob Concierge, I just submitted service request #${submittedRequest.id.slice(0, 8).toUpperCase()} for ${submittedRequest.service_name}.`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cx(ui.btn, ui.btnPrimary, 'flex-1 py-3 text-sm')}
-              >
-                <PhoneCall className="w-4 h-4 mr-2" /> Message on WhatsApp
-              </a>
+              {(() => {
+                const ref = submittedRequest.id.slice(0, 8).toUpperCase();
+                const msg = `Hello Qozob, I just submitted service request #${ref} for ${submittedRequest.service_name}.`;
+                const href = SITE.whatsapp
+                  ? `https://wa.me/${SITE.whatsapp}?text=${encodeURIComponent(msg)}`
+                  : `mailto:${SITE.contactEmail}?subject=${encodeURIComponent(`Service request #${ref}`)}&body=${encodeURIComponent(msg)}`;
+                return (
+                  <a
+                    href={href}
+                    target={SITE.whatsapp ? '_blank' : undefined}
+                    rel="noopener noreferrer"
+                    className={cx(ui.btn, ui.btnPrimary, 'flex-1 py-3 text-sm')}
+                  >
+                    <PhoneCall className="w-4 h-4 mr-2" /> {SITE.whatsapp ? 'Message on WhatsApp' : 'Email our team'}
+                  </a>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => {
@@ -334,7 +366,7 @@ export default function ServicesPage() {
                     Stop Losing Money to Generator & Vehicle Fuel Leakage.
                   </h2>
                   <p className="text-sm text-fg-muted leading-relaxed">
-                    Post-subsidy fuel is too expensive to manage on loose paper slips. Qozob's digital fuel logbook lets drivers and facility operators log every fill-up with receipts, tracking average cost per litre, mileage economy, and fuel consumption anomalies.
+                    Post-subsidy fuel is too expensive to manage on loose paper slips. Qozob&apos;s digital fuel logbook lets drivers and facility operators log every fill-up with receipts, tracking average cost per litre, mileage economy, and fuel consumption anomalies.
                   </p>
                   <ul className="space-y-2 text-xs sm:text-sm text-fg-muted font-medium pt-2">
                     <li className="flex items-center gap-2">
@@ -608,7 +640,7 @@ export default function ServicesPage() {
                   </div>
 
                   {/* Vehicle Details */}
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3">
                     <div>
                       <label className={ui.label} htmlFor="srv-make">Make & Model</label>
                       <input
@@ -621,6 +653,21 @@ export default function ServicesPage() {
                       />
                     </div>
                     <div>
+                      <label className={ui.label} htmlFor="srv-year">Year</label>
+                      <input
+                        id="srv-year"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={4}
+                        placeholder="2015"
+                        value={vehicleYear}
+                        onChange={e => setVehicleYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        className={ui.input}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
                       <label className={ui.label} htmlFor="srv-plate">Plate Number</label>
                       <input
                         id="srv-plate"
@@ -631,7 +678,36 @@ export default function ServicesPage() {
                         className={ui.input}
                       />
                     </div>
+                    <div>
+                      <label className={ui.label} htmlFor="srv-chassis">
+                        Chassis / VIN {selectedItems.includes('new_plate_number') && activeTab !== 'tracker' ? '(needed for new plates)' : '(optional)'}
+                      </label>
+                      <input
+                        id="srv-chassis"
+                        type="text"
+                        maxLength={20}
+                        placeholder="17 characters"
+                        value={chassisNumber}
+                        onChange={e => setChassisNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                        className={ui.input}
+                      />
+                    </div>
                   </div>
+
+                  {activeTab === 'tracker' && (
+                    <div>
+                      <label className={ui.label} htmlFor="srv-notes">Anything we should know? (optional)</label>
+                      <textarea
+                        id="srv-notes"
+                        rows={2}
+                        maxLength={500}
+                        placeholder="e.g. preferred installation day, number of vehicles"
+                        value={trackerNotes}
+                        onChange={e => setTrackerNotes(e.target.value)}
+                        className={cx(ui.input, 'h-auto py-2 resize-none')}
+                      />
+                    </div>
+                  )}
 
                   {/* Delivery / State */}
                   <div className="grid grid-cols-2 gap-3">
@@ -689,7 +765,7 @@ export default function ServicesPage() {
                       className={ui.input}
                     />
                     <p className="text-[11px] text-fg-subtle mt-1">
-                      Monthly price-update winners with ₦15,000 vouchers can paste their code here.
+                      Monthly Rewards winners who chose a service voucher can paste their code here (sign-in required). It is applied when our team confirms your request.
                     </p>
                   </div>
 
@@ -735,3 +811,4 @@ export default function ServicesPage() {
     </div>
   );
 }
+

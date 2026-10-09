@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Megaphone, Plus, Pencil, Trash2, Eye, MousePointerClick, Percent, Loader2, X, Image as ImageIcon,
-  PauseCircle, PlayCircle, ExternalLink, CalendarClock, AlertTriangle, MapPin, Search,
+  PauseCircle, PlayCircle, ExternalLink, CalendarClock, AlertTriangle, MapPin, Search, Download,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { ui, cx } from '@/lib/ui';
@@ -12,6 +12,8 @@ import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { NIGERIAN_STATES, stateLabel } from '@/lib/nigeria';
 import { useLgaList, type LgaOption } from '@/components/rewards/hooks';
+import { downloadXlsx } from '@/lib/xlsx';
+import { fetchAllRows } from '@/lib/fetchAll';
 
 // =========================================================================
 // ADMIN → ADVERTS
@@ -132,6 +134,7 @@ export function AdsManager() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AdRow | 'new' | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const lgas = useLgaList();
   const lgaById = useMemo(() => new Map(lgas.map(l => [l.id, l])), [lgas]);
   const lgaName = useCallback((id: number) => {
@@ -143,9 +146,9 @@ export function AdsManager() {
     setLoading(true);
     setError(null);
     const since = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
-    const [{ data: adData, error: adErr }, { data: statData }] = await Promise.all([
+    const [{ data: adData, error: adErr }, statRes] = await Promise.all([
       supabase.from('ads').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: false }),
-      supabase.from('ad_stats_daily').select('*').gte('day', since),
+      fetchAllRows<StatRow>((a, b) => supabase.from('ad_stats_daily').select('*').gte('day', since).order('day').range(a, b)),
     ]);
     if (adErr) {
       setError(adErr.message.includes('relation') || adErr.code === '42P01'
@@ -153,14 +156,48 @@ export function AdsManager() {
         : adErr.message);
     }
     setAds((adData as AdRow[]) || []);
-    setStats((statData as StatRow[]) || []);
+    setStats(statRes.rows);
+    setNow(Date.now());
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  // ---- Excel report: adverts + daily statistics ----
+  const exportExcel = async () => {
+    const { data } = await supabase.auth.getSession();
+    const titleOf = new Map(ads.map(a => [a.id, a.title]));
+    downloadXlsx('qozob-adverts', [
+      {
+        name: 'Adverts',
+        title: 'Adverts',
+        meta: [`Adverts: ${ads.length}`, `Data as of: ${new Date(now).toLocaleString('en-GB', { timeZone: 'Africa/Lagos' })} WAT`],
+        columns: [
+          { header: 'Title', width: 30 }, { header: 'Advertiser', width: 22 }, { header: 'Status' }, { header: 'Placement', width: 26 },
+          { header: 'Who sees it', width: 30 }, { header: 'Starts', type: 'datetime' }, { header: 'Ends', type: 'datetime' },
+          { header: 'Views (all time)', type: 'integer' }, { header: 'Clicks (all time)', type: 'integer' }, { header: 'CTR %', type: 'number' },
+          { header: 'Weight', type: 'integer' }, { header: 'Order', type: 'integer' }, { header: 'ARCON ref' }, { header: 'Advertiser confirmed', type: 'boolean' },
+          { header: 'Link', width: 36 }, { header: 'Created', type: 'datetime' }, { header: 'Advert ID' },
+        ],
+        rows: ads.map(a => [
+          a.title, a.advertiser, statusOf(a, now), PLACEMENT_LABEL[a.placement], targetSummary(a, lgaName).title,
+          a.starts_at, a.ends_at, Number(a.impressions), Number(a.clicks),
+          Number(a.impressions) > 0 ? Math.round((Number(a.clicks) / Number(a.impressions)) * 1000) / 10 : null,
+          a.weight, a.sort_order, a.arcon_ref ?? null, a.advertiser_confirmed ?? null, a.link_url, a.created_at, a.id,
+        ]),
+      },
+      {
+        name: 'Daily (30 days)',
+        title: 'Advert views and clicks per day (last 30 days)',
+        columns: [{ header: 'Day', type: 'date' }, { header: 'Advert', width: 30 }, { header: 'Views', type: 'integer' }, { header: 'Clicks', type: 'integer' }, { header: 'CTR %', type: 'number' }],
+        rows: [...stats].sort((x, y) => (x.day < y.day ? 1 : -1)).map(s => [
+          s.day, titleOf.get(s.ad_id) ?? s.ad_id, s.impressions, s.clicks, s.impressions > 0 ? Math.round((s.clicks / s.impressions) * 1000) / 10 : null,
+        ]),
+      },
+    ], { generatedBy: data.session?.user?.email });
+  };
+
   // ---- Analytics ----
-  const now = Date.now();
   const counts = useMemo(() => {
     const c = { Live: 0, Scheduled: 0, Ended: 0, Paused: 0 } as Record<Status, number>;
     ads.forEach(a => c[statusOf(a, now)]++);
@@ -246,9 +283,14 @@ export function AdsManager() {
 
       {/* ---- List ---- */}
       <section className={cx(ui.card, 'overflow-hidden')}>
-        <div className="px-5 py-4 border-b border-line flex items-center justify-between">
-          <h3 className={ui.h2}>All adverts</h3>
-          <span className="text-xs text-fg-subtle">Lower &quot;order&quot; shows first · higher weight stays on screen longer</span>
+        <div className="px-5 py-4 border-b border-line flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className={ui.h2}>All adverts</h3>
+            <span className="text-xs text-fg-subtle">Lower &quot;order&quot; shows first · higher weight stays on screen longer</span>
+          </div>
+          <button type="button" onClick={exportExcel} disabled={loading || ads.length === 0} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)} title="Adverts and daily views/clicks (Excel)">
+            <Download className="w-4 h-4" aria-hidden /> Excel
+          </button>
         </div>
         {loading ? (
           <div className="p-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-fg-subtle" aria-label="Loading" /></div>

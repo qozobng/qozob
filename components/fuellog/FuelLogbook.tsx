@@ -512,3 +512,4 @@ export function FuelLogbook({ user }: { user: any }) {
     </div>
   );
 }
+

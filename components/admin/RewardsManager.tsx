@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Trophy, Coins, Users, MapPin, Hourglass, ShieldCheck, Loader2, AlertTriangle, CheckCircle2, X, Download, Eye, Search,
-  Ban, RotateCcw, Smartphone, Landmark, Settings as SettingsIcon, Map as MapIcon, RefreshCw, UserX, Plus, Trash2, ExternalLink,
+  Ban, RotateCcw, Smartphone, Landmark, Settings as SettingsIcon, Map as MapIcon, RefreshCw, UserX, Plus, Trash2,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { ui, cx } from '@/lib/ui';
@@ -11,7 +11,11 @@ import { StatCard } from '@/components/analytics/StatCard';
 import { AreaChart } from '@/components/analytics/AreaChart';
 import { BarChart } from '@/components/analytics/BarChart';
 import { DonutChart } from '@/components/analytics/DonutChart';
-import { DEFAULT_REWARD_SETTINGS, REASON_TEXT, ID_TYPES, naira, monthRange, yearRange, type RewardSettings } from '@/lib/rewards';
+import { DEFAULT_REWARD_SETTINGS, REASON_TEXT, ID_TYPES, naira, monthRange, yearRange, isoDate, lagosToday, type RewardSettings } from '@/lib/rewards';
+import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
+import { PriceReviews } from './PriceReviews';
+import { RewardDrillDown, PERSON_COLUMNS, type DrillKind } from './RewardDrillDowns';
+import { fetchAllRows } from '@/lib/fetchAll';
 
 // =========================================================================
 // ADMIN → REWARDS
@@ -43,28 +47,17 @@ interface Winner {
   user_id: string | null; email: string | null; display_name: string | null; legal_name: string | null; coins: number; active_days: number; stations: number;
   gross_ngn: number; wht_ngn: number; net_ngn: number; status: 'pending' | 'approved' | 'paid' | 'forfeited'; payment_reference: string | null;
   paid_at: string | null; note: string | null; bank_name: string | null; account_name: string | null; account_last4: string | null;
+  payout_type?: 'cash' | 'voucher' | null; voucher_code?: string | null; voucher_value_ngn?: number | null; voucher_redeemed_at?: string | null;
 }
-interface HeldReport {
-  id: number; user_id: string; station_id: string; lga_id: number | null; price: number; reporter_lat: number | null; reporter_lng: number | null;
-  gps_accuracy_m: number | null; distance_m: number | null; coins: number; reasons: string[]; created_at: string;
-}
-
 const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : 'Something went wrong.');
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const periodLabel = (w: Pick<Winner, 'kind' | 'period_start'>) =>
   w.kind === 'annual' ? `Year ${w.period_start.slice(0, 4)}` : new Date(w.period_start + 'T00:00:00Z').toLocaleDateString('en-NG', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-function csvEscape(v: unknown) {
-  let s = v === null || v === undefined ? '' : String(v);
-  if (/^[=+\-@]/.test(s)) s = `'${s}`;        // stop spreadsheet formula injection
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-function downloadCsv(name: string, head: string[], rows: unknown[][]) {
-  const csv = [head.join(','), ...rows.map(r => r.map(csvEscape).join(','))].join('\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+/** Excel download stamped with the exporting admin's email and the generation time. */
+async function exportXlsx(base: string, sheet: XlsxSheet) {
+  const { data } = await supabase.auth.getSession();
+  downloadXlsx(base, [sheet], { generatedBy: data.session?.user?.email });
 }
 
 const STATUS_PILL: Record<string, string> = {
@@ -144,7 +137,7 @@ export function RewardsManager() {
 
       <div role="tablist" aria-label="Rewards sections" className="flex gap-1 overflow-x-auto rounded-full bg-surface border border-line p-1 w-fit max-w-full">
         {subTab('overview', 'Overview', Trophy)}
-        {subTab('review', 'Held reports', Hourglass, stats?.held_pending)}
+        {subTab('review', 'Price reviews', Hourglass, stats?.held_pending)}
         {subTab('people', 'People', Users, stats?.kyc_pending)}
         {subTab('payouts', 'Winners & payouts', Landmark)}
         {subTab('settings', 'Settings', SettingsIcon)}
@@ -161,7 +154,7 @@ export function RewardsManager() {
       ) : tab === 'overview' ? (
         <Overview stats={stats} reload={loadStats} flash={flash} />
       ) : tab === 'review' ? (
-        <HeldReports flash={flash} reload={loadStats} />
+        <PriceReviews compact onChanged={loadStats} />
       ) : tab === 'people' ? (
         <People flash={flash} reload={loadStats} />
       ) : tab === 'payouts' ? (
@@ -175,24 +168,49 @@ export function RewardsManager() {
 
 // ---------------------------------------------------------------- OVERVIEW
 function Overview({ stats, reload, flash }: { stats: Stats; reload: () => void; flash: (ok: boolean, t: string) => void }) {
+  const [drill, setDrill] = useState<DrillKind | null>(null);
+  const [pool, setPool] = useState<{ qualifying: number | null; prize: number } | null>(null);
   const totals = useMemo(() => stats.daily.reduce((a, d) => ({
     accepted: a.accepted + d.accepted, held: a.held + d.held, no_reward: a.no_reward + d.no_reward, rejected: a.rejected + d.rejected,
   }), { accepted: 0, held: 0, no_reward: 0, rejected: 0 }), [stats.daily]);
+
+  // Real prize pool: monthly prize × LGAs that currently meet the quorum and are in the payout scope.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [cfg, lgas] = await Promise.all([
+        supabase.from('reward_settings').select('monthly_prize_ngn').maybeSingle(),
+        supabase.rpc('admin_reward_lga_summary', { p_from: monthRange(0).start, p_to: isoDate(lagosToday()) }),
+      ]);
+      if (cancelled) return;
+      const prize = Number(cfg.data?.monthly_prize_ngn ?? DEFAULT_REWARD_SETTINGS.monthly_prize_ngn);
+      const qualifying = lgas.error ? null
+        : ((lgas.data || []) as { quorum_met: boolean; in_scope: boolean }[]).filter(r => r.quorum_met && r.in_scope).length;
+      setPool({ qualifying, prize });
+    })();
+    return () => { cancelled = true; };
+  }, [stats]);
+
+  const poolText = !pool ? 'Calculating prize pool…'
+    : pool.qualifying === null ? `Prize pool up to ${naira(stats.lgas_active_month * pool.prize)}`
+      : `${pool.qualifying} meet quorum · pool ${naira(pool.qualifying * pool.prize)}`;
 
   return (
     <div className="flex flex-col gap-5">
       <LgaSetup stats={stats} reload={reload} flash={flash} />
 
+      <p className="text-xs text-fg-muted -mb-2">Tip: click any card to see the records behind it and download them to Excel.</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard title="Rewarded updates (month)" value={stats.reports_month.toLocaleString('en-NG')} subtitle="All checked reports this month" icon={MapPin} colorTheme="indigo" />
-        <StatCard title="Coins earned (month)" value={Number(stats.coins_month).toLocaleString('en-NG')} icon={Coins} colorTheme="amber" />
-        <StatCard title="Contributors (month)" value={stats.contributors_month.toLocaleString('en-NG')} subtitle={`${stats.verified_people} fully verified people`} icon={Users} colorTheme="emerald" />
-        <StatCard title="Active LGAs (month)" value={`${stats.lgas_active_month}/774`} subtitle={`Prize pool up to ${naira(stats.lgas_active_month * 10000)}`} icon={Trophy} colorTheme="purple" />
+        <StatCard title="Rewarded updates (month)" value={stats.reports_month.toLocaleString('en-NG')} subtitle="All checked reports this month" icon={MapPin} colorTheme="indigo" onClick={() => setDrill('updates')} />
+        <StatCard title="Coins earned (month)" value={Number(stats.coins_month).toLocaleString('en-NG')} subtitle="By contributor" icon={Coins} colorTheme="amber" onClick={() => setDrill('coins')} />
+        <StatCard title="Contributors (month)" value={stats.contributors_month.toLocaleString('en-NG')} subtitle={`${stats.verified_people} fully verified people`} icon={Users} colorTheme="emerald" onClick={() => setDrill('contributors')} />
+        <StatCard title="Active LGAs (month)" value={`${stats.lgas_active_month}/774`} subtitle={poolText} icon={Trophy} colorTheme="purple" onClick={() => setDrill('lgas')} />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
-        <StatCard title="Held for review" value={stats.held_pending} subtitle="Price reports waiting" icon={Hourglass} colorTheme="blue" badge={stats.held_pending ? { text: 'Action', variant: 'warning' } : undefined} />
-        <StatCard title="ID checks waiting" value={stats.kyc_pending} subtitle="People to verify" icon={ShieldCheck} colorTheme="rose" badge={stats.kyc_pending ? { text: 'Action', variant: 'warning' } : undefined} />
+        <StatCard title="Held for review" value={stats.held_pending} subtitle="Prices not live until reviewed" icon={Hourglass} colorTheme="blue" badge={stats.held_pending ? { text: 'Action', variant: 'warning' } : undefined} onClick={() => setDrill('held')} />
+        <StatCard title="ID checks waiting" value={stats.kyc_pending} subtitle="People to verify" icon={ShieldCheck} colorTheme="rose" badge={stats.kyc_pending ? { text: 'Action', variant: 'warning' } : undefined} onClick={() => setDrill('kyc')} />
       </div>
+      <RewardDrillDown kind={drill} onClose={() => setDrill(null)} onChanged={reload} />
 
       <div className="grid lg:grid-cols-[2fr_1fr] gap-4">
         <AreaChart title="Coin-earning updates per day" subtitle="Last 30 days (Lagos time)" data={stats.daily.map(d => ({ label: d.day.slice(5), value: d.accepted }))} color="var(--chart-1)" emptyMessage="No updates yet." />
@@ -301,93 +319,6 @@ function LgaSetup({ stats, reload, flash }: { stats: Stats; reload: () => void; 
   );
 }
 
-// ---------------------------------------------------------------- HELD REPORTS
-function HeldReports({ flash, reload }: { flash: (ok: boolean, t: string) => void; reload: () => void }) {
-  const [rows, setRows] = useState<HeldReport[] | null>(null);
-  const [stations, setStations] = useState<Map<string, { name: string; address: string; price_pms: number | null; lat: number | null; lng: number | null }>>(new Map());
-  const [lgas, setLgas] = useState<Map<number, string>>(new Map());
-  const [emails, setEmails] = useState<Map<string, string>>(new Map());
-  const [busyId, setBusyId] = useState<number | null>(null);
-
-  const load = useCallback(async () => {
-    const { data, error } = await supabase.from('price_reports')
-      .select('id, user_id, station_id, lga_id, price, reporter_lat, reporter_lng, gps_accuracy_m, distance_m, coins, reasons, created_at')
-      .eq('status', 'held').order('created_at', { ascending: true }).limit(100);
-    if (error) { flash(false, error.message); setRows([]); return; }
-    const list = (data || []) as HeldReport[];
-    setRows(list);
-    const sIds = Array.from(new Set(list.map(r => r.station_id)));
-    const lIds = Array.from(new Set(list.map(r => r.lga_id).filter((x): x is number => x !== null)));
-    const [st, lg, people] = await Promise.all([
-      sIds.length ? supabase.from('stations').select('station_id, name, address, price_pms, lat, lng').in('station_id', sIds) : Promise.resolve({ data: [] }),
-      lIds.length ? supabase.from('lgas').select('id, name, state').in('id', lIds) : Promise.resolve({ data: [] }),
-      supabase.rpc('admin_reward_people'),
-    ]);
-    setStations(new Map(((st.data || []) as { station_id: string; name: string; address: string; price_pms: number | null; lat: number | null; lng: number | null }[]).map(s => [String(s.station_id), s])));
-    setLgas(new Map(((lg.data || []) as { id: number; name: string; state: string }[]).map(l => [l.id, `${l.name}, ${l.state}`])));
-    setEmails(new Map(((people.data || []) as Person[]).map(p => [p.user_id, p.email])));
-  }, [flash]);
-  useEffect(() => { load(); }, [load]);
-
-  const decide = async (r: HeldReport, approve: boolean) => {
-    let note: string | null = null;
-    if (!approve) {
-      note = window.prompt('Why are you rejecting this price? (The person gets a strike; 3 strikes suspends them.)', 'Price does not match nearby stations');
-      if (note === null) return;
-    }
-    setBusyId(r.id);
-    const { error } = await supabase.rpc('admin_review_report', { p_id: r.id, p_approve: approve, p_note: note });
-    setBusyId(null);
-    if (error) return flash(false, error.message);
-    setRows(prev => (prev || []).filter(x => x.id !== r.id));
-    flash(true, approve ? `Approved: ${r.coins} coins added.` : 'Rejected and a strike recorded.');
-    reload();
-  };
-
-  if (!rows) return <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-primary" aria-label="Loading" /></div>;
-  if (rows.length === 0) {
-    return <div className={cx(ui.card, 'p-10 text-center')}><CheckCircle2 className="w-10 h-10 mx-auto text-success" aria-hidden /><p className="mt-3 font-semibold text-fg">Nothing waiting for review</p><p className={ui.body}>Unusual prices and impossible journeys appear here.</p></div>;
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <p className={ui.body}>The price is already on the map; this decision only affects the coins. Oldest first.</p>
-      {rows.map(r => {
-        const s = stations.get(String(r.station_id));
-        const why = r.reasons.filter(x => x !== 'fresh_bonus');
-        return (
-          <div key={r.id} className={cx(ui.card, 'p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center gap-4')}>
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-fg">{s?.name ?? 'Station'} <span className="text-fg-muted font-normal">· {r.lga_id ? lgas.get(r.lga_id) ?? '' : 'No LGA'}</span></p>
-              <p className="text-xs text-fg-muted truncate">{s?.address}</p>
-              <p className="mt-2 text-sm text-fg">
-                Reported <strong className="tabular">{naira(r.price)}</strong>
-                {s?.price_pms !== undefined && s?.price_pms !== null && <> · map now shows <span className="tabular">{naira(s.price_pms)}</span></>}
-                {' '}· {r.coins} coins
-              </p>
-              <p className="text-xs text-fg-muted mt-1">
-                {emails.get(r.user_id) ?? r.user_id.slice(0, 8)} · {fmtDate(r.created_at)}
-                {r.distance_m !== null && <> · {r.distance_m.toLocaleString('en-NG')} m from station</>}
-                {r.gps_accuracy_m !== null && <> · GPS ±{Math.round(r.gps_accuracy_m)} m</>}
-                {r.reporter_lat !== null && r.reporter_lng !== null && (
-                  <> · <a className={ui.link} target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/dir/?api=1&origin=${r.reporter_lat},${r.reporter_lng}&destination=${s?.lat ?? ''},${s?.lng ?? ''}`}>Where they were <ExternalLink className="inline w-3 h-3" aria-hidden /></a></>
-                )}
-              </p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {why.map(x => <span key={x} className="rounded-full border border-warning-line bg-warning-soft text-on-warning-soft px-2 py-0.5 text-xs font-medium">{REASON_TEXT[x] ?? x}</span>)}
-              </div>
-            </div>
-            <div className="flex gap-2 shrink-0">
-              <button type="button" disabled={busyId === r.id} onClick={() => decide(r, true)} className={cx(ui.btn, ui.btnSm, ui.btnSuccess)}><CheckCircle2 className="w-4 h-4" aria-hidden /> Approve</button>
-              <button type="button" disabled={busyId === r.id} onClick={() => decide(r, false)} className={cx(ui.btn, ui.btnSm, ui.btnDanger)}><X className="w-4 h-4" aria-hidden /> Reject</button>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------- PEOPLE
 function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; reload: () => void }) {
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -463,9 +394,25 @@ function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; re
             <button key={k} type="button" onClick={() => setFilter(k)} className={cx(ui.btn, ui.btnSm, filter === k ? ui.btnPrimary : ui.btnSoft)}>{l}</button>
           ))}
         </div>
-        <div className="relative sm:w-72">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-subtle" aria-hidden />
-          <input className={cx(ui.input, 'h-10 pl-10')} placeholder="Search email or name" value={q} onChange={e => setQ(e.target.value)} aria-label="Search people" />
+        <div className="flex gap-2 sm:items-center">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-subtle" aria-hidden />
+            <input className={cx(ui.input, 'h-10 pl-10')} placeholder="Search email or name" value={q} onChange={e => setQ(e.target.value)} aria-label="Search people" />
+          </div>
+          <button
+            type="button"
+            disabled={!shown.length}
+            onClick={() => exportXlsx('qozob-reward-people', {
+              name: 'People',
+              title: 'Reward participants',
+              meta: [`Filter: ${filter}${q.trim() ? ` · search "${q.trim()}"` : ''}`, `Rows: ${shown.length}`, 'Bank and ID numbers are masked.'],
+              columns: PERSON_COLUMNS.map(c => ({ header: c.header, type: c.type, width: c.width })),
+              rows: shown.map(p => PERSON_COLUMNS.map(c => c.get(p) as string | number | boolean | null)),
+            })}
+            className={cx(ui.btn, ui.btnSm, ui.btnSecondary, 'h-10 shrink-0')}
+          >
+            <Download className="w-4 h-4" aria-hidden /> Excel
+          </button>
         </div>
       </div>
 
@@ -606,26 +553,49 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
     load();
   };
 
-  const exportCsv = async (withAccounts: boolean) => {
-    const live = rows.filter(w => w.status !== 'forfeited');
+  const exportWinners = async (withAccounts: boolean) => {
+    const live = rows;   // already respects the "Show forfeited" toggle
     if (!live.length) return;
-    let numbers: Record<string, string> = {};
+    const numbers: Record<string, string> = {};
     if (withAccounts) {
-      if (!window.confirm(`Export full account numbers for ${live.length} winner(s)? Each reveal is logged. Store the file securely and delete it after paying.`)) return;
+      const cash = live.filter(w => w.status !== 'forfeited' && w.payout_type !== 'voucher' && w.user_id);
+      if (!cash.length) return flash(false, 'No cash winners to pay in this period.');
+      if (!window.confirm(`Export full account numbers for ${cash.length} cash winner(s)? Each reveal is logged. Store the file securely and delete it after paying.`)) return;
       setBusy(true);
-      for (const w of live) {
+      for (const w of cash) {
         if (!w.user_id || numbers[w.user_id]) continue;
         const { data } = await supabase.rpc('admin_reveal_payout', { p_user: w.user_id });
         if (data) numbers[w.user_id] = (data as { account_number: string }).account_number;
       }
       setBusy(false);
-    } else numbers = {};
-    downloadCsv(
-      `qozob-winners-${live[0].kind}-${live[0].period_start}${withAccounts ? '-PAYMENT' : ''}.csv`,
-      ['period', 'lga', 'state', 'legal_name', 'email', 'coins', 'active_days', 'gross_ngn', 'wht_ngn', 'net_ngn', 'bank', 'account_name', 'account_number', 'status', 'reference', 'pay_by'],
-      live.map(w => [periodLabel(w), w.lga_name ?? 'National', w.state ?? '', w.legal_name, w.email, w.coins, w.active_days, w.gross_ngn, w.wht_ngn, w.net_ngn,
-        w.bank_name, w.account_name, withAccounts && w.user_id ? numbers[w.user_id] ?? '' : (w.account_last4 ? `****${w.account_last4}` : ''), w.status, w.payment_reference, w.pay_by]),
-    );
+    }
+    const list = withAccounts ? live.filter(w => w.status !== 'forfeited' && w.payout_type !== 'voucher') : live;
+    const first = live[0];
+    await exportXlsx(`qozob-winners-${first.kind}-${first.period_start}${withAccounts ? '-PAYMENT' : ''}`, {
+      name: withAccounts ? 'Payment file' : 'Winners',
+      title: `${first.kind === 'annual' ? 'Annual grand prize' : 'Monthly LGA winners'} · ${periodLabel(first)}`,
+      meta: [
+        `Pay by: ${first.pay_by}`,
+        `Winners: ${list.length} · Net to pay: ${naira(list.filter(w => w.status !== 'forfeited' && w.payout_type !== 'voucher').reduce((a, w) => a + w.net_ngn, 0))}`,
+        ...(withAccounts ? ['CONFIDENTIAL: contains full account numbers. Delete after payment.'] : []),
+      ],
+      columns: [
+        { header: 'Period' }, { header: 'LGA' }, { header: 'State' }, { header: 'Legal name', width: 26 }, { header: 'Email', width: 28 },
+        { header: 'Coins', type: 'integer' }, { header: 'Active days', type: 'integer' }, { header: 'Stations', type: 'integer' },
+        { header: 'Gross', type: 'money' }, { header: 'Tax withheld', type: 'money' }, { header: 'Net', type: 'money' },
+        { header: 'Payout type' }, { header: 'Voucher code' }, { header: 'Voucher value', type: 'money' }, { header: 'Voucher redeemed', type: 'datetime' },
+        { header: 'Bank' }, { header: 'Account name', width: 26 }, { header: withAccounts ? 'Account number' : 'Account (masked)' },
+        { header: 'Status' }, { header: 'Payment reference' }, { header: 'Paid at', type: 'datetime' }, { header: 'Pay by', type: 'date' }, { header: 'Note', width: 30 },
+      ],
+      rows: list.map(w => [
+        periodLabel(w), w.lga_name ?? 'National', w.state ?? '', w.legal_name ?? w.display_name, w.email,
+        w.coins, w.active_days, w.stations, w.gross_ngn, w.wht_ngn, w.net_ngn,
+        w.payout_type === 'voucher' ? 'Service voucher' : 'Cash', w.voucher_code ?? null, w.voucher_value_ngn ?? null, w.voucher_redeemed_at ?? null,
+        w.bank_name, w.account_name,
+        withAccounts && w.user_id ? numbers[w.user_id] ?? '' : (w.account_last4 ? `····${w.account_last4}` : ''),
+        STATUS_TEXT[w.status] ?? w.status, w.payment_reference, w.paid_at, w.pay_by, w.note,
+      ]),
+    });
   };
 
   return (
@@ -659,8 +629,8 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
             <label className="inline-flex items-center gap-2 text-sm text-fg-muted"><input type="checkbox" className="accent-primary" checked={showForfeited} onChange={e => setShowForfeited(e.target.checked)} /> Show forfeited</label>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={!rows.length || busy} onClick={() => exportCsv(false)} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Download className="w-4 h-4" aria-hidden /> CSV</button>
-            <button type="button" disabled={!rows.length || busy} onClick={() => exportCsv(true)} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}><Landmark className="w-4 h-4" aria-hidden /> Payment file (logged)</button>
+            <button type="button" disabled={!rows.length || busy} onClick={() => exportWinners(false)} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Download className="w-4 h-4" aria-hidden /> Excel</button>
+            <button type="button" disabled={!rows.length || busy} onClick={() => exportWinners(true)} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}><Landmark className="w-4 h-4" aria-hidden /> Payment file (logged)</button>
           </div>
         </div>
         {period && <p className="mt-3 text-sm text-fg-muted">{sum.n} winner(s) · {naira(sum.net)} to pay · {sum.paid} paid{rows[0] ? ` · pay by ${rows[0].pay_by}` : ''}</p>}
@@ -684,8 +654,10 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
                     <td className="py-2.5 px-2"><span className="font-semibold text-fg">{w.lga_name ?? 'National'}</span><span className="block text-xs text-fg-muted">{w.state}</span></td>
                     <td className="py-2.5 px-2"><span className="text-fg">{w.legal_name ?? w.display_name}</span><span className="block text-xs text-fg-muted">{w.email}</span></td>
                     <td className="py-2.5 px-2 text-right tabular">{w.coins.toLocaleString('en-NG')}<span className="block text-xs text-fg-muted">{w.active_days} days · {w.stations} stations</span></td>
-                    <td className="py-2.5 px-2">{w.bank_name ? <><span className="text-fg">{w.bank_name}</span><span className="block text-xs text-fg-muted">{w.account_name} ····{w.account_last4}</span></> : <span className="text-danger text-xs font-semibold">No bank account</span>}</td>
-                    <td className="py-2.5 px-2 text-right tabular font-semibold">{naira(w.net_ngn)}{w.wht_ngn > 0 && <span className="block text-xs text-fg-muted font-normal">tax {naira(w.wht_ngn)}</span>}</td>
+                    <td className="py-2.5 px-2">{w.payout_type === 'voucher'
+                      ? <><span className="text-fg">Service voucher</span><span className="block text-xs text-fg-muted">{w.voucher_code ?? 'Code issued on approval'}{w.voucher_redeemed_at ? ' · redeemed' : ''}</span></>
+                      : w.bank_name ? <><span className="text-fg">{w.bank_name}</span><span className="block text-xs text-fg-muted">{w.account_name} ····{w.account_last4}</span></> : <span className="text-danger text-xs font-semibold">No bank account</span>}</td>
+                    <td className="py-2.5 px-2 text-right tabular font-semibold">{naira(w.payout_type === 'voucher' && w.voucher_value_ngn ? w.voucher_value_ngn : w.net_ngn)}{w.payout_type === 'voucher' ? <span className="block text-xs text-fg-muted font-normal">voucher value</span> : w.wht_ngn > 0 && <span className="block text-xs text-fg-muted font-normal">tax {naira(w.wht_ngn)}</span>}</td>
                     <td className="py-2.5 px-2"><Pill s={w.status} />{w.payment_reference && <span className="block text-xs text-fg-muted mt-1">Ref {w.payment_reference}</span>}{w.note && <span className="block text-xs text-fg-muted mt-1">{w.note}</span>}</td>
                     <td className="py-2.5 px-2">
                       {w.status !== 'paid' && w.status !== 'forfeited' && (
@@ -733,6 +705,8 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
   const [s, setS] = useState<RewardSettings | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [active, setActive] = useState(true);
+  const [scope, setScope] = useState<'all' | 'selected_lgas'>('all');
+  const [lgaIds, setLgaIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -741,13 +715,15 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
       const v = { ...DEFAULT_REWARD_SETTINGS, ...(data || {}) } as RewardSettings;
       setS(v);
       setActive(v.program_active);
+      setScope(v.active_payout_scope === 'selected_lgas' ? 'selected_lgas' : 'all');
+      setLgaIds(v.active_lga_ids ?? []);
       setForm(Object.fromEntries(FIELDS.map(f => [f.key, v[f.key] === null || v[f.key] === undefined ? '' : String(v[f.key])])));
     });
   }, [flash]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    const patch: Record<string, number | boolean | null> = { program_active: active };
+    const patch: Record<string, number | boolean | string | number[] | null> = { program_active: active };
     for (const f of FIELDS) {
       const raw = (form[f.key] ?? '').trim();
       if (raw === '' && f.nullable) { patch[f.key] = null; continue; }
@@ -756,6 +732,9 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
       patch[f.key] = n;
     }
     if ((patch.price_min as number) >= (patch.price_max as number)) return flash(false, 'The lowest price must be below the highest price.');
+    if (scope === 'selected_lgas' && lgaIds.length === 0) return flash(false, 'Pick at least one LGA, or choose “All LGAs”.');
+    patch.active_payout_scope = scope;
+    patch.active_lga_ids = scope === 'selected_lgas' ? lgaIds : null;
     setBusy(true);
     const { error } = await supabase.from('reward_settings').update(patch).eq('id', true);
     setBusy(false);
@@ -773,6 +752,7 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
               <span><span className="block font-semibold text-fg">Programme running</span><span className="block text-xs text-fg-muted">Switch off to pause coins (prices still save).</span></span>
               <input type="checkbox" className="h-5 w-5 accent-primary" checked={active} onChange={e => setActive(e.target.checked)} />
             </label>
+            <PayoutScope scope={scope} setScope={setScope} ids={lgaIds} setIds={setLgaIds} />
             <div className="mt-4 grid sm:grid-cols-2 gap-4">
               {FIELDS.map(f => (
                 <div key={f.key}>
@@ -793,6 +773,71 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
 }
 
 interface Exclusion { user_id: string; email: string | null; reason: string; created_at: string }
+
+/** Where monthly LGA prizes are paid: everywhere, or only in chosen LGAs (useful while cash is tight). */
+function PayoutScope({ scope, setScope, ids, setIds }: {
+  scope: 'all' | 'selected_lgas'; setScope: (s: 'all' | 'selected_lgas') => void; ids: number[]; setIds: (ids: number[]) => void;
+}) {
+  const [lgas, setLgas] = useState<{ id: number; name: string; state: string }[] | null>(null);
+  const [q, setQ] = useState('');
+  const [onlyPicked, setOnlyPicked] = useState(false);
+
+  useEffect(() => {
+    if (scope !== 'selected_lgas' || lgas) return;
+    fetchAllRows<{ id: number; name: string; state: string }>((a, b) => supabase.from('lgas').select('id, name, state').order('state').order('name').range(a, b))
+      .then(res => setLgas(res.rows));
+  }, [scope, lgas]);
+
+  const picked = useMemo(() => new Set(ids), [ids]);
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return (lgas || []).filter(l => (!onlyPicked || picked.has(l.id)) && (!s || l.name.toLowerCase().includes(s) || l.state.toLowerCase().includes(s)));
+  }, [lgas, q, onlyPicked, picked]);
+  const toggle = (id: number) => setIds(picked.has(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  const addShown = () => setIds(Array.from(new Set([...ids, ...shown.map(l => l.id)])));
+  const removeShown = () => { const drop = new Set(shown.map(l => l.id)); setIds(ids.filter(x => !drop.has(x))); };
+
+  return (
+    <fieldset className="mt-4 rounded-xl border border-line p-4">
+      <legend className="px-1 text-sm font-semibold text-fg">Where monthly prizes are paid</legend>
+      <div className="flex flex-wrap gap-2">
+        {([['all', 'All LGAs'], ['selected_lgas', 'Only selected LGAs']] as const).map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setScope(k)} aria-pressed={scope === k} className={cx(ui.btn, ui.btnSm, scope === k ? ui.btnPrimary : ui.btnSoft)}>{l}</button>
+        ))}
+      </div>
+      <p className={cx(ui.hint, 'mt-2')}>Everyone still earns coins everywhere; this only limits which LGAs can produce a cash winner when you close a month.</p>
+      {scope === 'selected_lgas' && (
+        <div className="mt-3 animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" aria-hidden />
+              <input className={cx(ui.input, 'h-9 pl-9')} placeholder="Search LGA or state" value={q} onChange={e => setQ(e.target.value)} aria-label="Search LGAs" />
+            </div>
+            <button type="button" onClick={addShown} disabled={!shown.length} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}>Select shown</button>
+            <button type="button" onClick={removeShown} disabled={!shown.length} className={cx(ui.btn, ui.btnSm, ui.btnGhost)}>Clear shown</button>
+            <label className="inline-flex items-center gap-2 text-xs text-fg-muted"><input type="checkbox" className="accent-primary" checked={onlyPicked} onChange={e => setOnlyPicked(e.target.checked)} /> Selected only</label>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-fg">{ids.length} LGA{ids.length === 1 ? '' : 's'} selected</p>
+          {!lgas ? (
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-primary" aria-label="Loading LGAs" /></div>
+          ) : lgas.length === 0 ? (
+            <p className={cx(ui.hint, 'mt-2')}>No LGAs loaded yet. Import the LGA boundaries in Overview first.</p>
+          ) : (
+            <div className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-line divide-y divide-line">
+              {shown.map(l => (
+                <label key={l.id} className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-2 cursor-pointer">
+                  <input type="checkbox" className="accent-primary" checked={picked.has(l.id)} onChange={() => toggle(l.id)} />
+                  <span className="text-fg">{l.name}</span><span className="text-fg-muted text-xs">· {l.state}</span>
+                </label>
+              ))}
+              {shown.length === 0 && <p className="px-3 py-3 text-sm text-fg-muted">No match.</p>}
+            </div>
+          )}
+        </div>
+      )}
+    </fieldset>
+  );
+}
 
 function Exclusions({ flash }: { flash: (ok: boolean, t: string) => void }) {
   const [list, setList] = useState<Exclusion[] | null>(null);
@@ -819,7 +864,24 @@ function Exclusions({ flash }: { flash: (ok: boolean, t: string) => void }) {
 
   return (
     <div className={cx(ui.card, 'p-5 sm:p-6')}>
-      <h3 className={cx(ui.h2, 'flex items-center gap-2')}><UserX className="w-5 h-5" aria-hidden /> Excluded people</h3>
+      <div className="flex items-start justify-between gap-2">
+        <h3 className={cx(ui.h2, 'flex items-center gap-2')}><UserX className="w-5 h-5" aria-hidden /> Excluded people</h3>
+        <button
+          type="button"
+          disabled={!list?.length}
+          onClick={() => exportXlsx('qozob-reward-exclusions', {
+            name: 'Exclusions',
+            title: 'Manually excluded from rewards',
+            meta: [`Rows: ${list?.length ?? 0}`, 'Admins, station managers/owners and @qozob.com emails are excluded automatically and are not listed.'],
+            columns: [{ header: 'Email', width: 30 }, { header: 'Reason', width: 36 }, { header: 'Excluded at', type: 'datetime' }, { header: 'User ID' }],
+            rows: (list || []).map(x => [x.email, x.reason, x.created_at, x.user_id]),
+          })}
+          className={cx(ui.btn, ui.btnSm, ui.btnGhost, 'shrink-0')}
+          title="Download to Excel"
+        >
+          <Download className="w-4 h-4" aria-hidden /> Excel
+        </button>
+      </div>
       <p className={cx(ui.body, 'mt-1')}>Admins, station managers/owners and @qozob.com emails are excluded automatically. Add field reps, contractors and family here.</p>
       <form onSubmit={e => { e.preventDefault(); if (email.trim()) set(email.trim(), true); }} className="mt-4 space-y-2">
         <input type="email" className={cx(ui.input, 'h-10')} placeholder="their account email" value={email} onChange={e => setEmail(e.target.value)} aria-label="Email to exclude" required />

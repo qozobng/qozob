@@ -183,3 +183,4 @@ export const AUTO_SERVICE_CATALOG: ServicePriceItem[] = [
     turnaroundDays: 'Same-day or next-day install'
   }
 ];
+
