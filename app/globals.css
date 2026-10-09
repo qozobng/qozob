@@ -301,6 +301,18 @@ body {
   transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease !important;
 }
 
+/* Attention pulse: an expanding emerald ring on the same 2s rhythm as the logo dot.
+   Uses box-shadow only (GPU-cheap, no layout shift). Kept small so it isn't
+   clipped inside the map info window. */
+@keyframes qz-attn-ring {
+  0%   { box-shadow: 0 0 0 0 rgb(16 185 129 / 0.6); }
+  70%  { box-shadow: 0 0 0 6px rgb(16 185 129 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+}
+.qz-attn {
+  animation: qz-attn-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Respect users who prefer less motion */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

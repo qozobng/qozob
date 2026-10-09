@@ -11,6 +11,7 @@ import {
 
 import { createClient } from '@/utils/supabase/client';
 import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
+import { displayName, initialOf } from '@/lib/profile';
 import { BrandLogo } from '@/components/BrandLogo';
 import { StatCard } from '@/components/analytics/StatCard';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
@@ -111,6 +112,14 @@ export default function DashboardPage() {
     setNotice({ ok, text });
     window.setTimeout(() => setNotice(null), 6000);
   };
+
+  // Keep the header name in sync when the profile form updates the account
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'USER_UPDATED' && session?.user) setUser(session.user);
+    });
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -521,9 +530,9 @@ export default function DashboardPage() {
                 className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-lg border border-on-brand/15 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-md bg-brand-accent text-brand text-xs font-semibold uppercase" aria-hidden>
-                  {(user.email || '?').charAt(0)}
+                  {initialOf(user)}
                 </span>
-                <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
+                <span className="truncate max-w-[120px] hidden sm:inline-block">{displayName(user)}</span>
                 <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
               </button>
               
@@ -531,7 +540,8 @@ export default function DashboardPage() {
                 <div className="absolute right-0 top-full mt-2 w-64 bg-surface rounded-xl shadow-lg border border-line overflow-hidden z-50 text-fg animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="p-4 border-b border-line">
                     <span className="text-xs font-semibold text-fg-subtle uppercase tracking-[0.08em] block">Station owner</span>
-                    <span className="text-sm font-medium text-fg truncate block mt-1">{user.email}</span>
+                    <span className="text-sm font-medium text-fg truncate block mt-1">{displayName(user)}</span>
+                    {displayName(user) !== user.email && <span className="text-xs text-fg-subtle truncate block">{user.email}</span>}
                   </div>
                   <div className="p-2 flex flex-col gap-0.5">
                     <button onClick={() => router.push('/')} className={menuItem}>

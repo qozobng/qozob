@@ -11,6 +11,7 @@ import {
 
 import { createClient } from '@/utils/supabase/client';
 import { getRole, signedCacUrl } from '@/lib/roles';
+import { displayName } from '@/lib/profile';
 import { brandName } from '@/lib/brands';
 import { normaliseQueue } from '@/lib/queue';
 import { fetchAllRows, isMissingFunction } from '@/lib/fetchAll';
@@ -22,6 +23,7 @@ import { DonutChart, DonutSegment } from '@/components/analytics/DonutChart';
 import { RatingDistribution } from '@/components/analytics/RatingDistribution';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ScrollTabs } from '@/components/ScrollTabs';
 import { AdsManager } from '@/components/admin/AdsManager';
 import { MailingManager } from '@/components/admin/MailingManager';
 import { RewardsManager } from '@/components/admin/RewardsManager';
@@ -61,6 +63,7 @@ type Row = Record<string, any>;
 export default function AdminDashboard() {
   const [authState, setAuthState] = useState<AuthState>('checking');
   const [adminEmail, setAdminEmail] = useState("");
+  const [adminName, setAdminName] = useState("");
   const [access, setAccess] = useState<Access | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
 
@@ -130,6 +133,7 @@ export default function AdminDashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return setAuthState('signed-out');
       setAdminEmail(user.email || "");
+      setAdminName(displayName(user));
 
       let acc: Access | null = null;
       const { data, error } = await supabase.rpc('my_admin_access');
@@ -466,7 +470,7 @@ export default function AdminDashboard() {
 
             <span className="h-6 w-px bg-brand-line hidden sm:block" aria-hidden />
 
-            <span className="hidden lg:inline text-sm text-on-brand-muted truncate max-w-[180px]">{adminEmail}</span>
+            <span className="hidden lg:inline text-sm text-on-brand-muted truncate max-w-[180px]" title={adminEmail}>{adminName || adminEmail}</span>
             <button
               onClick={handleLogout}
               className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-lg text-sm font-medium text-on-brand-muted hover:text-on-brand hover:bg-on-brand/5 transition-colors"
@@ -478,16 +482,21 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Tab Navigation Bar (only the sections this admin may open) */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1.5 overflow-x-auto border-t border-brand-line py-2 [scrollbar-width:none]" role="tablist">
+        {/* Tab Navigation Bar (only the sections this admin may open). Arrows + mouse wheel for non-touch screens. */}
+        <ScrollTabs
+          activeKey={tab}
+          label="Admin sections"
+          className="max-w-7xl mx-auto border-t border-brand-line"
+          innerClassName="gap-1.5 px-4 sm:px-6 py-2"
+        >
           {visibleTabs.map(({ key, label, icon: Icon, count }) => (
-            <button key={key} role="tab" aria-selected={tab === key} onClick={() => setActiveTab(key)} className={tabClass(tab === key)}>
+            <button key={key} role="tab" aria-selected={tab === key} onClick={() => setActiveTab(key)} className={cx(tabClass(tab === key), 'shrink-0')}>
               <Icon className="w-4 h-4" aria-hidden />
               <span>{label}</span>
               {!!count && count > 0 && <span className={countClass(tab === key)}>{count}</span>}
             </button>
           ))}
-        </div>
+        </ScrollTabs>
       </nav>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 mt-6">

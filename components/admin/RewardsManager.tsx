@@ -16,6 +16,7 @@ import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
 import { PriceReviews } from './PriceReviews';
 import { RewardDrillDown, PERSON_COLUMNS, type DrillKind } from './RewardDrillDowns';
 import { fetchAllRows } from '@/lib/fetchAll';
+import { ScrollTabs } from '@/components/ScrollTabs';
 
 // =========================================================================
 // ADMIN → REWARDS
@@ -105,7 +106,7 @@ export function RewardsManager() {
       role="tab"
       aria-selected={tab === key}
       onClick={() => setTab(key)}
-      className={cx('inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors',
+      className={cx('shrink-0 inline-flex items-center gap-2 h-9 px-3.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors',
         tab === key ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg hover:bg-surface-2')}
     >
       <Icon className="w-4 h-4" aria-hidden /> {label}
@@ -135,13 +136,19 @@ export function RewardsManager() {
         <button type="button" onClick={loadStats} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><RefreshCw className="w-4 h-4" aria-hidden /> Refresh</button>
       </div>
 
-      <div role="tablist" aria-label="Rewards sections" className="flex gap-1 overflow-x-auto rounded-full bg-surface border border-line p-1 w-fit max-w-full">
+      <ScrollTabs
+        tone="surface"
+        activeKey={tab}
+        label="Rewards sections"
+        className="w-fit max-w-full overflow-hidden rounded-full bg-surface border border-line"
+        innerClassName="gap-1 p-1"
+      >
         {subTab('overview', 'Overview', Trophy)}
         {subTab('review', 'Price reviews', Hourglass, stats?.held_pending)}
         {subTab('people', 'People', Users, stats?.kyc_pending)}
         {subTab('payouts', 'Winners & payouts', Landmark)}
         {subTab('settings', 'Settings', SettingsIcon)}
-      </div>
+      </ScrollTabs>
 
       {notice && (
         <div className={notice.ok ? ui.alertSuccess : ui.alertError} role="status">

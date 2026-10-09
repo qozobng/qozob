@@ -14,6 +14,7 @@ import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PhoneField } from '@/components/PhoneField';
 import { NIGERIAN_STATES, joinPhone } from '@/lib/nigeria';
+import { splitPhone } from '@/lib/profile';
 import { AUTO_SERVICE_CATALOG, ServiceCategory } from '@/types/services';
 import { submitServiceRequest } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
@@ -59,15 +60,14 @@ export default function ServicesPage() {
       if (data?.user) {
         setUser(data.user);
         if (data.user.email) setEmail(data.user.email);
-        if (data.user.user_metadata?.full_name) setFullName(data.user.user_metadata.full_name);
-        if (data.user.user_metadata?.phone) {
-          const raw = String(data.user.user_metadata.phone);
-          if (raw.startsWith('+234')) {
-            setPhoneCode('+234');
-            setPhoneNum(raw.replace('+234', ''));
-          } else {
-            setPhoneNum(raw);
-          }
+        const meta = data.user.user_metadata || {};
+        const name = [meta.first_name, meta.last_name].filter(Boolean).join(' ').trim() || meta.full_name;
+        if (name) setFullName(String(name));
+        const storedPhone = meta.full_phone || meta.phone;
+        if (storedPhone) {
+          const { code, national } = splitPhone(storedPhone);
+          setPhoneCode(code);
+          setPhoneNum(national);
         }
       }
     });

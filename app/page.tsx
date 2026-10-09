@@ -19,6 +19,7 @@ import { createClient } from '@/utils/supabase/client';
 // --- SHARED BRANDING ---
 import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
+import { displayName, initialOf } from '@/lib/profile';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
@@ -1450,9 +1451,9 @@ function QozobLanding() {
                     <div className="mt-2 flex gap-2">
                       <a 
                         {...directionsProps(selectedStation)}
-                        className={cx(ui.btn, 'h-9 px-3 text-xs flex-1 gap-1.5', ui.btnSecondary, 'text-accent')}
+                        className={cx(ui.btn, 'h-9 px-3 text-xs flex-1 gap-1.5', ui.btnAccent, 'qz-attn focus-visible:[animation:none]')}
                       >
-                        <Navigation className="w-3.5 h-3.5" aria-hidden /> Directions
+                        <Navigation className="w-3.5 h-3.5 animate-pulse" aria-hidden /> Directions
                       </a>
                       {selectedStation.price_pms && (!user || userRole === 'User') && (
                         <button 
@@ -1534,9 +1535,9 @@ function QozobLanding() {
                   className="inline-flex items-center gap-2 h-9 pl-1 pr-2 sm:pr-3 rounded-full border border-on-brand/20 bg-on-brand/5 hover:bg-on-brand/10 text-on-brand text-sm font-medium transition-colors"
                 >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-accent text-brand text-xs font-bold uppercase" aria-hidden>
-                    {(user.email || '?').charAt(0)}
+                    {initialOf(user)}
                   </span>
-                  <span className="truncate max-w-[120px] hidden sm:inline-block">{user.email}</span>
+                  <span className="truncate max-w-[120px] hidden sm:inline-block">{displayName(user)}</span>
                   <Menu className="w-4 h-4 text-on-brand-muted sm:hidden" aria-hidden />
                 </button>
 
@@ -1544,7 +1545,8 @@ function QozobLanding() {
                   <div className="absolute right-0 top-full mt-2 w-64 bg-surface text-fg rounded-xl shadow-lg border border-line overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
                     <div className="p-4 border-b border-line">
                       <p className={ui.eyebrow}>Signed in as</p>
-                      <p className="text-sm font-medium text-fg truncate mt-1">{user.email}</p>
+                      <p className="text-sm font-medium text-fg truncate mt-1">{displayName(user)}</p>
+                      {displayName(user) !== user.email && <p className="text-xs text-fg-subtle truncate">{user.email}</p>}
                       <p className="mt-2 inline-flex flex-wrap items-center gap-1 rounded-md bg-surface-2 border border-line px-2 py-0.5 text-xs font-medium text-fg-muted">
                         {userRole}{requestedManager && <span className="text-warning">· Manager access pending</span>}
                       </p>

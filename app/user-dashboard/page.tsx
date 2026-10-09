@@ -13,6 +13,7 @@ import { createClient } from '@/utils/supabase/client';
 import {
   getRole, getLatestRoleRequest, requestManagerAccess, ensureManagerRequestFiled, type RoleRequest
 } from '@/lib/roles';
+import { displayName } from '@/lib/profile';
 import { StatCard } from '@/components/analytics/StatCard';
 import { BarChart, BarItem } from '@/components/analytics/BarChart';
 import { AreaChart, AreaDataPoint } from '@/components/analytics/AreaChart';
@@ -77,6 +78,14 @@ function UserDashboardContent() {
   const [selectedRole, setSelectedRole] = useState<string>("User");
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
   const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
+
+  // Keep the name in sync when the profile form updates the account
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'USER_UPDATED' && session?.user) setUser(session.user);
+    });
+    return () => subscription.unsubscribe();
+  }, [supabase]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -312,7 +321,8 @@ function UserDashboardContent() {
           
           <div className="rounded-lg p-3.5 border border-brand-line bg-brand-2 mb-6">
             <span className="text-xs font-medium text-on-brand-muted block">Signed in as</span>
-            <p className="text-sm font-medium text-on-brand truncate mt-0.5">{user?.email}</p>
+            <p className="text-sm font-medium text-on-brand truncate mt-0.5">{displayName(user)}</p>
+            {user && displayName(user) !== user.email && <p className="text-xs text-on-brand-muted truncate">{user.email}</p>}
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-brand-accent/15 text-brand-accent px-2 py-0.5 text-xs font-semibold">
               {currentRole === 'Manager' ? <ShieldCheck className="w-3 h-3" aria-hidden /> : <UserIcon className="w-3 h-3" aria-hidden />}
               <span>{currentRole === 'User' ? 'Community member' : currentRole}</span>

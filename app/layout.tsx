@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
 import { THEME_INIT_SCRIPT } from '@/lib/theme';
+import { ProfileGate } from '@/components/ProfileGate';
 
 // Plus Jakarta Sans: friendly, rounded and modern, yet very legible for prices and data
 const jakarta = Plus_Jakarta_Sans({
@@ -120,6 +121,8 @@ export default function RootLayout({
       </head>
       <body className={`${jakarta.className} ${jakarta.variable} antialiased bg-canvas text-fg`}>
         {children}
+        {/* Countdown banner / required profile form for accounts missing name, phone or state */}
+        <ProfileGate />
       </body>
     </html>
   );
