@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, Suspense, useCallback, useMemo, useRef, memo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { 
   Navigation, Droplet, ShieldCheck, Clock,
   X, UploadCloud, AlertTriangle, Search, Filter, ArrowUpDown, Star, Menu, LogOut, User as UserIcon, Settings,
-  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy, Pencil
+  Share2, LocateFixed, CheckCircle2, LayoutDashboard, Trophy, Pencil, FileText, Car, Fuel
 } from 'lucide-react';
 import { 
   APIProvider, Map as GoogleMap, AdvancedMarker, InfoWindow, 
@@ -1270,6 +1271,15 @@ function QozobLanding() {
 
           {/* THEME + USER PROFILE & MENU */}
           <div className="flex-shrink-0 flex items-center gap-2">
+            <Link
+              href="/services"
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full text-xs font-bold text-on-brand hover:bg-on-brand/10 border border-on-brand/20 transition-colors whitespace-nowrap"
+              title="Vehicle paper renewal, NIID insurance & 4G GPS tracking"
+            >
+              <FileText className="w-3.5 h-3.5 text-brand-accent" />
+              <span>Services</span>
+            </Link>
+
             <ThemeToggle tone="brand" />
             {user ? (
               <div className="relative" ref={menuRef}>
@@ -1320,6 +1330,15 @@ function QozobLanding() {
                           </button>
                           <button onClick={() => router.push('/user-dashboard?tab=rewards')} className={menuItem}>
                             <Trophy className="w-4 h-4 text-warning" aria-hidden /> My rewards
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=garage')} className={menuItem}>
+                            <Car className="w-4 h-4 text-accent" aria-hidden /> My garage (papers)
+                          </button>
+                          <button onClick={() => router.push('/user-dashboard?tab=fuellog')} className={menuItem}>
+                            <Fuel className="w-4 h-4 text-fg-muted" aria-hidden /> Fuel logbook
+                          </button>
+                          <button onClick={() => router.push('/services')} className={menuItem}>
+                            <FileText className="w-4 h-4 text-fg-muted" aria-hidden /> Vehicle services
                           </button>
                           <button onClick={() => router.push('/user-dashboard?tab=settings')} className={menuItem}>
                             <Settings className="w-4 h-4 text-fg-muted" aria-hidden /> Account settings
@@ -1748,6 +1767,7 @@ function QozobLanding() {
             <span className="text-xs">© {new Date().getFullYear()} {SITE.name}. All rights reserved.</span>
           </div>
           <nav className="flex gap-x-6 gap-y-2 font-medium text-sm flex-wrap justify-center" aria-label="Footer">
+            <a href="/services" className="hover:text-on-brand transition-colors">Services</a>
             <a href="/rewards" className="hover:text-on-brand transition-colors">Rewards</a>
             <a href="/privacy" className="hover:text-on-brand transition-colors">Privacy</a>
             <a href="/terms" className="hover:text-on-brand transition-colors">Terms</a>

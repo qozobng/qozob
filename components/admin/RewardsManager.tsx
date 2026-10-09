@@ -723,6 +723,10 @@ const FIELDS: { key: keyof RewardSettings; label: string; hint: string; step?: n
   { key: 'price_min', label: 'Lowest believable price (₦/L)', hint: '' },
   { key: 'price_max', label: 'Highest believable price (₦/L)', hint: '' },
   { key: 'max_speed_kmh', label: 'Fastest believable travel (km/h)', hint: 'Faster jumps between stations are held.' },
+  { key: 'min_lga_updates_quorum', label: 'LGA minimum update quorum', hint: 'Startup cash safeguard: LGA only awards ₦10k if at least this many verified updates occurred.' },
+  { key: 'min_lga_stations_quorum', label: 'LGA minimum unique stations', hint: 'At least this many distinct stations must be updated in the LGA.' },
+  { key: 'min_lga_participants_quorum', label: 'LGA minimum competing users', hint: 'Prevents a single user updating alone from claiming ₦10k without competition.' },
+  { key: 'voucher_bonus_pct', label: 'Service voucher bonus (%)', hint: 'Bonus value if winner picks auto-service voucher over cash (e.g. 50% = ₦15,000 credit).' },
 ];
 
 function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {

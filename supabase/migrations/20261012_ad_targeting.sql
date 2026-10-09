@@ -136,3 +136,4 @@ commit;
 
 -- Quick check (should list your live adverts for central Lagos):
 --   select public.ads_for_viewer('desktop_header', 6.45, 3.39, null);
+

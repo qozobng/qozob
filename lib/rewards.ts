@@ -22,6 +22,12 @@ export interface RewardSettings {
   price_max: number;
   max_speed_kmh: number;
   terms_version: string;
+  min_lga_updates_quorum: number;
+  min_lga_stations_quorum: number;
+  min_lga_participants_quorum: number;
+  active_payout_scope: 'all' | 'selected_lgas';
+  active_lga_ids: number[] | null;
+  voucher_bonus_pct: number;
 }
 
 export const DEFAULT_REWARD_SETTINGS: RewardSettings = {
@@ -29,6 +35,8 @@ export const DEFAULT_REWARD_SETTINGS: RewardSettings = {
   min_active_days: 8, annual_min_active_days: 60, max_distance_m: 1000, cooldown_hours: 6, daily_cap: 20,
   coins_per_update: 10, coins_fresh_bonus: 5, outlier_percent: 25, price_min: 300, price_max: 3000,
   max_speed_kmh: 150, terms_version: '2026-10',
+  min_lga_updates_quorum: 30, min_lga_stations_quorum: 3, min_lga_participants_quorum: 2,
+  active_payout_scope: 'all', active_lga_ids: null, voucher_bonus_pct: 50,
 };
 
 export interface ReportResult {

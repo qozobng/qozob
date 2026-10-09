@@ -47,3 +47,4 @@ export function joinPhone(code: string, national: string): string {
   digits = digits.replace(/^0+/, '');
   return digits ? `${code}${digits}` : '';
 }
+

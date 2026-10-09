@@ -6,7 +6,7 @@ import {
   User as UserIcon, Settings, ShieldCheck, Map as MapIcon, 
   LogOut, Star, Droplet, ArrowRight, CheckCircle2, Loader2,
   TrendingDown, Bookmark, Fuel, Compass, AlertCircle, ArrowUpRight,
-  Sparkles, Navigation, Clock, Check, MapPin, Trophy
+  Sparkles, Navigation, Clock, Check, MapPin, Trophy, Car
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -20,6 +20,8 @@ import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { EmailUpdatesCard } from '@/components/EmailUpdatesCard';
 import { MyRewards } from '@/components/rewards/MyRewards';
+import { MyGarage } from '@/components/garage/MyGarage';
+import { FuelLogbook } from '@/components/fuellog/FuelLogbook';
 
 interface RatedStationItem {
   station_id: string;
@@ -44,7 +46,7 @@ function UserDashboardContent() {
   const searchParams = useSearchParams();
   
   const tabParam = searchParams.get('tab') || '';
-  const defaultTab = ['settings', 'contributions', 'watchlist', 'rewards'].includes(tabParam) ? tabParam : 'overview';
+  const defaultTab = ['settings', 'contributions', 'watchlist', 'rewards', 'garage', 'fuellog'].includes(tabParam) ? tabParam : 'overview';
 
   const [user, setUser] = useState<any>(null);
   const [activeTab, setActiveTab] = useState(defaultTab);
@@ -301,6 +303,15 @@ function UserDashboardContent() {
             <button onClick={() => setActiveTab('rewards')} className={sideTab(activeTab === 'rewards')} aria-current={activeTab === 'rewards' ? 'page' : undefined}>
               <span className="flex items-center gap-3"><Trophy className="w-4 h-4" aria-hidden /> Rewards</span>
               <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-xs font-bold ${activeTab === 'rewards' ? 'bg-brand text-on-brand' : 'bg-amber-300 text-slate-900'}`}>₦10k</span>
+            </button>
+
+            <button onClick={() => setActiveTab('garage')} className={sideTab(activeTab === 'garage')} aria-current={activeTab === 'garage' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Car className="w-4 h-4" aria-hidden /> My garage</span>
+              <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-[10px] font-bold ${activeTab === 'garage' ? 'bg-brand text-on-brand' : 'bg-brand-accent/20 text-brand-accent'}`}>Papers</span>
+            </button>
+
+            <button onClick={() => setActiveTab('fuellog')} className={sideTab(activeTab === 'fuellog')} aria-current={activeTab === 'fuellog' ? 'page' : undefined}>
+              <span className="flex items-center gap-3"><Fuel className="w-4 h-4" aria-hidden /> Fuel logbook</span>
             </button>
 
             <button onClick={() => setActiveTab('settings')} className={sideTab(activeTab === 'settings')} aria-current={activeTab === 'settings' ? 'page' : undefined}>
@@ -621,6 +632,12 @@ function UserDashboardContent() {
 
         {/* ======================= TAB: REWARDS ======================= */}
         {activeTab === 'rewards' && <MyRewards />}
+
+        {/* ======================= TAB: MY GARAGE ======================= */}
+        {activeTab === 'garage' && user && <MyGarage user={user} />}
+
+        {/* ======================= TAB: FUEL LOGBOOK ======================= */}
+        {activeTab === 'fuellog' && user && <FuelLogbook user={user} />}
 
         {/* ======================= TAB 4: SETTINGS ======================= */}
         {activeTab === 'settings' && (

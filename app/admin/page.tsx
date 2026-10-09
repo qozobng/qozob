@@ -21,11 +21,12 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { AdsManager } from '@/components/admin/AdsManager';
 import { MailingManager } from '@/components/admin/MailingManager';
 import { RewardsManager } from '@/components/admin/RewardsManager';
+import { ServicesManager } from '@/components/admin/ServicesManager';
 
 const supabase = createClient();
 
 type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
-type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads' | 'mailing' | 'rewards';
+type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'ads' | 'mailing' | 'rewards' | 'services';
 
 interface StationRecord {
   station_id: string;
@@ -554,6 +555,11 @@ export default function AdminDashboard() {
           <button role="tab" aria-selected={activeTab === 'rewards'} onClick={() => setActiveTab('rewards')} className={tabClass(activeTab === 'rewards')}>
             <Trophy className="w-4 h-4" aria-hidden />
             <span>Rewards</span>
+          </button>
+
+          <button role="tab" aria-selected={activeTab === 'services'} onClick={() => setActiveTab('services')} className={tabClass(activeTab === 'services')}>
+            <FileText className="w-4 h-4" aria-hidden />
+            <span>Auto Services</span>
           </button>
         </div>
       </nav>
@@ -1123,6 +1129,7 @@ export default function AdminDashboard() {
         {activeTab === 'ads' && <AdsManager />}
         {activeTab === 'mailing' && <MailingManager />}
         {activeTab === 'rewards' && <RewardsManager />}
+        {activeTab === 'services' && <ServicesManager />}
 
       </main>
 
