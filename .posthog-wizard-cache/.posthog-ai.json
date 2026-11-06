@@ -1,0 +1,1 @@
+{ "provider": "manual", "package": "posthog-node", "otel_init_file": "lib/server/posthog-ai.ts" }

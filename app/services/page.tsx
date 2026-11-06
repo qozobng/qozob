@@ -10,14 +10,17 @@ import {
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
+import posthog from 'posthog-js';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PhoneField } from '@/components/PhoneField';
 import { NIGERIAN_STATES, joinPhone } from '@/lib/nigeria';
 import { splitPhone } from '@/lib/profile';
 import { loadRegions, countryCodeFromName, type Region } from '@/lib/regions';
-import { AUTO_SERVICE_CATALOG, ServiceCategory } from '@/types/services';
+import { ServiceCategory } from '@/types/services';
 import { submitServiceRequest } from '@/lib/services';
+import { loadServiceCatalog, effectivePrice, hasStatePrice, FALLBACK_CATALOG, type CatalogItem } from '@/lib/servicePricing';
+import { formatMoney } from '@/lib/currency';
 import { cx, ui } from '@/lib/ui';
 import { SITE } from '@/lib/site';
 
@@ -80,24 +83,30 @@ export default function ServicesPage() {
     });
   }, [supabase]);
 
-  // Calculation for Papers & Insurance
+  // Live price list (set by admins in Admin → Auto services → Prices); the built-in list is used until it loads
+  const [catalog, setCatalog] = useState<CatalogItem[]>(FALLBACK_CATALOG);
+  const [catalogLive, setCatalogLive] = useState(false);
+  useEffect(() => {
+    loadServiceCatalog(supabase).then(({ items, live }) => { setCatalog(items); setCatalogLive(live); });
+  }, [supabase]);
+
+  const paperItems = useMemo(() => catalog.filter(i => i.category !== 'gps_tracker' && i.category !== 'fleet_solution'), [catalog]);
+  const trackerItem = useMemo(
+    () => catalog.find(i => i.id === 'gps_tracker_4g') ?? catalog.find(i => i.category === 'gps_tracker') ?? null,
+    [catalog],
+  );
+  const chosenPapers = useMemo(() => paperItems.filter(i => selectedItems.includes(i.id)), [paperItems, selectedItems]);
+  const money = (n: number) => formatMoney(n, 'NGN');
+
+  // Calculation for Papers & Insurance (prices for the chosen state; falls back to the national price)
   const calculatedTotal = useMemo(() => {
     if (activeTab === 'tracker') {
-      return 55000;
+      return trackerItem ? effectivePrice(trackerItem, vehicleUsage, state) : 0;
     }
-    let total = 0;
-    for (const itemId of selectedItems) {
-      const found = AUTO_SERVICE_CATALOG.find(i => i.id === itemId);
-      if (found) {
-        if (vehicleUsage === 'commercial' && found.commercialPrice !== undefined) {
-          total += found.commercialPrice;
-        } else {
-          total += found.privatePrice;
-        }
-      }
-    }
-    return total;
-  }, [selectedItems, vehicleUsage, activeTab]);
+    return chosenPapers.reduce((sum, item) => sum + effectivePrice(item, vehicleUsage, state), 0);
+  }, [chosenPapers, trackerItem, vehicleUsage, activeTab, state]);
+  const trackerHasCommercialPrice = !!trackerItem
+    && effectivePrice(trackerItem, 'commercial', state) !== effectivePrice(trackerItem, 'private', state);
 
   const toggleItem = (id: string) => {
     setSelectedItems(prev => 
@@ -156,10 +165,13 @@ export default function ServicesPage() {
     }
 
     const category: ServiceCategory = activeTab === 'tracker' ? 'gps_tracker' : 'papers_renewal';
+    const lineItems = activeTab === 'tracker'
+      ? (trackerItem ? [trackerItem] : [])
+      : chosenPapers;
     const serviceName = activeTab === 'tracker' 
       ? '4G Live GPS Tracker & Anti-Theft Installation' 
-      : selectedItems.length > 0 
-        ? selectedItems.map(id => AUTO_SERVICE_CATALOG.find(i => i.id === id)?.title).filter(Boolean).join(' + ')
+      : chosenPapers.length > 0 
+        ? chosenPapers.map(i => i.title).join(' + ')
         : 'Vehicle Paper Services';
 
     const { data, error } = await submitServiceRequest(supabase, {
@@ -179,7 +191,10 @@ export default function ServicesPage() {
       chassis_number: chassisNumber || null,
       details: {
         vehicle_usage: vehicleUsage,
-        selected_item_ids: selectedItems,
+        selected_item_ids: lineItems.map(i => i.id),
+        line_items: lineItems.map(i => ({ id: i.id, title: i.title, price: effectivePrice(i, vehicleUsage, state) })),
+        priced_for_state: state,
+        price_list: catalogLive ? 'live' : 'built-in',
         calculated_estimate: calculatedTotal,
         tracker_notes: trackerNotes || null,
       },
@@ -192,6 +207,13 @@ export default function ServicesPage() {
     if (error) {
       setErrorMessage(error);
     } else {
+      posthog.capture('service_request_submitted', {
+        service_category: category,
+        vehicle_usage: vehicleUsage,
+        selected_item_count: lineItems.length,
+        signed_in: !!user,
+        voucher_applied: !!code,
+      });
       setSubmittedRequest(data);
     }
   };
@@ -326,7 +348,7 @@ export default function ServicesPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-fg-muted">Estimated Price:</span>
-                <span className="font-bold text-accent">₦{Number(submittedRequest.estimated_price || 0).toLocaleString()}</span>
+                <span className="font-bold text-accent">{money(Number(submittedRequest.estimated_price || 0))}</span>
               </div>
               {submittedRequest.voucher_code && (
                 <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
@@ -501,11 +523,10 @@ export default function ServicesPage() {
 
                   {/* Checklist of Services */}
                   <div className="space-y-3">
-                    {AUTO_SERVICE_CATALOG.filter(item => item.category !== 'gps_tracker').map(item => {
+                    {paperItems.map(item => {
                       const isSelected = selectedItems.includes(item.id);
-                      const price = vehicleUsage === 'commercial' && item.commercialPrice !== undefined 
-                        ? item.commercialPrice 
-                        : item.privatePrice;
+                      const price = effectivePrice(item, vehicleUsage, state);
+                      const local = hasStatePrice(item, state);
 
                       return (
                         <div
@@ -528,14 +549,19 @@ export default function ServicesPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <h3 className="text-sm font-bold text-fg">{item.title}</h3>
-                              <span className="text-sm font-extrabold text-accent">
-                                {price > 0 ? `₦${price.toLocaleString()}` : 'Free Addon'}
+                              <span className="text-right">
+                                <span className="block text-sm font-extrabold text-accent tabular">
+                                  {price > 0 ? money(price) : 'Free Addon'}
+                                </span>
+                                {local && <span className="block text-[10px] font-semibold text-fg-subtle">{state} price</span>}
                               </span>
                             </div>
-                            <p className="text-xs text-fg-muted mt-1 leading-relaxed">{item.description}</p>
-                            <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-fg-subtle">
-                              <Clock className="w-3 h-3" /> Turnaround: {item.turnaroundDays}
-                            </span>
+                            {item.description && <p className="text-xs text-fg-muted mt-1 leading-relaxed">{item.description}</p>}
+                            {item.turnaround && (
+                              <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-fg-subtle">
+                                <Clock className="w-3 h-3" /> Turnaround: {item.turnaround}
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -576,14 +602,36 @@ export default function ServicesPage() {
 
                   <div className="rounded-2xl bg-brand p-5 text-on-brand flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div>
-                      <p className="text-xs font-medium text-on-brand-muted">All-Inclusive Package Price</p>
-                      <p className="text-3xl font-black text-brand-accent">₦55,000</p>
+                      <p className="text-xs font-medium text-on-brand-muted">
+                        All-Inclusive Package Price{trackerItem && hasStatePrice(trackerItem, state) ? ` · ${state}` : ''}
+                      </p>
+                      <p className="text-3xl font-black text-brand-accent tabular">
+                        {trackerItem ? money(effectivePrice(trackerItem, vehicleUsage, state)) : 'Price on request'}
+                      </p>
                       <p className="text-xs text-on-brand-muted">Zero hidden fees. Hardware + SIM + Installation included.</p>
                     </div>
-                    <div className="text-right text-xs text-on-brand-muted">
+                    <div className="flex flex-col items-center sm:items-end gap-2 text-xs text-on-brand-muted">
                       <span className="inline-block px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
                         ✔ 1-Year Warranty
                       </span>
+                      {trackerHasCommercialPrice && (
+                        <div className="flex p-1 rounded-xl bg-white/10" role="group" aria-label="Vehicle category">
+                          {(['private', 'commercial'] as const).map(u => (
+                            <button
+                              key={u}
+                              type="button"
+                              onClick={() => setVehicleUsage(u)}
+                              aria-pressed={vehicleUsage === u}
+                              className={cx(
+                                'px-3 py-1 rounded-lg text-xs font-bold capitalize transition-colors',
+                                vehicleUsage === u ? 'bg-brand-accent text-brand' : 'text-on-brand-muted hover:text-on-brand'
+                              )}
+                            >
+                              {u}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -597,14 +645,15 @@ export default function ServicesPage() {
                   <div>
                     <h3 className="font-extrabold text-base text-fg">Order Summary</h3>
                     <p className="text-xs text-fg-muted">
-                      {activeTab === 'tracker' ? '1 Device + Full Installation' : `${selectedItems.length} services selected`}
+                      {activeTab === 'tracker' ? '1 Device + Full Installation' : `${chosenPapers.length} service${chosenPapers.length === 1 ? '' : 's'} selected`}
                     </p>
                   </div>
                   <div className="text-right">
                     <span className="text-xs text-fg-muted block">Estimated Total</span>
                     <span className="text-2xl font-black text-accent tabular">
-                      ₦{calculatedTotal.toLocaleString()}
+                      {money(calculatedTotal)}
                     </span>
+                    <span className="text-[10px] text-fg-subtle block">Prices for {state}</span>
                   </div>
                 </div>
 
@@ -788,7 +837,7 @@ export default function ServicesPage() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting || outsideNigeria || (activeTab === 'papers' && selectedItems.length === 0)}
+                    disabled={isSubmitting || outsideNigeria || (activeTab === 'papers' && chosenPapers.length === 0) || (activeTab === 'tracker' && !trackerItem)}
                     className={cx(
                       ui.btn, ui.btnLg, ui.btnPrimary,
                       'w-full mt-4 font-extrabold text-sm shadow-xl'

@@ -3,12 +3,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   FileText, RefreshCw, CheckCircle2, Clock, PhoneCall, MessageSquare, Edit3, Loader2, Banknote, X, Ticket, AlertTriangle, Wallet,
+  Tag, Building2, Inbox, History as HistoryIcon, ClipboardList,
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
 import type { ServiceRequest, ServiceStatus, PaymentStatus } from '@/types/services';
 import { StatCard } from '@/components/analytics/StatCard';
 import { ReportTable, type ReportColumn } from './ReportTable';
+import { useServiceOverview, PricesView, PartnersView, ProposalsView, HistoryView, type OvPartner } from './ServicePricing';
 import { fetchAllRows } from '@/lib/fetchAll';
 import { cx, ui } from '@/lib/ui';
 
@@ -17,6 +19,7 @@ import { cx, ui } from '@/lib/ui';
 // Requests from /services (papers, registration, insurance, trackers).
 // Every list can be filtered, column-picked and downloaded to Excel; reward
 // vouchers are redeemed through admin_redeem_voucher (checked in the DB).
+// Sub-tabs: Prices, Proposals, Partners and History (components/admin/ServicePricing.tsx).
 // =========================================================================
 
 const supabase = createClient();
@@ -42,7 +45,14 @@ const money = (n: number | null | undefined) => (n == null ? '—' : `₦${Numbe
 const value = (r: ServiceRequest) => Number(r.quoted_price ?? r.estimated_price ?? 0);
 const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : 'Something went wrong.');
 
+type View = 'requests' | 'prices' | 'proposals' | 'partners' | 'history';
+
 export function ServicesManager() {
+  const [view, setView] = useState<View>('requests');
+  const ov = useServiceOverview();
+  const partners = useMemo(() => ov.data?.partners ?? [], [ov.data]);
+  const partnerName = useCallback((id?: string | null) => (id ? partners.find(p => p.id === id)?.name ?? 'Partner' : null), [partners]);
+  const pendingProposals = ov.data?.proposals.filter(p => p.status === 'pending').length ?? 0;
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
@@ -57,15 +67,21 @@ export function ServicesManager() {
     setTimeout(() => setNotice(null), 6000);
   }, []);
 
+  const fetchRequests = useCallback(
+    () => fetchAllRows<ServiceRequest>((a, b) => supabase.from('service_requests').select('*').order('created_at', { ascending: false }).range(a, b))
+      .then(res => {
+        setLoadError(res.error ? res.error.message : '');
+        setRequests(res.rows);
+        setLoadedAt(new Date());
+        setLoading(false);
+      }),
+    [],
+  );
+  useEffect(() => { fetchRequests(); }, [fetchRequests]);
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetchAllRows<ServiceRequest>((a, b) => supabase.from('service_requests').select('*').order('created_at', { ascending: false }).range(a, b));
-    setLoadError(res.error ? res.error.message : '');
-    setRequests(res.rows);
-    setLoadedAt(new Date());
-    setLoading(false);
-  }, []);
-  useEffect(() => { load(); }, [load]);
+    await fetchRequests();
+  }, [fetchRequests]);
 
   const stats = useMemo(() => {
     const live = requests.filter(r => r.status !== 'cancelled');
@@ -121,20 +137,52 @@ export function ServicesManager() {
     },
     { key: 'voucher', header: 'Voucher', get: r => r.voucher_code ?? null, defaultVisible: false },
     { key: 'assigned', header: 'Assigned to', get: r => r.assigned_to ?? null, defaultVisible: false },
+    {
+      key: 'partner', header: 'Partner', get: r => partnerName(r.partner_id),
+      render: r => (r.partner_id
+        ? <span className="inline-flex items-center gap-1 text-xs font-semibold text-fg"><Building2 className="w-3.5 h-3.5 text-primary" aria-hidden />{partnerName(r.partner_id)}</span>
+        : <span className="text-fg-subtle">—</span>),
+    },
+    { key: 'partner_at', header: 'Sent to partner', get: r => r.partner_assigned_at ?? null, type: 'datetime', defaultVisible: false },
     { key: 'notes', header: 'Admin notes', get: r => r.admin_notes ?? null, defaultVisible: false, width: 40 },
     { key: 'account', header: 'Signed-in request', get: r => Boolean(r.user_id), type: 'boolean', defaultVisible: false },
     { key: 'updated', header: 'Last updated', get: r => r.updated_at, type: 'datetime', defaultVisible: false },
     { key: 'id', header: 'Request ID', get: r => r.id, defaultVisible: false },
-  ], []);
+  ], [partnerName]);
 
   const statusOptions: [typeof statusFilter, string][] = [['all', 'All statuses'], ['open', 'Open (not completed)'], ...Object.entries(STATUS).map(([k, v]) => [k as ServiceStatus, v.label] as [ServiceStatus, string])];
+
+  const tabs: { key: View; label: string; icon: React.ElementType; count?: number }[] = [
+    { key: 'requests', label: 'Requests', icon: ClipboardList, count: stats.pending || undefined },
+    { key: 'prices', label: 'Prices', icon: Tag },
+    { key: 'proposals', label: 'Price proposals', icon: Inbox, count: pendingProposals || undefined },
+    { key: 'partners', label: 'Partners', icon: Building2 },
+    { key: 'history', label: 'Price history', icon: HistoryIcon },
+  ];
+  const afterChange = () => { ov.reload(); };
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className={cx(ui.h1, 'flex items-center gap-2')}><FileText className="w-7 h-7 text-primary" aria-hidden /> Auto services</h2>
-          <p className={cx(ui.body, 'mt-1')}>Vehicle papers, registration, insurance and tracker requests. Click a card to filter.</p>
+          <p className={cx(ui.body, 'mt-1')}>
+            {view === 'requests' ? 'Vehicle papers, registration, insurance and tracker requests. Click a card to filter.'
+              : 'Prices on /services, partner companies and their price proposals.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="-mx-1 overflow-x-auto" role="tablist" aria-label="Auto services sections">
+        <div className="inline-flex gap-1 p-1 mx-1 rounded-full bg-surface-2 border border-line">
+          {tabs.map(t => (
+            <button key={t.key} type="button" role="tab" aria-selected={view === t.key} onClick={() => setView(t.key)}
+              className={cx('shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition-colors',
+                view === t.key ? 'bg-surface text-fg shadow-sm' : 'text-fg-muted hover:text-fg')}>
+              <t.icon className="w-4 h-4" aria-hidden /> {t.label}
+              {t.count ? <span className="min-w-5 h-5 px-1.5 inline-flex items-center justify-center rounded-full bg-warning-soft text-on-warning-soft text-[11px] font-bold tabular">{t.count}</span> : null}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -143,6 +191,28 @@ export function ServicesManager() {
           {notice.ok ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> : <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />} {notice.text}
         </div>
       )}
+
+      {view !== 'requests' && (
+        ov.missing ? (
+          <div className={ui.alertWarning}>
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+            <span>Price management isn&apos;t switched on yet. Run <code>supabase/migrations/20261106_service_pricing.sql</code> in the Supabase SQL editor (after 20261105). Until then /services uses the built-in prices.</span>
+          </div>
+        ) : ov.error && !ov.data ? (
+          <div className={ui.alertError}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /><span>Could not load prices: {ov.error}</span></div>
+        ) : !ov.data ? (
+          <div className={cx(ui.card, 'p-8 flex items-center justify-center gap-2 text-sm text-fg-muted')}><Loader2 className="w-4 h-4 animate-spin" aria-hidden /> Loading…</div>
+        ) : (
+          <div className="animate-in fade-in duration-200">
+            {view === 'prices' && <PricesView data={ov.data} onChanged={afterChange} flash={flash} />}
+            {view === 'proposals' && <ProposalsView data={ov.data} onChanged={afterChange} flash={flash} loading={ov.loading} loadedAt={ov.loadedAt} />}
+            {view === 'partners' && <PartnersView data={ov.data} onChanged={afterChange} flash={flash} />}
+            {view === 'history' && <HistoryView data={ov.data} onChanged={afterChange} loading={ov.loading} loadedAt={ov.loadedAt} />}
+          </div>
+        )
+      )}
+
+      {view === 'requests' && (<>
       {loadError && (
         <div className={ui.alertWarning}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /><span>Could not load requests: {loadError}. Run <code>supabase/migrations/20261013_monetization_and_services.sql</code> if the table is missing.</span></div>
       )}
@@ -197,17 +267,21 @@ export function ServicesManager() {
       {selected && (
         <RequestEditor
           req={selected}
+          partners={partners}
+          partnersReady={!!ov.data}
           onClose={() => setSelected(null)}
-          onSaved={(msg) => { flash(true, msg); setSelected(null); load(); }}
+          onSaved={(msg) => { flash(true, msg); setSelected(null); load(); ov.reload(); }}
           onError={(msg) => flash(false, msg)}
         />
       )}
+      </>)}
     </div>
   );
 }
 
-function RequestEditor({ req, onClose, onSaved, onError }: {
-  req: ServiceRequest; onClose: () => void; onSaved: (msg: string) => void; onError: (msg: string) => void;
+function RequestEditor({ req, partners, partnersReady, onClose, onSaved, onError }: {
+  req: ServiceRequest; partners: OvPartner[]; partnersReady: boolean;
+  onClose: () => void; onSaved: (msg: string) => void; onError: (msg: string) => void;
 }) {
   const [status, setStatus] = useState<ServiceStatus>(req.status);
   const [payment, setPayment] = useState<PaymentStatus>(req.payment_status);
@@ -216,8 +290,14 @@ function RequestEditor({ req, onClose, onSaved, onError }: {
   const [assigned, setAssigned] = useState(req.assigned_to ?? '');
   const [notes, setNotes] = useState(req.admin_notes ?? '');
   const [code, setCode] = useState(req.voucher_code ?? '');
+  const [partnerId, setPartnerId] = useState(req.partner_id ?? '');
   const [busy, setBusy] = useState(false);
   const voucherDone = req.payment_status === 'voucher_used';
+  // Partners that deliver this kind of service in this state (plus the current one, even if it no longer fits)
+  const partnerOptions = useMemo(() => partners.filter(p =>
+    p.id === req.partner_id
+    || (p.is_active && p.categories.includes(req.service_category) && (p.states.length === 0 || !req.state || p.states.includes(req.state)))
+  ), [partners, req.partner_id, req.service_category, req.state]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -236,9 +316,17 @@ function RequestEditor({ req, onClose, onSaved, onError }: {
       status, payment_status: payment, quoted_price: q, paid_price: p,
       assigned_to: assigned.trim() || null, admin_notes: notes.trim() || null, updated_at: new Date().toISOString(),
     }).eq('id', req.id);
+    if (error) { setBusy(false); return onError(`Could not save: ${error.message}`); }
+    const partnerChanged = (req.partner_id ?? '') !== partnerId;
+    if (partnerChanged) {
+      const { error: aErr } = await supabase.rpc('admin_assign_service_request', { p_request_id: req.id, p_partner_id: partnerId || null });
+      if (aErr) { setBusy(false); return onError(`Saved the request, but could not change the partner: ${errText(aErr)}`); }
+    }
     setBusy(false);
-    if (error) return onError(`Could not save: ${error.message}`);
-    onSaved(`Saved ${ref(req)}.`);
+    const pName = partners.find(x => x.id === partnerId)?.name;
+    onSaved(partnerChanged
+      ? (partnerId ? `Saved ${ref(req)} and sent it to ${pName ?? 'the partner'}.` : `Saved ${ref(req)}. It is no longer assigned to a partner.`)
+      : `Saved ${ref(req)}.`);
   };
 
   const redeem = async () => {
@@ -319,11 +407,25 @@ function RequestEditor({ req, onClose, onSaved, onError }: {
               </div>
             </div>
             <div>
+              <label className={ui.label} htmlFor="sr-partner">Partner company</label>
+              <select id="sr-partner" value={partnerId} onChange={e => setPartnerId(e.target.value)} className={ui.select} disabled={!partnersReady}>
+                <option value="">{partnersReady ? '— Not sent to a partner —' : 'Partners not available (run 20261106)'}</option>
+                {partnerOptions.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}{!p.is_active ? ' (paused)' : ''}</option>
+                ))}
+              </select>
+              <p className={ui.hint}>
+                {partnersReady && partnerOptions.length === 0
+                  ? `No active partner delivers this service${req.state ? ` in ${req.state}` : ''}. Add one under Partners.`
+                  : 'The partner sees this request (customer, vehicle, notes) in their portal and can update its status and quote.'}
+              </p>
+            </div>
+            <div>
               <label className={ui.label} htmlFor="sr-assigned">Assigned to</label>
               <input id="sr-assigned" value={assigned} onChange={e => setAssigned(e.target.value)} className={ui.input} placeholder="Agent or partner handling it" />
             </div>
             <div>
-              <label className={ui.label} htmlFor="sr-notes">Admin notes</label>
+              <label className={ui.label} htmlFor="sr-notes">Notes{req.partner_id || partnerId ? ' (the partner can read these)' : ''}</label>
               <textarea id="sr-notes" rows={3} value={notes} onChange={e => setNotes(e.target.value)} className={ui.input} placeholder="e.g. Called customer, documents submitted, install booked for Friday…" />
             </div>
             <div className="pt-1 flex gap-2">

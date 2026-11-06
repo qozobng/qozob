@@ -15,6 +15,7 @@ import {
 
 // --- AUTH INTEGRATION ---
 import { createClient } from '@/utils/supabase/client';
+import posthog from 'posthog-js';
 
 // --- SHARED BRANDING ---
 import { BrandLogo } from '@/components/BrandLogo';
@@ -293,6 +294,12 @@ function PriceUpdateModal({ station, region, onClose, onSaved, onClaim }: { stat
     const { data: savedRow, error } = await supabase.from('stations').upsert(payload, { onConflict: 'station_id' }).select().maybeSingle();
     if (error) throw new SubmitPriceError('unknown', error.message);
     onSaved(station.id, savedRow || payload, "Price updated. Thanks for helping the community.");
+    posthog.capture('price_submitted', {
+      submission_status: 'live',
+      queue_status: suggestedQueue,
+      currency,
+      submission_method: 'legacy',
+    });
     onClose();
     const result = await recordPriceReport(supabase, station.id, position);
     if (result) onSaved(station.id, {}, describeReport(result));
@@ -325,6 +332,12 @@ function PriceUpdateModal({ station, region, onClose, onSaved, onClaim }: { stat
           ? { price_pms: r.price, currency: r.currency || currency, queue_status: r.queue_status, last_updated: r.last_updated, updated_by_role: r.updated_by_role, verified: r.verified, lat: station.lat, lng: station.lng }
           : {};
         onSaved(station.id, patch, describeSubmission(r));
+        posthog.capture('price_submitted', {
+          submission_status: r.status,
+          queue_status: r.queue_status,
+          currency: r.currency || currency,
+          submission_method: 'standard',
+        });
         onClose();
       } catch (e) {
         if (e instanceof SubmitPriceError && e.code === 'not_deployed') return await legacySave(priceNum, position);
@@ -469,6 +482,7 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
       if (dbError) throw new Error(dbError.message);
 
       onSaved(station.id, "Claim submitted! The station is now marked as 'Claim in Progress'.");
+      posthog.capture('station_claim_submitted');
       onClose();
     } catch (err: any) { 
       alert("Error: " + err.message); 
@@ -592,6 +606,10 @@ function RateStationModal({ station, onClose, onSaved }: { station: Station, onC
       onSaved(station.id, patch, result.changed_vote
         ? "Your rating has been updated. Thanks!"
         : "Thank you! Your community rating has been recorded.");
+      posthog.capture('station_rating_submitted', {
+        rating: selectedStar,
+        is_update: !!result.changed_vote,
+      });
       onClose();
     }
   };
@@ -1222,6 +1240,7 @@ function QozobLanding() {
       return showToast(err, 'error');
     }
     showToast(wasSaved ? 'Removed from your saved stations.' : 'Saved. Find it any time in your dashboard → Saved stations.');
+    posthog.capture('station_saved', { action: wasSaved ? 'removed' : 'saved' });
   }, [savedIds, supabase, showToast]);
 
   // Back from sign-up / sign-in with ?select=ID&go=ACTION: pick up exactly where they left off
@@ -1277,9 +1296,11 @@ function QozobLanding() {
     try {
       if (navigator.share) {
         await navigator.share({ title: 'Qozob', text, url });
+        posthog.capture('station_shared', { share_method: 'native' });
       } else {
         await navigator.clipboard.writeText(`${text} ${url}`);
         showToast('Link copied to clipboard!');
+        posthog.capture('station_shared', { share_method: 'clipboard' });
       }
     } catch {
       // User dismissed the share sheet — nothing to do

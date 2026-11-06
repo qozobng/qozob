@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
+import posthog from 'posthog-js';
 import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
 import { displayName, initialOf } from '@/lib/profile';
 import { BrandLogo } from '@/components/BrandLogo';
@@ -336,6 +337,12 @@ export default function DashboardPage() {
     setEditingStation(null);
     const logoRejected = !!editLogoUrl && data.custom_logo_url !== editLogoUrl;
     const currencyRejected = !!patch.currency && data.currency && data.currency !== patch.currency;
+    posthog.capture('station_details_updated', {
+      has_price_update: price.value !== null,
+      has_queue_update: editQueue !== 'Unknown',
+      has_currency_update: !!patch.currency,
+      has_logo_update: !!editLogoUrl,
+    });
     flash(!logoRejected && !currencyRejected, logoRejected
       ? 'Saved, but the logo was not accepted. Upload it again from this screen.'
       : currencyRejected
@@ -362,6 +369,10 @@ export default function DashboardPage() {
     if (error || !data) return flash(false, "Failed to update price: " + (error?.message ?? 'station not linked to your account.'));
     applySaved(data as Station);
     setEditingPriceId(null);
+    posthog.capture('station_price_updated', {
+      update_method: 'inline',
+      currency: stationCurrency(station),
+    });
     flash(true, `Price updated to ${formatMoney(Number(data.price_pms), stationCurrency(station))}. It is live on the map.`);
   };
 
@@ -378,6 +389,7 @@ export default function DashboardPage() {
 
     if (error || !data) return flash(false, "Failed to update queue: " + (error?.message ?? 'station not linked to your account.'));
     applySaved(data as Station);
+    posthog.capture('station_queue_updated', { queue_status: newQueue });
   };
 
   // Bulk CSV Actions

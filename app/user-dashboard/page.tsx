@@ -6,7 +6,7 @@ import {
   User as UserIcon, Settings, ShieldCheck, Map as MapIcon, 
   LogOut, Star, Droplet, ArrowRight, CheckCircle2, Loader2,
   TrendingDown, Bookmark, Fuel, Compass, AlertCircle, ArrowUpRight,
-  Sparkles, Navigation, Clock, Check, MapPin, Trophy, Car, Trash2
+  Sparkles, Navigation, Clock, Check, MapPin, Trophy, Car, Trash2, Building2
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -91,6 +91,12 @@ function UserDashboardContent() {
       if (event === 'USER_UPDATED' && session?.user) setUser(session.user);
     });
     return () => subscription.unsubscribe();
+  }, [supabase]);
+
+  // People who work for a service partner company get a shortcut to /partner (20261106; quietly off if not deployed)
+  const [isPartner, setIsPartner] = useState(false);
+  useEffect(() => {
+    supabase.rpc('my_partner_id').then(({ data, error }) => { if (!error && data) setIsPartner(true); });
   }, [supabase]);
 
   useEffect(() => {
@@ -394,6 +400,14 @@ function UserDashboardContent() {
               className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-on-accent bg-accent-solid hover:bg-accent-hover transition-colors w-full"
             >
               <ShieldCheck className="w-4 h-4" aria-hidden /> Station dashboard
+            </button>
+          )}
+          {isPartner && (
+            <button
+              onClick={() => router.push('/partner')}
+              className="flex items-center justify-center gap-2 h-10 px-4 rounded-lg text-sm font-semibold text-on-brand border border-brand-line hover:bg-on-brand/5 transition-colors w-full"
+            >
+              <Building2 className="w-4 h-4" aria-hidden /> Partner portal
             </button>
           )}
           <button 

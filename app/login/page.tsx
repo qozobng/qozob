@@ -3,6 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import posthog from 'posthog-js';
 import { Loader2, Lock, Mail, ArrowRight, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import type { User } from '@supabase/supabase-js';
@@ -63,6 +64,7 @@ function LoginContent() {
     }
 
     if (data.user) {
+      posthog.capture('user_logged_in', { login_method: 'password' });
       routeUser(data.user);
     }
   };

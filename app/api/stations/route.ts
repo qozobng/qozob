@@ -1,5 +1,10 @@
-import { NextResponse } from 'next/server';
+import { after, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import {
+  flushPostHogLogs,
+  logStationSearchCacheHit,
+  logStationSearchUpstreamFetched,
+} from '@/lib/posthog-logs';
 
 // Initialize Supabase Client for backend operations
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -49,6 +54,8 @@ export async function GET(request: Request) {
     // If we have stations saved in this area, return them instantly!
     if (cachedStations && cachedStations.length > 2) {
       console.log(`🤑 CACHE HIT: Found ${cachedStations.length} stations in Supabase. Bypassing Google API.`);
+      logStationSearchCacheHit(cachedStations.length);
+      after(flushPostHogLogs);
       
       // Format them to match exactly what your frontend expects
       const formattedResults = cachedStations.map(station => ({
@@ -203,6 +210,8 @@ export async function GET(request: Request) {
     }
     
     // Only cache non-empty results so a transient Google failure isn't pinned at the CDN
+    logStationSearchUpstreamFetched(formattedResults.length);
+    after(flushPostHogLogs);
     return NextResponse.json(
       { results: formattedResults },
       formattedResults.length > 0 ? { headers: CACHE_HEADERS } : undefined

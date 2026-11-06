@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
+import posthog from 'posthog-js';
 import { FuelLog, FuelType, FuelLogType } from '@/types/services';
 import { fetchUserFuelLogs, saveFuelLog, deleteFuelLog } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
@@ -135,6 +136,11 @@ export function FuelLogbook({ user }: { user: any }) {
     if (error) {
       setErrorMsg(error);
     } else {
+      posthog.capture('fuel_log_created', {
+        log_type: logType,
+        fuel_type: fuelType,
+        currency,
+      });
       setShowAddModal(false);
       // Reset
       setPricePerLitre('');
@@ -150,8 +156,10 @@ export function FuelLogbook({ user }: { user: any }) {
 
   const handleDelete = async (logId: string) => {
     if (!confirm('Are you sure you want to delete this fuel purchase record?')) return;
-    await deleteFuelLog(supabase, logId, user.id);
+    const deleted = await deleteFuelLog(supabase, logId, user.id);
+    if (!deleted) return;
     setLogs(prev => prev.filter(l => l.id !== logId));
+    posthog.capture('fuel_log_deleted');
   };
 
   const handleExportCSV = () => {
@@ -180,6 +188,7 @@ export function FuelLogbook({ user }: { user: any }) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    posthog.capture('fuel_log_exported', { log_count: logs.length });
   };
 
   return (

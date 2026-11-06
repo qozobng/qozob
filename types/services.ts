@@ -44,6 +44,9 @@ export interface ServiceRequest {
   voucher_code?: string | null;
   admin_notes?: string | null;
   assigned_to?: string | null;
+  /** Partner company handling it (20261106) */
+  partner_id?: string | null;
+  partner_assigned_at?: string | null;
   created_at: string;
   updated_at: string;
 }
