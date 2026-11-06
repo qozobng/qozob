@@ -11,7 +11,8 @@ import { StatCard } from '@/components/analytics/StatCard';
 import { AreaChart } from '@/components/analytics/AreaChart';
 import { BarChart } from '@/components/analytics/BarChart';
 import { DonutChart } from '@/components/analytics/DonutChart';
-import { DEFAULT_REWARD_SETTINGS, REASON_TEXT, ID_TYPES, naira, monthRange, yearRange, isoDate, lagosToday, type RewardSettings } from '@/lib/rewards';
+import { DEFAULT_REWARD_SETTINGS, REASON_TEXT, ID_TYPES, ID_TYPES_INTL, money, monthRange, yearRange, isoDate, lagosToday, type RewardSettings } from '@/lib/rewards';
+import { loadRegions, loadRewardPrograms, flagEmoji, type Region } from '@/lib/regions';
 import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
 import { PriceReviews } from './PriceReviews';
 import { RewardDrillDown, PERSON_COLUMNS, type DrillKind } from './RewardDrillDowns';
@@ -35,6 +36,8 @@ interface Stats {
   reports_month: number; coins_month: number; contributors_month: number; lgas_active_month: number;
   held_pending: number; kyc_pending: number; verified_people: number;
   lgas_loaded: number; stations_with_lga: number; stations_total: number;
+  /** Nigeria's LGAs only (20261105); lgas_loaded then counts the selected countries' areas. */
+  lgas_loaded_ng?: number;
   top_lgas: { name: string; state: string; coins: number; contributors: number }[];
   reasons: { reason: string; n: number }[];
 }
@@ -49,6 +52,7 @@ interface Winner {
   gross_ngn: number; wht_ngn: number; net_ngn: number; status: 'pending' | 'approved' | 'paid' | 'forfeited'; payment_reference: string | null;
   paid_at: string | null; note: string | null; bank_name: string | null; account_name: string | null; account_last4: string | null;
   payout_type?: 'cash' | 'voucher' | null; voucher_code?: string | null; voucher_value_ngn?: number | null; voucher_redeemed_at?: string | null;
+  country_code?: string | null; currency?: string | null;
 }
 const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : 'Something went wrong.');
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-NG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -80,18 +84,24 @@ const Pill = ({ s }: { s: string }) => (
   <span className={cx('inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap', STATUS_PILL[s] ?? STATUS_PILL.incomplete)}>{STATUS_TEXT[s] ?? s}</span>
 );
 
-export function RewardsManager() {
+/** Country passed to the database only when one is picked (older databases don't know p_country). */
+const withCountry = (args: Record<string, unknown>, country: string) => (country ? { ...args, p_country: country } : args);
+
+export function RewardsManager({ country = '' }: { country?: string }) {
   const [tab, setTab] = useState<SubTab>('overview');
   const [stats, setStats] = useState<Stats | null>(null);
   const [statsError, setStatsError] = useState('');
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [regions, setRegions] = useState<Record<string, Region>>({});
+  useEffect(() => { loadRegions(supabase).then(setRegions); }, []);
+  const countryName = country ? (regions[country]?.name || country) : '';
 
   const loadStats = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_reward_stats', { p_days: 30 });
+    const { data, error } = await supabase.rpc('admin_reward_stats', withCountry({ p_days: 30 }, country));
     if (error) { setStatsError(error.message); return; }
     setStatsError('');
     setStats(data as Stats);
-  }, []);
+  }, [country]);
   useEffect(() => { loadStats(); }, [loadStats]);
 
   const flash = useCallback((ok: boolean, text: string) => {
@@ -131,7 +141,11 @@ export function RewardsManager() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className={cx(ui.h1, 'flex items-center gap-2')}><Trophy className="w-7 h-7 text-warning" aria-hidden /> Rewards</h2>
-          <p className={cx(ui.body, 'mt-1')}>Monthly LGA prizes, annual grand prize, checks and payouts.</p>
+          <p className={cx(ui.body, 'mt-1')}>
+            {country
+              ? <>Showing <strong className="text-fg">{flagEmoji(country)} {countryName}</strong>: prizes, checks and payouts in its own currency.</>
+              : 'Monthly area prizes, annual grand prize, checks and payouts. Pick a country at the top to work on one programme.'}
+          </p>
         </div>
         <button type="button" onClick={loadStats} className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><RefreshCw className="w-4 h-4" aria-hidden /> Refresh</button>
       </div>
@@ -159,13 +173,24 @@ export function RewardsManager() {
       {!stats ? (
         <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-primary" aria-label="Loading" /></div>
       ) : tab === 'overview' ? (
-        <Overview stats={stats} reload={loadStats} flash={flash} />
+        <Overview stats={stats} reload={loadStats} flash={flash} country={country} regions={regions} />
       ) : tab === 'review' ? (
-        <PriceReviews compact onChanged={loadStats} />
+        <PriceReviews compact onChanged={loadStats} country={country} />
       ) : tab === 'people' ? (
-        <People flash={flash} reload={loadStats} />
+        <People flash={flash} reload={loadStats} country={country} />
       ) : tab === 'payouts' ? (
-        <Payouts flash={flash} />
+        <Payouts flash={flash} country={country} regions={regions} />
+      ) : country && country !== 'NG' ? (
+        <div className="grid xl:grid-cols-[2fr_1fr] gap-4 items-start">
+          <div className={cx(ui.card, 'p-5 sm:p-6')}>
+            <h3 className={ui.h2}>{flagEmoji(country)} {countryName} programme</h3>
+            <p className={cx(ui.body, 'mt-1')}>
+              Prize, currency, quorum and active days for {countryName} are set in <strong className="text-fg">Admin → Regions → Programme</strong> (master admins).
+              The anti-fraud rules (distance, cooldown, daily cap, coins per update) are shared by every country: choose &quot;All countries&quot; or Nigeria at the top to edit them.
+            </p>
+          </div>
+          <Exclusions flash={flash} />
+        </div>
       ) : (
         <SettingsPanel flash={flash} />
       )}
@@ -174,44 +199,59 @@ export function RewardsManager() {
 }
 
 // ---------------------------------------------------------------- OVERVIEW
-function Overview({ stats, reload, flash }: { stats: Stats; reload: () => void; flash: (ok: boolean, t: string) => void }) {
+function Overview({ stats, reload, flash, country, regions }: { stats: Stats; reload: () => void; flash: (ok: boolean, t: string) => void; country: string; regions: Record<string, Region> }) {
   const [drill, setDrill] = useState<DrillKind | null>(null);
-  const [pool, setPool] = useState<{ qualifying: number | null; prize: number } | null>(null);
+  const [pool, setPool] = useState<{ qualifying: number | null; prize: number; currency: string; mixed: boolean } | null>(null);
   const totals = useMemo(() => stats.daily.reduce((a, d) => ({
     accepted: a.accepted + d.accepted, held: a.held + d.held, no_reward: a.no_reward + d.no_reward, rejected: a.rejected + d.rejected,
   }), { accepted: 0, held: 0, no_reward: 0, rejected: 0 }), [stats.daily]);
 
-  // Real prize pool: monthly prize × LGAs that currently meet the quorum and are in the payout scope.
+  // Real prize pool: monthly prize × areas that currently meet the quorum and are in the payout scope
+  // (per country, in each programme's currency).
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [cfg, lgas] = await Promise.all([
+      const [cfg, lgas, programs] = await Promise.all([
         supabase.from('reward_settings').select('monthly_prize_ngn').maybeSingle(),
-        supabase.rpc('admin_reward_lga_summary', { p_from: monthRange(0).start, p_to: isoDate(lagosToday()) }),
+        supabase.rpc('admin_reward_lga_summary', withCountry({ p_from: monthRange(0).start, p_to: isoDate(lagosToday()) }, country)),
+        loadRewardPrograms(supabase),
       ]);
       if (cancelled) return;
-      const prize = Number(cfg.data?.monthly_prize_ngn ?? DEFAULT_REWARD_SETTINGS.monthly_prize_ngn);
-      const qualifying = lgas.error ? null
-        : ((lgas.data || []) as { quorum_met: boolean; in_scope: boolean }[]).filter(r => r.quorum_met && r.in_scope).length;
-      setPool({ qualifying, prize });
+      const rc = country || 'NG';
+      const prog = programs[rc];
+      const prize = prog ? Number(prog.monthly_prize) : Number(cfg.data?.monthly_prize_ngn ?? DEFAULT_REWARD_SETTINGS.monthly_prize_ngn);
+      const list = (lgas.data || []) as { quorum_met: boolean; in_scope: boolean; country_code?: string | null }[];
+      const countries = new Set(list.map(r => r.country_code || 'NG'));
+      const qualifying = lgas.error ? null : list.filter(r => r.quorum_met && r.in_scope && (r.country_code || 'NG') === rc).length;
+      setPool({ qualifying, prize, currency: prog?.currency || 'NGN', mixed: !country && countries.size > 1 });
     })();
     return () => { cancelled = true; };
-  }, [stats]);
+  }, [stats, country]);
 
   const poolText = !pool ? 'Calculating prize pool…'
-    : pool.qualifying === null ? `Prize pool up to ${naira(stats.lgas_active_month * pool.prize)}`
-      : `${pool.qualifying} meet quorum · pool ${naira(pool.qualifying * pool.prize)}`;
+    : pool.qualifying === null ? `Prize pool up to ${money(stats.lgas_active_month * pool.prize, pool.currency)}`
+      : `${pool.qualifying} meet quorum · pool ${money(pool.qualifying * pool.prize, pool.currency)}${pool.mixed ? ' (Nigeria)' : ''}`;
+  const showNgSetup = !country || country === 'NG';
+  const areaWord = country && country !== 'NG' ? (regions[country]?.area_label || 'Area') : 'LGA';
 
   return (
     <div className="flex flex-col gap-5">
-      <LgaSetup stats={stats} reload={reload} flash={flash} />
+      {showNgSetup ? <LgaSetup stats={stats} reload={reload} flash={flash} /> : (
+        <div className={cx(ui.card, 'p-4 flex items-start gap-3')}>
+          <MapIcon className={cx('w-6 h-6 shrink-0', stats.lgas_loaded > 0 ? 'text-success' : 'text-fg-muted')} aria-hidden />
+          <p className="text-sm text-fg-muted">
+            <strong className="text-fg">{stats.lgas_loaded} {areaWord.toLowerCase()} area(s)</strong> mapped for {regions[country]?.name || country}.
+            {stats.lgas_loaded === 0 ? ' Monthly prizes there have one national winner until an area map is uploaded (Admin → Regions → Area map).' : ' Each area has its own monthly winner.'}
+          </p>
+        </div>
+      )}
 
       <p className="text-xs text-fg-muted -mb-2">Tip: click any card to see the records behind it and download them to Excel.</p>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard title="Rewarded updates (month)" value={stats.reports_month.toLocaleString('en-NG')} subtitle="All checked reports this month" icon={MapPin} colorTheme="indigo" onClick={() => setDrill('updates')} />
-        <StatCard title="Coins earned (month)" value={Number(stats.coins_month).toLocaleString('en-NG')} subtitle="By contributor" icon={Coins} colorTheme="amber" onClick={() => setDrill('coins')} />
-        <StatCard title="Contributors (month)" value={stats.contributors_month.toLocaleString('en-NG')} subtitle={`${stats.verified_people} fully verified people`} icon={Users} colorTheme="emerald" onClick={() => setDrill('contributors')} />
-        <StatCard title="Active LGAs (month)" value={`${stats.lgas_active_month}/774`} subtitle={poolText} icon={Trophy} colorTheme="purple" onClick={() => setDrill('lgas')} />
+        <StatCard title="Rewarded updates (month)" value={stats.reports_month.toLocaleString('en')} subtitle="All checked reports this month" icon={MapPin} colorTheme="indigo" onClick={() => setDrill('updates')} />
+        <StatCard title="Coins earned (month)" value={Number(stats.coins_month).toLocaleString('en')} subtitle="By contributor" icon={Coins} colorTheme="amber" onClick={() => setDrill('coins')} />
+        <StatCard title="Contributors (month)" value={stats.contributors_month.toLocaleString('en')} subtitle={`${stats.verified_people} fully verified people`} icon={Users} colorTheme="emerald" onClick={() => setDrill('contributors')} />
+        <StatCard title={`Active ${areaWord === 'LGA' ? 'LGAs' : 'areas'} (month)`} value={showNgSetup && !country ? `${stats.lgas_active_month}/774` : String(stats.lgas_active_month)} subtitle={poolText} icon={Trophy} colorTheme="purple" onClick={() => setDrill('lgas')} />
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <StatCard title="Held for review" value={stats.held_pending} subtitle="Prices not live until reviewed" icon={Hourglass} colorTheme="blue" badge={stats.held_pending ? { text: 'Action', variant: 'warning' } : undefined} onClick={() => setDrill('held')} />
@@ -259,7 +299,7 @@ function Overview({ stats, reload, flash }: { stats: Stats; reload: () => void; 
 function LgaSetup({ stats, reload, flash }: { stats: Stats; reload: () => void; flash: (ok: boolean, t: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const ready = stats.lgas_loaded >= 774;
+  const ready = (stats.lgas_loaded_ng ?? stats.lgas_loaded) >= 774;
 
   const importLgas = async () => {
     if (!window.confirm('Import the official boundaries for all 774 LGAs? This takes about a minute. Keep this tab open.')) return;
@@ -302,7 +342,7 @@ function LgaSetup({ stats, reload, flash }: { stats: Stats; reload: () => void; 
         <div className="flex items-start gap-3">
           <MapIcon className={cx('w-6 h-6 shrink-0', ready ? 'text-success' : 'text-warning')} aria-hidden />
           <div>
-            <p className="font-semibold text-fg">LGA boundaries: {stats.lgas_loaded}/774 loaded</p>
+            <p className="font-semibold text-fg">Nigeria LGA boundaries: {stats.lgas_loaded_ng ?? stats.lgas_loaded}/774 loaded</p>
             <p className="text-sm text-fg-muted">Stations matched to an LGA: {stats.stations_with_lga.toLocaleString('en-NG')} of {stats.stations_total.toLocaleString('en-NG')}. New stations are matched automatically.</p>
             <p className={ui.hint}>Source: geoBoundaries / GRID3 (CC BY 4.0). Credit is shown on the map and Rewards page.</p>
           </div>
@@ -327,7 +367,7 @@ function LgaSetup({ stats, reload, flash }: { stats: Stats; reload: () => void; 
 }
 
 // ---------------------------------------------------------------- PEOPLE
-function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; reload: () => void }) {
+function People({ flash, reload, country = '' }: { flash: (ok: boolean, t: string) => void; reload: () => void; country?: string }) {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending_review' | 'verified' | 'suspended' | 'unverified'>('all');
   const [q, setQ] = useState('');
@@ -336,10 +376,10 @@ function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; re
   const [revealed, setRevealed] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_reward_people');
+    const { data, error } = await supabase.rpc('admin_reward_people', withCountry({}, country));
     if (error) { flash(false, error.message); setPeople([]); return; }
     setPeople((data || []) as Person[]);
-  }, [flash]);
+  }, [flash, country]);
   useEffect(() => { load(); }, [load]);
 
   const shown = useMemo(() => (people || []).filter(p => {
@@ -452,7 +492,7 @@ function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; re
                       <p className={ui.eyebrow}>Identity</p>
                       <p className="text-fg">{p.legal_name ?? '—'}</p>
                       <p className="text-fg-muted">DOB: {p.dob ?? '—'}</p>
-                      <p className="text-fg-muted">{p.id_type ? `${ID_TYPES.find(t => t.value === p.id_type)?.label ?? p.id_type} ····${p.id_last4}` : 'No ID submitted'}</p>
+                      <p className="text-fg-muted">{p.id_type ? `${[...ID_TYPES, ...ID_TYPES_INTL].find(t => t.value === p.id_type)?.label ?? p.id_type} ····${p.id_last4}` : 'No ID submitted'}</p>
                       {p.submitted_at && <p className="text-fg-muted">Submitted {fmtDate(p.submitted_at)}</p>}
                       {p.review_note && <p className="text-fg-muted">Note: {p.review_note}</p>}
                       {p.status === 'pending_review' && (
@@ -501,21 +541,24 @@ function People({ flash, reload }: { flash: (ok: boolean, t: string) => void; re
 }
 
 // ---------------------------------------------------------------- WINNERS & PAYOUTS
-function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
+function Payouts({ flash, country = '', regions = {} }: { flash: (ok: boolean, t: string) => void; country?: string; regions?: Record<string, Region> }) {
   const [winners, setWinners] = useState<Winner[] | null>(null);
   const [period, setPeriod] = useState<string>('');
   const [month, setMonth] = useState(monthRange(-1).start.slice(0, 7));
   const [year, setYear] = useState(yearRange(-1).label);
   const [busy, setBusy] = useState(false);
   const [showForfeited, setShowForfeited] = useState(false);
+  // Months are closed per country: the one picked at the top (Nigeria when "All countries")
+  const closeCountry = country || 'NG';
+  const closeName = regions[closeCountry]?.name || (closeCountry === 'NG' ? 'Nigeria' : closeCountry);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc('admin_reward_winners');
+    const { data, error } = await supabase.rpc('admin_reward_winners', withCountry({}, country));
     if (error) { flash(false, error.message); setWinners([]); return; }
     const list = (data || []) as Winner[];
     setWinners(list);
-    setPeriod(prev => prev || (list[0] ? String(list[0].period_id) : ''));
-  }, [flash]);
+    setPeriod(prev => (prev && list.some(w => String(w.period_id) === prev) ? prev : (list[0] ? String(list[0].period_id) : '')));
+  }, [flash, country]);
   useEffect(() => { load(); }, [load]);
 
   const periods = useMemo(() => {
@@ -525,17 +568,18 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
   }, [winners]);
   const rows = useMemo(() => (winners || []).filter(w => String(w.period_id) === period && (showForfeited || w.status !== 'forfeited')), [winners, period, showForfeited]);
   const sum = rows.filter(w => w.status !== 'forfeited').reduce((a, w) => ({ n: a.n + 1, net: a.net + w.net_ngn, paid: a.paid + (w.status === 'paid' ? 1 : 0) }), { n: 0, net: 0, paid: 0 });
+  const cur = rows[0]?.currency || 'NGN';
 
   const close = async (kind: 'monthly' | 'annual') => {
     const start = kind === 'monthly' ? `${month}-01` : `${year}-01-01`;
-    const label = kind === 'monthly' ? new Date(start + 'T00:00:00Z').toLocaleDateString('en-NG', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : `the year ${year}`;
-    if (!window.confirm(`Close ${label} and pick the winners? First approve or reject held reports and pending ID checks, because only verified people with enough active days can win. This cannot be undone.`)) return;
+    const label = kind === 'monthly' ? new Date(start + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : `the year ${year}`;
+    if (!window.confirm(`Close ${label} for ${closeName} and pick the winners? First approve or reject held reports and pending ID checks, because only verified people with enough active days can win. This cannot be undone.`)) return;
     setBusy(true);
-    const { data, error } = await supabase.rpc('admin_close_period', { p_kind: kind, p_start: start });
+    const { data, error } = await supabase.rpc('admin_close_period', closeCountry === 'NG' ? { p_kind: kind, p_start: start } : { p_kind: kind, p_start: start, p_country: closeCountry });
     setBusy(false);
     if (error) return flash(false, error.message);
     const r = data as { period_id: number; winners: number; pay_by: string };
-    flash(true, `Closed ${label}: ${r.winners} winner(s). Pay by ${r.pay_by}.`);
+    flash(true, `Closed ${label} for ${closeName}: ${r.winners} winner(s). Pay by ${r.pay_by}.`);
     setPeriod(String(r.period_id));
     load();
   };
@@ -546,11 +590,11 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
     if (action === 'approve') {
       res = await supabase.rpc('admin_update_winner', { p_winner_id: w.id, p_status: 'approved', p_reference: null, p_note: null });
     } else if (action === 'paid') {
-      const ref = window.prompt(`Bank transfer reference for ${naira(w.net_ngn)} to ${w.legal_name ?? w.email}:`);
+      const ref = window.prompt(`Payment reference for ${money(w.net_ngn, w.currency)} to ${w.legal_name ?? w.email}:`);
       if (!ref) { setBusy(false); return; }
       res = await supabase.rpc('admin_update_winner', { p_winner_id: w.id, p_status: 'paid', p_reference: ref, p_note: null });
     } else {
-      const note = window.prompt('Why is this prize forfeited? The next qualified person in this LGA will be chosen.', 'Could not verify / no response within 60 days');
+      const note = window.prompt('Why is this prize forfeited? The next qualified person in this area will be chosen.', 'Could not verify / no response within 60 days');
       if (note === null) { setBusy(false); return; }
       res = await supabase.rpc('admin_replace_winner', { p_winner_id: w.id, p_note: note });
     }
@@ -580,23 +624,24 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
     const first = live[0];
     await exportXlsx(`qozob-winners-${first.kind}-${first.period_start}${withAccounts ? '-PAYMENT' : ''}`, {
       name: withAccounts ? 'Payment file' : 'Winners',
-      title: `${first.kind === 'annual' ? 'Annual grand prize' : 'Monthly LGA winners'} · ${periodLabel(first)}`,
+      title: `${first.kind === 'annual' ? 'Annual grand prize' : 'Monthly winners'} · ${periodLabel(first)} · ${first.country_code || 'NG'}`,
       meta: [
         `Pay by: ${first.pay_by}`,
-        `Winners: ${list.length} · Net to pay: ${naira(list.filter(w => w.status !== 'forfeited' && w.payout_type !== 'voucher').reduce((a, w) => a + w.net_ngn, 0))}`,
+        `Currency: ${first.currency || 'NGN'}`,
+        `Winners: ${list.length} · Net to pay: ${money(list.filter(w => w.status !== 'forfeited' && w.payout_type !== 'voucher').reduce((a, w) => a + w.net_ngn, 0), first.currency)}`,
         ...(withAccounts ? ['CONFIDENTIAL: contains full account numbers. Delete after payment.'] : []),
       ],
       columns: [
-        { header: 'Period' }, { header: 'LGA' }, { header: 'State' }, { header: 'Legal name', width: 26 }, { header: 'Email', width: 28 },
+        { header: 'Period' }, { header: 'Country' }, { header: 'Area' }, { header: 'State' }, { header: 'Legal name', width: 26 }, { header: 'Email', width: 28 },
         { header: 'Coins', type: 'integer' }, { header: 'Active days', type: 'integer' }, { header: 'Stations', type: 'integer' },
-        { header: 'Gross', type: 'money' }, { header: 'Tax withheld', type: 'money' }, { header: 'Net', type: 'money' },
+        { header: 'Currency' }, { header: 'Gross', type: 'money' }, { header: 'Tax withheld', type: 'money' }, { header: 'Net', type: 'money' },
         { header: 'Payout type' }, { header: 'Voucher code' }, { header: 'Voucher value', type: 'money' }, { header: 'Voucher redeemed', type: 'datetime' },
-        { header: 'Bank' }, { header: 'Account name', width: 26 }, { header: withAccounts ? 'Account number' : 'Account (masked)' },
+        { header: 'Bank / provider' }, { header: 'Account name', width: 26 }, { header: withAccounts ? 'Account number' : 'Account (masked)' },
         { header: 'Status' }, { header: 'Payment reference' }, { header: 'Paid at', type: 'datetime' }, { header: 'Pay by', type: 'date' }, { header: 'Note', width: 30 },
       ],
       rows: list.map(w => [
-        periodLabel(w), w.lga_name ?? 'National', w.state ?? '', w.legal_name ?? w.display_name, w.email,
-        w.coins, w.active_days, w.stations, w.gross_ngn, w.wht_ngn, w.net_ngn,
+        periodLabel(w), w.country_code || 'NG', w.lga_name ?? 'National', w.state ?? '', w.legal_name ?? w.display_name, w.email,
+        w.coins, w.active_days, w.stations, w.currency || 'NGN', w.gross_ngn, w.wht_ngn, w.net_ngn,
         w.payout_type === 'voucher' ? 'Service voucher' : 'Cash', w.voucher_code ?? null, w.voucher_value_ngn ?? null, w.voucher_redeemed_at ?? null,
         w.bank_name, w.account_name,
         withAccounts && w.user_id ? numbers[w.user_id] ?? '' : (w.account_last4 ? `····${w.account_last4}` : ''),
@@ -609,16 +654,16 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
     <div className="flex flex-col gap-4">
       <div className="grid md:grid-cols-2 gap-4">
         <div className={cx(ui.card, 'p-5')}>
-          <h3 className={ui.h2}>Close a month</h3>
-          <p className={cx(ui.body, 'mt-1')}>Picks the top qualified person in each LGA. Do this on the 1st–3rd, then pay by the 7th.</p>
+          <h3 className={ui.h2}>Close a month · {flagEmoji(closeCountry)} {closeName}</h3>
+          <p className={cx(ui.body, 'mt-1')}>Picks the top qualified person in each area of {closeName} (or one national winner if it has no area map). Do this on the 1st–3rd, then pay by the 7th.</p>
           <div className="mt-3 flex gap-2">
             <input type="month" className={cx(ui.input, 'h-10 max-w-[200px]')} value={month} onChange={e => setMonth(e.target.value)} max={monthRange(-1).start.slice(0, 7)} aria-label="Month to close" />
             <button type="button" disabled={busy} onClick={() => close('monthly')} className={cx(ui.btn, ui.btnMd, ui.btnPrimary)}><Trophy className="w-4 h-4" aria-hidden /> Close month</button>
           </div>
         </div>
         <div className={cx(ui.card, 'p-5')}>
-          <h3 className={ui.h2}>Close a year (grand prize)</h3>
-          <p className={cx(ui.body, 'mt-1')}>One national winner for January–December, paid by 31 January. Set the prize in Settings first.</p>
+          <h3 className={ui.h2}>Close a year (grand prize) · {closeName}</h3>
+          <p className={cx(ui.body, 'mt-1')}>One national winner for January–December, paid by 31 January. Set the prize first ({closeCountry === 'NG' ? 'Settings' : 'Regions → Programme'}).</p>
           <div className="mt-3 flex gap-2">
             <input type="number" className={cx(ui.input, 'h-10 max-w-[120px]')} value={year} onChange={e => setYear(e.target.value)} min={2026} max={Number(yearRange(-1).label)} aria-label="Year to close" />
             <button type="button" disabled={busy} onClick={() => close('annual')} className={cx(ui.btn, ui.btnMd, ui.btnPrimary)}><Trophy className="w-4 h-4" aria-hidden /> Close year</button>
@@ -631,7 +676,7 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
           <div className="flex flex-wrap items-center gap-2">
             <select className={cx(ui.select, 'h-10 w-auto')} value={period} onChange={e => setPeriod(e.target.value)} aria-label="Period">
               {periods.length === 0 && <option value="">No closed periods yet</option>}
-              {periods.map(([id, w]) => <option key={id} value={id}>{periodLabel(w)} ({w.kind})</option>)}
+              {periods.map(([id, w]) => <option key={id} value={id}>{w.country_code && w.country_code !== 'NG' ? `${flagEmoji(w.country_code)} ` : ''}{periodLabel(w)} ({w.kind})</option>)}
             </select>
             <label className="inline-flex items-center gap-2 text-sm text-fg-muted"><input type="checkbox" className="accent-primary" checked={showForfeited} onChange={e => setShowForfeited(e.target.checked)} /> Show forfeited</label>
           </div>
@@ -640,7 +685,7 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
             <button type="button" disabled={!rows.length || busy} onClick={() => exportWinners(true)} className={cx(ui.btn, ui.btnSm, ui.btnSoft)}><Landmark className="w-4 h-4" aria-hidden /> Payment file (logged)</button>
           </div>
         </div>
-        {period && <p className="mt-3 text-sm text-fg-muted">{sum.n} winner(s) · {naira(sum.net)} to pay · {sum.paid} paid{rows[0] ? ` · pay by ${rows[0].pay_by}` : ''}</p>}
+        {period && <p className="mt-3 text-sm text-fg-muted">{sum.n} winner(s) · {money(sum.net, cur)} to pay · {sum.paid} paid{rows[0] ? ` · pay by ${rows[0].pay_by}` : ''}</p>}
 
         {!winners ? (
           <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" aria-label="Loading" /></div>
@@ -651,7 +696,7 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
             <table className="w-full text-sm min-w-[860px]">
               <thead>
                 <tr className="text-left text-xs font-semibold uppercase tracking-wide text-fg-subtle border-b border-line">
-                  <th className="py-2 px-2">LGA</th><th className="py-2 px-2">Winner</th><th className="py-2 px-2 text-right">Coins / days</th>
+                  <th className="py-2 px-2">Area</th><th className="py-2 px-2">Winner</th><th className="py-2 px-2 text-right">Coins / days</th>
                   <th className="py-2 px-2">Bank</th><th className="py-2 px-2 text-right">Net</th><th className="py-2 px-2">Status</th><th className="py-2 px-2 text-right">Actions</th>
                 </tr>
               </thead>
@@ -664,7 +709,7 @@ function Payouts({ flash }: { flash: (ok: boolean, t: string) => void }) {
                     <td className="py-2.5 px-2">{w.payout_type === 'voucher'
                       ? <><span className="text-fg">Service voucher</span><span className="block text-xs text-fg-muted">{w.voucher_code ?? 'Code issued on approval'}{w.voucher_redeemed_at ? ' · redeemed' : ''}</span></>
                       : w.bank_name ? <><span className="text-fg">{w.bank_name}</span><span className="block text-xs text-fg-muted">{w.account_name} ····{w.account_last4}</span></> : <span className="text-danger text-xs font-semibold">No bank account</span>}</td>
-                    <td className="py-2.5 px-2 text-right tabular font-semibold">{naira(w.payout_type === 'voucher' && w.voucher_value_ngn ? w.voucher_value_ngn : w.net_ngn)}{w.payout_type === 'voucher' ? <span className="block text-xs text-fg-muted font-normal">voucher value</span> : w.wht_ngn > 0 && <span className="block text-xs text-fg-muted font-normal">tax {naira(w.wht_ngn)}</span>}</td>
+                    <td className="py-2.5 px-2 text-right tabular font-semibold">{money(w.payout_type === 'voucher' && w.voucher_value_ngn ? w.voucher_value_ngn : w.net_ngn, w.currency)}{w.payout_type === 'voucher' ? <span className="block text-xs text-fg-muted font-normal">voucher value</span> : w.wht_ngn > 0 && <span className="block text-xs text-fg-muted font-normal">tax {money(w.wht_ngn, w.currency)}</span>}</td>
                     <td className="py-2.5 px-2"><Pill s={w.status} />{w.payment_reference && <span className="block text-xs text-fg-muted mt-1">Ref {w.payment_reference}</span>}{w.note && <span className="block text-xs text-fg-muted mt-1">{w.note}</span>}</td>
                     <td className="py-2.5 px-2">
                       {w.status !== 'paid' && w.status !== 'forfeited' && (
@@ -752,7 +797,8 @@ function SettingsPanel({ flash }: { flash: (ok: boolean, t: string) => void }) {
   return (
     <div className="grid xl:grid-cols-[2fr_1fr] gap-4 items-start">
       <form onSubmit={save} className={cx(ui.card, 'p-5 sm:p-6')}>
-        <h3 className={ui.h2}>Programme settings</h3>
+        <h3 className={ui.h2}>Nigeria programme &amp; shared rules</h3>
+        <p className={cx(ui.body, 'mt-1')}>Prize, quorum, payout areas and vouchers below are for Nigeria (₦). Coins, distance, cooldown, daily cap, outlier % and travel speed apply in every country. Other countries&apos; programmes are set in Regions.</p>
         {!s ? <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" aria-label="Loading" /></div> : (
           <>
             <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line p-4">

@@ -6,7 +6,7 @@ import {
   ShieldCheck, Lock, FileText, CheckCircle, XCircle, LogOut, Clock,
   ExternalLink, RefreshCw, MapPin, UserPlus, Loader2, Building2,
   Fuel, AlertTriangle, Download, ArrowUpRight,
-  BarChart3, CheckCircle2, Megaphone, Mail, Trophy, Hourglass, Wrench, Crown, X,
+  BarChart3, CheckCircle2, Megaphone, Mail, Trophy, Hourglass, Wrench, Crown, X, Globe2,
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
@@ -31,16 +31,20 @@ import { ServicesManager } from '@/components/admin/ServicesManager';
 import { StationsDirectory } from '@/components/admin/StationsDirectory';
 import { PriceReviews } from '@/components/admin/PriceReviews';
 import { AdminsManager } from '@/components/admin/AdminsManager';
+import { RegionsManager } from '@/components/admin/RegionsManager';
 import { ReportTable, type ReportColumn } from '@/components/admin/ReportTable';
+import { formatMoney, currencySymbol, DEFAULT_CURRENCY } from '@/lib/currency';
+import { loadRegions, flagEmoji, NIGERIA_FALLBACK, type Region } from '@/lib/regions';
 
 const supabase = createClient();
 
 type AuthState = 'checking' | 'signed-out' | 'not-admin' | 'admin';
-type AdminTab = 'analytics' | 'claims' | 'requests' | 'stations' | 'prices' | 'ads' | 'mailing' | 'rewards' | 'services' | 'admins';
+type AdminTab = 'analytics' | 'regions' | 'claims' | 'requests' | 'stations' | 'prices' | 'ads' | 'mailing' | 'rewards' | 'services' | 'admins';
 type Module = 'claims' | 'requests' | 'stations' | 'prices' | 'ads' | 'mailing' | 'rewards' | 'services';
 const ALL_MODULES: Module[] = ['claims', 'requests', 'stations', 'prices', 'ads', 'mailing', 'rewards', 'services'];
 
-interface Access { is_admin: boolean; is_master: boolean; modules: Module[]; legacy?: boolean }
+/** countries: null = every country; otherwise the only countries this admin covers (20261105). */
+interface Access { is_admin: boolean; is_master: boolean; modules: Module[]; countries?: string[] | null; legacy?: boolean }
 
 interface StationRecord {
   station_id: string;
@@ -55,7 +59,11 @@ interface StationRecord {
   claim_status: string | null;
   pump_accuracy: number | null;
   accuracy_votes: number | null;
+  country_code?: string | null;
+  currency?: string | null;
 }
+
+const COUNTRY_KEY = 'qz-admin-country';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -80,6 +88,24 @@ export default function AdminDashboard() {
   const [openingDocId, setOpeningDocId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // Countries: the admin's working country ('' = all countries they cover)
+  const [regions, setRegions] = useState<Record<string, Region>>({ NG: NIGERIA_FALLBACK });
+  const [country, setCountryState] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try { return localStorage.getItem(COUNTRY_KEY) || ''; } catch { return ''; }
+  });
+  const setCountry = (c: string) => {
+    setCountryState(c);
+    try { localStorage.setItem(COUNTRY_KEY, c); } catch { /* private mode */ }
+  };
+  useEffect(() => { loadRegions(supabase).then(setRegions); }, []);
+  const countryOptions = useMemo(() => {
+    const all = Object.values(regions).sort((a, b) => (a.country_code === 'NG' ? -1 : b.country_code === 'NG' ? 1 : a.name.localeCompare(b.name)));
+    return access?.countries ? all.filter(r => access.countries!.includes(r.country_code)) : all;
+  }, [regions, access]);
+  // A saved country this admin no longer covers falls back to "all"
+  const activeCountry = country && countryOptions.some(r => r.country_code === country) ? country : '';
+
   const can = useCallback((m: Module) => !!access?.modules.includes(m), [access]);
   const canPrices = can('prices') || can('rewards');
 
@@ -99,7 +125,7 @@ export default function AdminDashboard() {
         has('requests') ? supabase.from('role_requests').select('*').order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
         fetchAllRows<StationRecord>((from, to) =>
           supabase.from('stations')
-            .select('station_id, name, address, lat, lng, price_pms, queue_status, verified, manager_id, claim_status, pump_accuracy, accuracy_votes')
+            .select('*')
             .order('station_id').range(from, to)),
         has('prices') || has('rewards')
           ? supabase.from('price_reports').select('id', { count: 'exact', head: true }).eq('status', 'held')
@@ -139,7 +165,11 @@ export default function AdminDashboard() {
       const { data, error } = await supabase.rpc('my_admin_access');
       if (!error && data) {
         const d = data as Access;
-        acc = d.is_admin ? { is_admin: true, is_master: !!d.is_master, modules: (d.modules || []).filter((m): m is Module => ALL_MODULES.includes(m)) } : null;
+        acc = d.is_admin ? {
+          is_admin: true, is_master: !!d.is_master,
+          modules: (d.modules || []).filter((m): m is Module => ALL_MODULES.includes(m)),
+          countries: Array.isArray(d.countries) && d.countries.length ? d.countries : null,
+        } : null;
       } else if (isMissingFunction(error)) {
         // Database update (20261014) not run yet: every admin keeps full access, as before.
         const { data: isAdmin, error: e2 } = await supabase.rpc('is_admin');
@@ -222,13 +252,28 @@ export default function AdminDashboard() {
   };
 
   // --- Calculations for Analytics ---
-  const pendingClaims = useMemo(() => claims.filter(c => c.status === 'Pending Review'), [claims]);
+  // Stations / claims in the selected country ('' = every country this admin covers)
+  const scopedStations = useMemo(() => activeCountry ? stations.filter(s => s.country_code === activeCountry) : stations, [stations, activeCountry]);
+  const stationCountry = useMemo(() => new Map(stations.map(s => [String(s.station_id), s.country_code || null])), [stations]);
+  const scopedClaims = useMemo(() => activeCountry ? claims.filter(c => stationCountry.get(String(c.station_id)) === activeCountry) : claims, [claims, activeCountry, stationCountry]);
+  const pendingClaims = useMemo(() => scopedClaims.filter(c => c.status === 'Pending Review'), [scopedClaims]);
   const pendingRequests = useMemo(() => roleRequests.filter(r => r.status === 'Pending'), [roleRequests]);
 
+  // Prices are only averaged within one currency: the selected country's, or the most common one
+  const priceCurrency = useMemo(() => {
+    if (activeCountry) return regions[activeCountry]?.default_currency || DEFAULT_CURRENCY;
+    const counts = new Map<string, number>();
+    scopedStations.forEach(s => { if (s.price_pms) counts.set(s.currency || DEFAULT_CURRENCY, (counts.get(s.currency || DEFAULT_CURRENCY) || 0) + 1); });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || DEFAULT_CURRENCY;
+  }, [activeCountry, regions, scopedStations]);
+  const fm = useCallback((n: number) => formatMoney(n, priceCurrency), [priceCurrency]);
+
   const analytics = useMemo(() => {
+    const stations = scopedStations;
     const totalStations = stations.length;
     const stationsWithPrice = stations.filter(s => s.price_pms !== null && Number(s.price_pms) > 0);
-    const prices = stationsWithPrice.map(s => Number(s.price_pms));
+    const pricedInCurrency = stationsWithPrice.filter(s => (s.currency || DEFAULT_CURRENCY) === priceCurrency);
+    const prices = pricedInCurrency.map(s => Number(s.price_pms));
 
     const avgPrice = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : 0;
     const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
@@ -255,7 +300,7 @@ export default function AdminDashboard() {
       const b = brandName(s.name);
       const e = brandMap.get(b) || { count: 0, sum: 0, priced: 0 };
       e.count += 1;
-      if (s.price_pms && Number(s.price_pms) > 0) { e.sum += Number(s.price_pms); e.priced += 1; }
+      if (s.price_pms && Number(s.price_pms) > 0 && (s.currency || DEFAULT_CURRENCY) === priceCurrency) { e.sum += Number(s.price_pms); e.priced += 1; }
       brandMap.set(b, e);
     });
     const brandRows = [...brandMap.entries()]
@@ -266,7 +311,7 @@ export default function AdminDashboard() {
       .map(b => ({
         label: b.brand,
         value: b.avg as number,
-        formattedValue: `₦${(b.avg as number).toLocaleString('en-NG')}/L`,
+        formattedValue: `${fm(b.avg as number)}/L`,
         secondaryLabel: `${b.priced} priced of ${b.stations}`,
         color: (b.avg as number) <= avgPrice * 0.99 ? 'var(--chart-pos)' : (b.avg as number) <= avgPrice * 1.01 ? 'var(--chart-1)' : 'var(--chart-warn)',
       }))
@@ -286,7 +331,7 @@ export default function AdminDashboard() {
         if (a > maxPrice) break;
         const last = i === 4 || b > maxPrice;
         priceBuckets.push({
-          label: `₦${a.toLocaleString('en-NG')}–₦${(last ? Math.ceil(maxPrice) : b - 1).toLocaleString('en-NG')}`,
+          label: `${fm(a)}–${fm(last ? Math.ceil(maxPrice) : b - 1)}`,
           value: prices.filter(p => p >= a && (last ? true : p < b)).length,
           color: colors[i],
         });
@@ -308,16 +353,17 @@ export default function AdminDashboard() {
     ];
 
     return {
-      totalStations, stationsWithPriceCount: stationsWithPrice.length, avgPrice, minPrice, maxPrice,
+      totalStations, stationsWithPriceCount: stationsWithPrice.length, pricedInCurrencyCount: pricedInCurrency.length, avgPrice, minPrice, maxPrice,
       verifiedCount, verifiedPercent: totalStations > 0 ? Math.round((verifiedCount / totalStations) * 100) : 0,
       claimedCount, queueActiveCount, queueCounts: q, avgAccuracy, ratedCount: ratedStations.length, totalVotes,
       brandRows, brandBars, priceBuckets, ownershipDonut, queueDonut,
     };
-  }, [stations]);
+  }, [scopedStations, priceCurrency, fm]);
 
   const exportOverview = async () => {
     const { data } = await supabase.auth.getSession();
-    const asOf = `Data as of: ${formatWat(loadedAt)} WAT`;
+    const scope = activeCountry ? (regions[activeCountry]?.name || activeCountry) : (access?.countries ? 'My countries' : 'All countries');
+    const asOf = `Data as of: ${formatWat(loadedAt)} WAT · ${scope} · prices in ${priceCurrency}`;
     const a = analytics;
     downloadXlsx('qozob-overview', [
       {
@@ -326,9 +372,9 @@ export default function AdminDashboard() {
         rows: [
           ['Total stations', a.totalStations, ''],
           ['Stations with a live price', a.stationsWithPriceCount, ''],
-          ['Average PMS price (₦/L)', a.avgPrice || null, ''],
-          ['Lowest PMS price (₦/L)', a.minPrice || null, ''],
-          ['Highest PMS price (₦/L)', a.maxPrice || null, ''],
+          [`Average PMS price (${priceCurrency}/L)`, a.avgPrice || null, `${a.pricedInCurrencyCount} prices in ${priceCurrency}`],
+          [`Lowest PMS price (${priceCurrency}/L)`, a.minPrice || null, ''],
+          [`Highest PMS price (${priceCurrency}/L)`, a.maxPrice || null, ''],
           ['Verified stations', a.verifiedCount, `${a.verifiedPercent}% of all stations`],
           ['Claimed by owners', a.claimedCount, ''],
           ['Queue / no-fuel alerts', a.queueActiveCount, 'Moderate, heavy or no fuel'],
@@ -340,12 +386,12 @@ export default function AdminDashboard() {
       },
       {
         name: 'Brands', title: 'Average PMS price by brand', meta: [asOf],
-        columns: [{ header: 'Brand', width: 22 }, { header: 'Stations', type: 'integer' }, { header: 'With a price', type: 'integer' }, { header: 'Average price (₦/L)', type: 'money' }],
+        columns: [{ header: 'Brand', width: 22 }, { header: 'Stations', type: 'integer' }, { header: `With a price in ${priceCurrency}`, type: 'integer' }, { header: `Average price (${priceCurrency}/L)`, type: 'money' }],
         rows: a.brandRows.map(b => [b.brand, b.stations, b.priced, b.avg]),
       },
       {
         name: 'Price bands', title: 'Stations by price band', meta: [asOf],
-        columns: [{ header: 'Band (₦/L)', width: 22 }, { header: 'Stations', type: 'integer' }],
+        columns: [{ header: `Band (${priceCurrency}/L)`, width: 22 }, { header: 'Stations', type: 'integer' }],
         rows: a.priceBuckets.map(b => [b.label, b.value]),
       },
       {
@@ -406,9 +452,10 @@ export default function AdminDashboard() {
   // =========================================================================
   const tabs: { key: AdminTab; label: string; icon: React.ElementType; show: boolean; count?: number }[] = [
     { key: 'analytics', label: 'Overview', icon: BarChart3, show: true },
+    { key: 'regions', label: 'Regions', icon: Globe2, show: !access.legacy },
     { key: 'claims', label: 'Station claims', icon: FileText, show: can('claims'), count: pendingClaims.length },
     { key: 'requests', label: 'Manager requests', icon: UserPlus, show: can('requests'), count: pendingRequests.length },
-    { key: 'stations', label: 'Stations', icon: Building2, show: can('stations'), count: stations.length },
+    { key: 'stations', label: 'Stations', icon: Building2, show: can('stations'), count: scopedStations.length },
     { key: 'prices', label: 'Price reviews', icon: Hourglass, show: canPrices, count: heldCount },
     { key: 'ads', label: 'Adverts', icon: Megaphone, show: can('ads') },
     { key: 'mailing', label: 'Mailing', icon: Mail, show: can('mailing') },
@@ -467,6 +514,23 @@ export default function AdminDashboard() {
             </button>
 
             <ThemeToggle tone="brand" />
+
+            {/* Working country: filters every section (the database only ever returns countries this admin covers) */}
+            {!access.legacy && countryOptions.length > 1 && (
+              <label className="relative inline-flex items-center">
+                <span className="sr-only">Country</span>
+                <Globe2 className="pointer-events-none absolute left-2.5 w-4 h-4 text-on-brand-muted" aria-hidden />
+                <select
+                  value={activeCountry}
+                  onChange={(e) => setCountry(e.target.value)}
+                  className="h-9 pl-8 pr-2 max-w-[150px] sm:max-w-[200px] rounded-lg text-sm font-medium text-on-brand bg-on-brand/5 border border-on-brand/15 hover:bg-on-brand/10 outline-none cursor-pointer [&>option]:text-fg [&>option]:bg-surface"
+                  title="Show data for one country"
+                >
+                  <option value="">{access.countries ? 'All my countries' : 'All countries'}</option>
+                  {countryOptions.map(r => <option key={r.country_code} value={r.country_code}>{flagEmoji(r.country_code)} {r.name}</option>)}
+                </select>
+              </label>
+            )}
 
             <span className="h-6 w-px bg-brand-line hidden sm:block" aria-hidden />
 
@@ -549,8 +613,8 @@ export default function AdminDashboard() {
               />
               <StatCard
                 title="Average PMS"
-                value={analytics.avgPrice > 0 ? `₦${analytics.avgPrice.toLocaleString('en-NG')}` : '—'}
-                subtitle={analytics.avgPrice > 0 ? `Spread: ₦${analytics.minPrice.toLocaleString('en-NG')} – ₦${analytics.maxPrice.toLocaleString('en-NG')}` : 'No prices yet'}
+                value={analytics.avgPrice > 0 ? fm(analytics.avgPrice) : '—'}
+                subtitle={analytics.avgPrice > 0 ? `Spread: ${fm(analytics.minPrice)} – ${fm(analytics.maxPrice)}` : 'No prices yet'}
                 icon={Fuel}
                 badge={{ text: 'PMS / Litre', variant: 'neutral' }}
                 colorTheme="emerald"
@@ -607,7 +671,7 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <BarChart
-                title="Average PMS price by brand (₦/L)"
+                title={`Average PMS price by brand (${currencySymbol(priceCurrency)}/L)`}
                 subtitle="Brands with at least two priced stations"
                 data={analytics.brandBars}
                 layout="horizontal"
@@ -776,8 +840,8 @@ export default function AdminDashboard() {
             )}
 
             <div>
-              <h3 className="text-lg font-semibold text-fg mb-3">All claims ({claims.length})</h3>
-              <ReportTable id="admin-claims" title="Station claims" rows={claims} columns={CLAIM_COLUMNS}
+              <h3 className="text-lg font-semibold text-fg mb-3">All claims ({scopedClaims.length})</h3>
+              <ReportTable id="admin-claims" title="Station claims" rows={scopedClaims} columns={CLAIM_COLUMNS}
                 rowKey={(r) => String(r.id)} loading={isLoading} loadedAt={loadedAt} onRefresh={() => fetchData()}
                 initialSort={{ key: 'created_at', dir: 'desc' }} searchPlaceholder="Search station, applicant, CAC number…"
                 emptyText="No station claims yet." />
@@ -883,11 +947,12 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {tab === 'stations' && <StationsDirectory onChanged={() => fetchData()} />}
-        {tab === 'prices' && <PriceReviews onChanged={() => fetchData()} />}
-        {tab === 'ads' && <AdsManager />}
+        {tab === 'regions' && <RegionsManager isMaster={access.is_master} onChanged={() => { loadRegions(supabase, true).then(setRegions); fetchData(); }} />}
+        {tab === 'stations' && <StationsDirectory onChanged={() => fetchData()} country={activeCountry} />}
+        {tab === 'prices' && <PriceReviews onChanged={() => fetchData()} country={activeCountry} />}
+        {tab === 'ads' && <AdsManager country={activeCountry} />}
         {tab === 'mailing' && <MailingManager />}
-        {tab === 'rewards' && <RewardsManager />}
+        {tab === 'rewards' && <RewardsManager country={activeCountry} />}
         {tab === 'services' && <ServicesManager />}
         {tab === 'admins' && <AdminsManager />}
       </main>

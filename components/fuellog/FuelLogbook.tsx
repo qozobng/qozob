@@ -10,6 +10,8 @@ import { createClient } from '@/utils/supabase/client';
 import { FuelLog, FuelType, FuelLogType } from '@/types/services';
 import { fetchUserFuelLogs, saveFuelLog, deleteFuelLog } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
+import { currencySymbol, DEFAULT_CURRENCY } from '@/lib/currency';
+import { loadRegions, countryCodeFromName } from '@/lib/regions';
 
 export function FuelLogbook({ user }: { user: any }) {
   const supabase = createClient();
@@ -18,6 +20,16 @@ export function FuelLogbook({ user }: { user: any }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Amounts are in the person's own currency (from the country on their profile)
+  const [currency, setCurrency] = useState(DEFAULT_CURRENCY);
+  useEffect(() => {
+    loadRegions(supabase).then(r => {
+      const cc = countryCodeFromName(user?.user_metadata?.country, r);
+      setCurrency((cc && r[cc]?.default_currency) || DEFAULT_CURRENCY);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+  const sym = currencySymbol(currency);
 
   // Form Fields
   const [logType, setLogType] = useState<FuelLogType>('vehicle');
@@ -211,7 +223,7 @@ export function FuelLogbook({ user }: { user: any }) {
         <div className="bg-surface p-4 rounded-xl border border-line">
           <span className="text-[11px] font-semibold text-fg-muted uppercase block">This Month's Spend</span>
           <span className="text-xl sm:text-2xl font-black text-fg mt-1 block tabular">
-            ₦{metrics.totalSpend.toLocaleString()}
+            {sym}{metrics.totalSpend.toLocaleString()}
           </span>
           <span className="text-[10px] text-fg-subtle">{metrics.fillCount} fuel purchase{metrics.fillCount === 1 ? '' : 's'}</span>
         </div>
@@ -227,7 +239,7 @@ export function FuelLogbook({ user }: { user: any }) {
         <div className="bg-surface p-4 rounded-xl border border-line">
           <span className="text-[11px] font-semibold text-fg-muted uppercase block">Avg. Price Paid</span>
           <span className="text-xl sm:text-2xl font-black text-accent mt-1 block tabular">
-            ₦{metrics.avgPrice > 0 ? metrics.avgPrice.toFixed(1) : '---'}
+            {sym}{metrics.avgPrice > 0 ? metrics.avgPrice.toFixed(1) : '---'}
           </span>
           <span className="text-[10px] text-fg-subtle">Per Litre</span>
         </div>
@@ -294,10 +306,10 @@ export function FuelLogbook({ user }: { user: any }) {
                     <td className="px-4 py-3 whitespace-nowrap font-bold uppercase text-accent">
                       {log.fuel_type}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap tabular text-fg">₦{Number(log.price_per_litre).toLocaleString()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap tabular text-fg">{sym}{Number(log.price_per_litre).toLocaleString()}</td>
                     <td className="px-4 py-3 whitespace-nowrap tabular text-fg">{Number(log.litres_bought).toFixed(1)} L</td>
                     <td className="px-4 py-3 whitespace-nowrap tabular font-bold text-fg">
-                      ₦{Number(log.total_amount).toLocaleString()}
+                      {sym}{Number(log.total_amount).toLocaleString()}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-fg-muted truncate max-w-[140px]">
                       {log.station_name || '---'}
@@ -397,7 +409,7 @@ export function FuelLogbook({ user }: { user: any }) {
               {/* Price & Litres Calculation */}
               <div className="grid grid-cols-3 gap-2.5 bg-surface-2 p-3 rounded-2xl border border-line">
                 <div>
-                  <label className={ui.label} htmlFor="fl-price">Price / Litre (₦) *</label>
+                  <label className={ui.label} htmlFor="fl-price">Price / Litre ({sym}) *</label>
                   <input
                     id="fl-price"
                     type="number"
@@ -423,7 +435,7 @@ export function FuelLogbook({ user }: { user: any }) {
                   />
                 </div>
                 <div>
-                  <label className={ui.label} htmlFor="fl-tot">Total Amount (₦) *</label>
+                  <label className={ui.label} htmlFor="fl-tot">Total Amount ({sym}) *</label>
                   <input
                     id="fl-tot"
                     type="number"

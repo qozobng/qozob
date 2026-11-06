@@ -1,6 +1,6 @@
 // =========================================================================
 // ADMIN · ADD AN ADMIN (master admins only)
-// POST { email, is_master, modules[], note }
+// POST { email, is_master, modules[], note, countries[] }   (countries: [] = every country)
 //  • Existing Qozob account → promoted with the chosen sections (admin_grant_access).
 //  • No account yet → a Supabase invitation is created (service role) and a branded
 //    email with a one-time "set your password" link is sent through Resend. If the
@@ -34,6 +34,10 @@ export async function POST(req: Request) {
       ? [...new Set(body.modules.map(String).filter((m): m is (typeof MODULES)[number] => (MODULES as readonly string[]).includes(m)))]
       : [];
     const note = typeof body.note === 'string' ? body.note.trim().slice(0, 200) || null : null;
+    // Countries this admin covers ([] = every country). Omitted by older screens → keep as is.
+    const countries = Array.isArray(body.countries)
+      ? [...new Set(body.countries.map((c: unknown) => String(c).trim().toUpperCase()).filter((c: string) => /^[A-Z]{2}$/.test(c)))]
+      : undefined;
 
     if (!isValidEmail(email)) return json({ error: 'Enter a valid email address.' }, 400);
     if (!isMaster && modules.length === 0) return json({ error: 'Choose at least one section this admin can use.' }, 400);
@@ -41,6 +45,7 @@ export async function POST(req: Request) {
     const supabase = await createClient();
     const grant = () => supabase.rpc('admin_grant_access', {
       p_email: email, p_is_master: isMaster, p_modules: isMaster ? [...MODULES] : modules, p_note: note,
+      ...(countries !== undefined ? { p_countries: isMaster ? [] : countries } : {}),
     });
 
     let { data, error } = await grant();

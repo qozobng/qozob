@@ -13,6 +13,8 @@ import { brandName } from '@/lib/brands';
 import { QUEUE_OPTIONS, normaliseQueue, queueLabel } from '@/lib/queue';
 import { fetchAllRows, isMissingFunction } from '@/lib/fetchAll';
 import { cx, ui } from '@/lib/ui';
+import { formatMoney, currencyLabel } from '@/lib/currency';
+import { loadRegions, flagEmoji, type Region } from '@/lib/regions';
 import { ReportTable, type ReportColumn } from './ReportTable';
 
 const supabase = createClient();
@@ -42,6 +44,8 @@ export interface DirectoryRow {
   held_reports: number | null;
   last_report_at: string | null;
   created_at: string | null;
+  country_code?: string | null;
+  currency?: string | null;
 }
 
 const num = (v: unknown): number | null => {
@@ -74,8 +78,12 @@ const STATUS_LABEL: Record<StatusFilter, string> = {
   held: 'Has prices waiting for review',
 };
 
-export function StationsDirectory({ onChanged }: { onChanged?: () => void }) {
-  const [rows, setRows] = useState<DirectoryRow[]>([]);
+export function StationsDirectory({ onChanged, country = '' }: { onChanged?: () => void; country?: string }) {
+  const [allRows, setRows] = useState<DirectoryRow[]>([]);
+  // Working country from the admin header ('' = all countries this admin covers)
+  const rows = useMemo(() => (country ? allRows.filter(r => r.country_code === country) : allRows), [allRows, country]);
+  const [regions, setRegions] = useState<Record<string, Region>>({});
+  useEffect(() => { loadRegions(supabase).then(setRegions); }, []);
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +129,7 @@ export function StationsDirectory({ onChanged }: { onChanged?: () => void }) {
             manager_email: null, manager_name: null, custom_logo_url: (s.custom_logo_url as string) ?? null,
             pump_accuracy: num(s.pump_accuracy), accuracy_votes: num(s.accuracy_votes),
             reports_30d: null, held_reports: null, last_report_at: null, created_at: (s.created_at as string) ?? null,
+            country_code: (s.country_code as string) ?? null, currency: (s.currency as string) ?? null,
           };
         }));
         setLimited(true);
@@ -171,12 +180,19 @@ export function StationsDirectory({ onChanged }: { onChanged?: () => void }) {
     },
     { key: 'brand', header: 'Brand', get: (r) => brandName(r.name), width: 16 },
     { key: 'address', header: 'Address', get: (r) => r.address, defaultVisible: false, width: 40 },
-    { key: 'lga', header: 'LGA', get: (r) => r.lga, width: 18 },
-    { key: 'state', header: 'State', get: (r) => r.state, width: 14 },
     {
-      key: 'price', header: 'PMS price (₦/L)', get: (r) => r.price_pms, type: 'money', align: 'right',
+      key: 'country', header: 'Country', get: (r) => r.country_code || '',
+      render: (r) => r.country_code
+        ? <span className="whitespace-nowrap"><span aria-hidden>{flagEmoji(r.country_code)}</span> {r.country_code}</span>
+        : <span className="text-warning font-semibold">Unknown</span>,
+    },
+    { key: 'lga', header: 'LGA / area', get: (r) => r.lga, width: 18 },
+    { key: 'state', header: 'State', get: (r) => r.state, width: 14 },
+    { key: 'currency', header: 'Currency', get: (r) => r.currency || '', defaultVisible: false },
+    {
+      key: 'price', header: 'PMS price / L', get: (r) => r.price_pms, type: 'money', align: 'right',
       render: (r) => r.price_pms
-        ? <span className="font-semibold font-mono text-sm">₦{r.price_pms.toLocaleString('en-NG')}</span>
+        ? <span className="font-semibold font-mono text-sm whitespace-nowrap">{formatMoney(r.price_pms, r.currency || 'NGN')}</span>
         : <span className="text-fg-subtle italic">No price yet</span>,
     },
     {
@@ -301,6 +317,7 @@ export function StationsDirectory({ onChanged }: { onChanged?: () => void }) {
       {editing && (
         <QuickEdit
           station={editing}
+          regions={regions}
           onClose={() => setEditing(null)}
           onSaved={(patch) => {
             setRows((prev) => prev.map((r) => (r.station_id === editing.station_id ? { ...r, ...patch } : r)));
@@ -315,25 +332,40 @@ export function StationsDirectory({ onChanged }: { onChanged?: () => void }) {
 
 // ---------------------------------------------------------------------------
 function QuickEdit({
-  station, onClose, onSaved,
-}: { station: DirectoryRow; onClose: () => void; onSaved: (patch: Partial<DirectoryRow>) => void }) {
+  station, regions, onClose, onSaved,
+}: { station: DirectoryRow; regions: Record<string, Region>; onClose: () => void; onSaved: (patch: Partial<DirectoryRow>) => void }) {
   const [name, setName] = useState(station.name || '');
   const [address, setAddress] = useState(station.address || '');
   const [price, setPrice] = useState(station.price_pms ? String(station.price_pms) : '');
   const [queue, setQueue] = useState<string>(normaliseQueue(station.queue_status));
+  const [cc, setCc] = useState(station.country_code || '');
+  const [currency, setCurrency] = useState(station.currency || '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const hasRegions = Object.keys(regions).length > 0;
+  const region = cc ? regions[cc] : undefined;
+  const currencyOptions = region ? [region.default_currency, ...region.currencies] : (currency ? [currency] : []);
 
   const save = async () => {
     setErr(null);
     const patch: Partial<DirectoryRow> & Record<string, unknown> = {};
     if (name.trim() && name.trim() !== (station.name || '')) patch.name = name.trim();
     if (address.trim() !== (station.address || '')) patch.address = address.trim() || null;
+    if (hasRegions && cc && cc !== (station.country_code || '')) {
+      patch.country_code = cc;
+      patch.currency = regions[cc]?.default_currency ?? null;   // the database also falls back to the country's currency
+    } else if (hasRegions && currency && currency !== (station.currency || '')) {
+      patch.currency = currency;
+    }
+    const cur = (patch.currency as string) || station.currency || 'NGN';
 
     const priceChanged = price.trim() !== '' && Number(price) !== station.price_pms;
     if (priceChanged) {
       const p = Number(price);
-      if (!Number.isFinite(p) || p < 100 || p > 100000) return setErr('Enter a price between ₦100 and ₦100,000.');
+      const r = region && region.price_min && region.price_max && cur === region.default_currency ? region : null;
+      const lo = r ? Number(r.price_min) / 3 : 0.01;
+      const hi = r ? Number(r.price_max) * 3 : 10_000_000;
+      if (!Number.isFinite(p) || p < lo || p > hi) return setErr(`Enter a price between ${formatMoney(lo, cur)} and ${formatMoney(hi, cur)}.`);
       patch.price_pms = Math.round(p * 100) / 100;
     }
     const queueChanged = queue !== normaliseQueue(station.queue_status) && queue !== 'Unknown';
@@ -358,7 +390,7 @@ function QuickEdit({
         <button type="button" onClick={onClose} className={ui.modalClose} aria-label="Close"><X className="w-5 h-5" /></button>
         <p className={ui.eyebrow}>Admin quick edit</p>
         <h3 className="text-lg font-bold text-fg mt-0.5 pr-8 leading-snug">{station.name}</h3>
-        <p className="text-xs text-fg-muted mb-4">{[station.lga, station.state].filter(Boolean).join(', ') || 'LGA not assigned'}</p>
+        <p className="text-xs text-fg-muted mb-4">{[station.lga, station.state].filter(Boolean).join(', ') || 'Area not assigned'}</p>
 
         <div className="flex flex-col gap-3">
           <div>
@@ -369,10 +401,28 @@ function QuickEdit({
             <label className={ui.label} htmlFor="qe-address">Address</label>
             <input id="qe-address" className={cx(ui.input, 'h-11')} value={address} onChange={(e) => setAddress(e.target.value)} maxLength={240} />
           </div>
+          {hasRegions && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={ui.label} htmlFor="qe-country">Country</label>
+                <select id="qe-country" className={cx(ui.select, 'h-11')} value={cc} onChange={(e) => { setCc(e.target.value); setCurrency(regions[e.target.value]?.default_currency || ''); }}>
+                  {!cc && <option value="">Unknown — choose</option>}
+                  {Object.values(regions).sort((a, b) => a.name.localeCompare(b.name)).map(r => <option key={r.country_code} value={r.country_code}>{r.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={ui.label} htmlFor="qe-currency">Currency</label>
+                <select id="qe-currency" className={cx(ui.select, 'h-11')} value={currency} onChange={(e) => setCurrency(e.target.value)} disabled={currencyOptions.length < 2}>
+                  {currencyOptions.length === 0 && <option value="">—</option>}
+                  {currencyOptions.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={ui.label} htmlFor="qe-price">PMS price (₦/L)</label>
-              <input id="qe-price" type="number" inputMode="decimal" className={cx(ui.input, 'h-11 font-mono')} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="e.g. 950" />
+              <label className={ui.label} htmlFor="qe-price">PMS price ({currency || station.currency || 'NGN'}/L)</label>
+              <input id="qe-price" type="number" inputMode="decimal" className={cx(ui.input, 'h-11 font-mono')} value={price} onChange={(e) => setPrice(e.target.value)} placeholder="per litre" />
             </div>
             <div>
               <label className={ui.label} htmlFor="qe-queue">Queue</label>
@@ -382,7 +432,7 @@ function QuickEdit({
               </select>
             </div>
           </div>
-          <p className={ui.hint}>A new price or queue goes live on the map straight away as &ldquo;Qozob rep&rdquo; (verified). Leave the price blank to keep the current one.</p>
+          <p className={ui.hint}>A new price or queue goes live on the map straight away as &ldquo;Qozob rep&rdquo; (verified). Leave the price blank to keep the current one.{hasRegions && ' Changing the country also switches the station to that country\u2019s currency; re-enter the price in the new currency.'}</p>
           {err && <div className={ui.alertError}>{err}</div>}
         </div>
 

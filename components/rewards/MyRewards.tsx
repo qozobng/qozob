@@ -14,14 +14,18 @@ import {
 import { createClient } from '@/utils/supabase/client';
 import { StatCard } from '@/components/analytics/StatCard';
 import { ui, cx } from '@/lib/ui';
-import { ID_TYPES, NIGERIAN_BANKS, REASON_TEXT, naira } from '@/lib/rewards';
+import { ID_TYPES, ID_TYPES_INTL, NIGERIAN_BANKS, REASON_TEXT, money } from '@/lib/rewards';
 import { useRewardSettings } from './hooks';
 import { SITE } from '@/lib/site';
 
 interface Summary {
   coins_month: number; coins_year: number; coins_held: number; coins_total: number;
   active_days_month: number; active_days_year: number; reports_month: number;
-  lgas: { lga_id: number | null; name: string | null; state: string | null; coins: number; rank: number }[];
+  /** Person's country and its programme (20261105). Missing = older database = Nigeria. */
+  country_code?: string | null;
+  program?: null | { country_code: string; currency: string; active: boolean; monthly_prize: number; annual_prize: number | null;
+                     voucher_enabled: boolean; voucher_bonus_pct: number; min_active_days: number; area_label: string; country_name: string };
+  lgas: { lga_id: number | null; name: string | null; state: string | null; coins: number; rank: number; country_code?: string | null }[];
   excluded: boolean;
   participant: null | { status: 'incomplete' | 'pending_review' | 'verified' | 'rejected' | 'suspended'; legal_name: string | null; id_type: string | null; id_last4: string | null; review_note: string | null; strikes: number; submitted_at: string | null };
   phone_verified: boolean;
@@ -31,9 +35,10 @@ interface Summary {
   wins: {
     kind: 'monthly' | 'annual'; period_start: string; lga: string | null; state: string | null; gross_ngn: number; net_ngn: number; status: string; paid_at: string | null;
     payout_type?: 'cash' | 'voucher' | null; voucher_code?: string | null; voucher_value_ngn?: number | null; voucher_redeemed_at?: string | null;
+    currency?: string | null;
   }[];
 }
-interface ReportRow { id: number; station_id: string; price: number; status: string; coins: number; reasons: string[]; created_at: string; station_name?: string }
+interface ReportRow { id: number; station_id: string; price: number; status: string; coins: number; reasons: string[]; created_at: string; station_name?: string; currency?: string | null }
 
 const STATUS_STYLE: Record<string, string> = {
   accepted: 'bg-success-soft text-on-success-soft border-success-line',
@@ -54,6 +59,12 @@ export function normaliseNgPhone(input: string): string | null {
   return `+234${local}`;
 }
 
+/** Any international mobile number with country code → +XXXXXXXX (8–15 digits), else null. */
+export function normaliseIntlPhone(input: string): string | null {
+  const d = input.replace(/\D/g, '').replace(/^00/, '');
+  return /^\d{8,15}$/.test(d) ? `+${d}` : null;
+}
+
 const errText = (e: unknown) => (e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : 'Something went wrong. Please try again.');
 
 export function MyRewards() {
@@ -70,7 +81,7 @@ export function MyRewards() {
     if (error || !data) { setUnavailable(true); setLoading(false); return; }
     setSummary(data as Summary);
     const { data: rows } = await supabase.from('price_reports')
-      .select('id, station_id, price, status, coins, reasons, created_at')
+      .select('*')
       .order('created_at', { ascending: false }).limit(15);
     const list = (rows || []) as ReportRow[];
     const ids = Array.from(new Set(list.map(r => r.station_id)));
@@ -120,40 +131,56 @@ export function MyRewards() {
   const idDone = p?.status === 'verified';
   const idPending = p?.status === 'pending_review';
   const suspended = p?.status === 'suspended';
+  // Programme of the person's country (older database: the Nigeria settings)
+  const hasRegions = 'program' in summary;
+  const isNg = !summary.country_code || summary.country_code === 'NG';
+  const prog = summary.program;
+  const noProgramme = hasRegions && !prog;
+  const cur = prog?.currency || 'NGN';
+  const prize = prog ? prog.monthly_prize : settings.monthly_prize_ngn;
+  const minDays = prog ? prog.min_active_days : settings.min_active_days;
+  const programActive = prog ? prog.active : (hasRegions ? false : settings.program_active);
+  const areaWord = prog?.area_label || 'LGA';
   const bestLga = summary.lgas.filter(l => l.lga_id !== null).sort((a, b) => a.rank - b.rank || b.coins - a.coins)[0];
-  const daysPct = Math.min(100, Math.round((summary.active_days_month / Math.max(1, settings.min_active_days)) * 100));
+  const daysPct = Math.min(100, Math.round((summary.active_days_month / Math.max(1, minDays)) * 100));
+  const idLabel = (v: string | null | undefined) => [...ID_TYPES, ...ID_TYPES_INTL].find(t => t.value === v)?.label ?? 'ID';
 
   const steps = [
     { key: 'phone' as const, icon: Smartphone, title: 'Verify your phone number', done: summary.phone_verified, detail: summary.phone_verified ? (summary.phone ? `+${String(summary.phone).replace(/^\+/, '')}` : 'Verified') : 'We send a 6-digit code by SMS' },
-    { key: 'id' as const, icon: ShieldCheck, title: 'Verify your identity', done: idDone, detail: idDone ? `${ID_TYPES.find(t => t.value === p?.id_type)?.label ?? 'ID'} ending ${p?.id_last4}` : idPending ? 'Submitted. We are reviewing it (usually within 2 working days)' : p?.status === 'rejected' ? `Not approved${p.review_note ? `: ${p.review_note}` : ''}. Please submit again.` : 'Government ID and date of birth (18+)' },
-    { key: 'bank' as const, icon: Landmark, title: 'Add your bank account', done: !!summary.bank, detail: summary.bank ? `${summary.bank.bank_name} ····${summary.bank.last4} (${summary.bank.account_name})` : 'Where we pay your prize (in your own name)' },
+    { key: 'id' as const, icon: ShieldCheck, title: 'Verify your identity', done: idDone, detail: idDone ? `${idLabel(p?.id_type)} ending ${p?.id_last4}` : idPending ? 'Submitted. We are reviewing it (usually within 2 working days)' : p?.status === 'rejected' ? `Not approved${p.review_note ? `: ${p.review_note}` : ''}. Please submit again.` : 'Government ID and date of birth (18+)' },
+    { key: 'bank' as const, icon: Landmark, title: isNg ? 'Add your bank account' : 'Add your bank or mobile-money account', done: !!summary.bank, detail: summary.bank ? `${summary.bank.bank_name} ····${summary.bank.last4} (${summary.bank.account_name})` : 'Where we pay your prize (in your own name)' },
   ];
 
   return (
     <div className="max-w-5xl flex flex-col gap-6 animate-in fade-in duration-300">
-      <Header />
+      <Header areaWord={areaWord} />
 
-      {!settings.program_active && <div className={ui.alertWarning}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> The rewards programme is paused right now. Coins will start again when it resumes.</div>}
+      {noProgramme ? (
+        <div className={ui.alertWarning}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> There is no rewards programme in your country yet. Your price updates still help drivers, and we&apos;ll announce prizes here when they start.</div>
+      ) : !programActive && <div className={ui.alertWarning}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> The rewards programme is paused right now. Coins will start again when it resumes.</div>}
       {suspended && <div className={ui.alertError}><Ban className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> Your Rewards participation is suspended{p?.review_note ? `: ${p.review_note}` : ''}. Contact {SITE.contactEmail} if you think this is wrong.</div>}
 
       {/* STATS */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <StatCard title="Coins this month" value={summary.coins_month.toLocaleString('en-NG')} subtitle={`${summary.coins_year.toLocaleString('en-NG')} this year`} icon={Coins} colorTheme="amber" />
-        <StatCard title="Best LGA rank" value={bestLga ? `#${bestLga.rank}` : '—'} subtitle={bestLga ? `${bestLga.name ?? 'Unknown LGA'}` : 'Update a price to get ranked'} icon={Trophy} colorTheme="indigo" />
-        <StatCard title="Active days" value={`${summary.active_days_month}/${settings.min_active_days}`} subtitle={summary.active_days_month >= settings.min_active_days ? 'Qualified this month' : `${settings.min_active_days - summary.active_days_month} more day(s) to qualify`} icon={CalendarCheck} colorTheme="emerald" />
-        <StatCard title="Under review" value={summary.coins_held.toLocaleString('en-NG')} subtitle="Coins waiting for a reviewer" icon={Hourglass} colorTheme="blue" />
+        <StatCard title="Coins this month" value={summary.coins_month.toLocaleString('en')} subtitle={`${summary.coins_year.toLocaleString('en')} this year`} icon={Coins} colorTheme="amber" />
+        <StatCard title={`Best ${areaWord} rank`} value={bestLga ? `#${bestLga.rank}` : '—'} subtitle={bestLga ? `${bestLga.name ?? `Unknown ${areaWord}`}` : 'Update a price to get ranked'} icon={Trophy} colorTheme="indigo" />
+        <StatCard title="Active days" value={`${summary.active_days_month}/${minDays}`} subtitle={summary.active_days_month >= minDays ? 'Qualified this month' : `${minDays - summary.active_days_month} more day(s) to qualify`} icon={CalendarCheck} colorTheme="emerald" />
+        <StatCard title="Under review" value={summary.coins_held.toLocaleString('en')} subtitle="Coins waiting for a reviewer" icon={Hourglass} colorTheme="blue" />
       </div>
 
       {/* ACTIVE DAYS PROGRESS */}
       <div className={cx(ui.card, 'p-5')}>
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-fg">Monthly qualification</p>
-          <p className="text-sm tabular text-fg-muted">{summary.active_days_month} of {settings.min_active_days} days</p>
+          <p className="text-sm tabular text-fg-muted">{summary.active_days_month} of {minDays} days</p>
         </div>
         <div className="mt-2 h-3 rounded-full bg-surface-3 overflow-hidden" role="progressbar" aria-valuenow={daysPct} aria-valuemin={0} aria-valuemax={100} aria-label="Active days this month">
           <div className="h-full rounded-full bg-success transition-all" style={{ width: `${daysPct}%` }} />
         </div>
-        <p className={ui.hint}>A day counts when at least one of your updates earns coins. Prize: {naira(settings.monthly_prize_ngn)} for the top qualified updater in each LGA, paid by the 7th of next month.</p>
+        <p className={ui.hint}>
+          A day counts when at least one of your updates earns coins.
+          {!noProgramme && ` Prize: ${money(prize, cur)} for the top qualified updater in each ${areaWord}, paid by the 7th of next month.`}
+        </p>
       </div>
 
       {/* VERIFICATION */}
@@ -190,11 +217,11 @@ export function MyRewards() {
                     {locked ? (
                       <p className={cx(ui.body, 'pt-3 flex items-center gap-2')}><Lock className="w-4 h-4" aria-hidden /> {suspended ? 'Locked while your participation is suspended.' : 'Your ID has been verified. Contact support to change it.'}</p>
                     ) : s.key === 'phone' ? (
-                      <PhoneStep currentPhone={summary.phone} verified={summary.phone_verified} onDone={() => { setOpen(null); load(); }} />
+                      <PhoneStep currentPhone={summary.phone} verified={summary.phone_verified} isNg={isNg} onDone={() => { setOpen(null); load(); }} />
                     ) : s.key === 'id' ? (
-                      <IdStep pending={idPending} onDone={() => { setOpen(null); load(); }} />
+                      <IdStep pending={idPending} isNg={isNg} onDone={() => { setOpen(null); load(); }} />
                     ) : (
-                      <BankStep bank={summary.bank} onDone={() => { setOpen(null); load(); }} />
+                      <BankStep bank={summary.bank} isNg={isNg} country={summary.country_code ?? null} onDone={() => { setOpen(null); load(); }} />
                     )}
                   </div>
                 )}
@@ -204,21 +231,21 @@ export function MyRewards() {
         </ul>
       </div>
 
-      {!suspended && <PayoutChoice />}
+      {!suspended && !noProgramme && <PayoutChoice />}
 
       <div className="grid lg:grid-cols-2 gap-4">
-        {/* LGA STANDINGS */}
+        {/* AREA STANDINGS */}
         <div className={cx(ui.card, 'p-5 sm:p-6')}>
-          <h3 className={ui.h2}>Your LGAs this month</h3>
+          <h3 className={ui.h2}>Your {areaWord === 'LGA' ? 'LGAs' : 'areas'} this month</h3>
           {summary.lgas.length === 0 ? (
             <p className={cx(ui.body, 'mt-3')}>No coins yet this month. Visit a station, turn on location and update its price on the <Link href="/" className={ui.link}>map</Link>.</p>
           ) : (
             <ul className="mt-3 divide-y divide-line">
               {summary.lgas.map(l => (
-                <li key={`${l.lga_id}`} className="py-3 flex items-center justify-between gap-3">
+                <li key={`${l.country_code ?? ''}-${l.lga_id}`} className="py-3 flex items-center justify-between gap-3">
                   <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-fg truncate"><MapPin className="inline w-3.5 h-3.5 mr-1 text-fg-muted align-[-2px]" aria-hidden />{l.name ?? 'Station without an LGA yet'}</span>
-                    <span className="block text-xs text-fg-muted">{l.state ?? ''} · {Number(l.coins).toLocaleString('en-NG')} coins</span>
+                    <span className="block text-sm font-semibold text-fg truncate"><MapPin className="inline w-3.5 h-3.5 mr-1 text-fg-muted align-[-2px]" aria-hidden />{l.name ?? `Station without an ${areaWord} yet`}</span>
+                    <span className="block text-xs text-fg-muted">{l.state ?? ''} · {Number(l.coins).toLocaleString('en')} coins</span>
                   </span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className={cx('rounded-full px-2.5 py-0.5 text-xs font-bold border', l.rank === 1 ? 'bg-amber-300 text-slate-900 border-amber-500/40' : 'bg-surface-2 text-fg border-line')}>#{l.rank}</span>
@@ -234,7 +261,7 @@ export function MyRewards() {
         <div className={cx(ui.card, 'p-5 sm:p-6')}>
           <h3 className={ui.h2}>My prizes</h3>
           {summary.wins.length === 0 ? (
-            <p className={cx(ui.body, 'mt-3')}>No prizes yet. Top your LGA this month to win {naira(settings.monthly_prize_ngn)}.</p>
+            <p className={cx(ui.body, 'mt-3')}>{noProgramme ? 'No prizes yet.' : `No prizes yet. Top your ${areaWord} this month to win ${money(prize, cur)}.`}</p>
           ) : (
             <ul className="mt-3 divide-y divide-line">
               {summary.wins.map((w, i) => (
@@ -243,8 +270,8 @@ export function MyRewards() {
                     <span className="block text-sm font-semibold text-fg">{w.kind === 'annual' ? `Grand prize ${w.period_start.slice(0, 4)}` : `${new Date(w.period_start + 'T00:00:00Z').toLocaleDateString('en-NG', { month: 'long', year: 'numeric', timeZone: 'UTC' })}${w.lga ? ` · ${w.lga}` : ''}`}</span>
                     <span className="block text-xs text-fg-muted">
                       {w.payout_type === 'voucher'
-                        ? `Service voucher worth ${naira(w.voucher_value_ngn ?? w.gross_ngn)}`
-                        : `${naira(w.net_ngn)}${w.gross_ngn !== w.net_ngn ? ` after tax (${naira(w.gross_ngn)} prize)` : ''}`}
+                        ? `Service voucher worth ${money(w.voucher_value_ngn ?? w.gross_ngn, w.currency)}`
+                        : `${money(w.net_ngn, w.currency)}${w.gross_ngn !== w.net_ngn ? ` after tax (${money(w.gross_ngn, w.currency)} prize)` : ''}`}
                     </span>
                     {w.payout_type === 'voucher' && w.voucher_code && (
                       <span className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-success-line bg-success-soft px-2 py-0.5 text-xs font-mono font-bold text-on-success-soft">
@@ -275,7 +302,7 @@ export function MyRewards() {
               return (
                 <li key={r.id} className="py-3 flex items-start justify-between gap-3">
                   <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-fg truncate">{r.station_name ?? 'Station'} · {naira(r.price)}</span>
+                    <span className="block text-sm font-semibold text-fg truncate">{r.station_name ?? 'Station'} · {money(r.price, r.currency)}</span>
                     <span className="block text-xs text-fg-muted">{new Date(r.created_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                     {why.length > 0 && <span className="block text-xs text-fg-muted mt-0.5">{why.join(' · ')}</span>}
                   </span>
@@ -296,7 +323,7 @@ export function MyRewards() {
 /** Cash or auto-service voucher (worth more) for prizes won from now on. */
 function PayoutChoice() {
   const [supabase] = useState(() => createClient());
-  const [info, setInfo] = useState<{ preference: 'cash' | 'voucher'; monthly_prize_ngn: number; voucher_bonus_pct: number; voucher_value_ngn: number } | null>(null);
+  const [info, setInfo] = useState<{ preference: 'cash' | 'voucher'; monthly_prize_ngn: number; voucher_bonus_pct: number; voucher_value_ngn: number; currency?: string; voucher_available?: boolean } | null>(null);
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -308,7 +335,8 @@ function PayoutChoice() {
     });
   }, [supabase]);
 
-  if (missing || !info) return null;
+  // No programme / vouchers where the person lives: prizes are always cash, so there is nothing to choose
+  if (missing || !info || info.voucher_available === false) return null;
 
   const choose = async (pref: 'cash' | 'voucher') => {
     if (pref === info.preference) return;
@@ -343,20 +371,20 @@ function PayoutChoice() {
       <h3 className={ui.h2}>How would you like to receive a prize?</h3>
       <p className={cx(ui.body, 'mt-1')}>Applies to prizes from months that have not closed yet. You can change it any time before the month closes.</p>
       <div className="mt-4 flex flex-col sm:flex-row gap-3">
-        {option('cash', 'Cash', naira(info.monthly_prize_ngn), 'Bank transfer to your verified account (tax may apply).')}
-        {option('voucher', 'Auto-service voucher', naira(info.voucher_value_ngn), `${info.voucher_bonus_pct}% extra value for vehicle papers, insurance or a tracker on Qozob Auto services.`)}
+        {option('cash', 'Cash', money(info.monthly_prize_ngn, info.currency), 'Bank transfer to your verified account (tax may apply).')}
+        {option('voucher', 'Auto-service voucher', money(info.voucher_value_ngn, info.currency), `${info.voucher_bonus_pct}% extra value for vehicle papers, insurance or a tracker on Qozob Auto services.`)}
       </div>
       {msg && <p className={cx('mt-3 text-sm', msg.ok ? 'text-success' : 'text-danger')} role="status">{msg.text}</p>}
     </div>
   );
 }
 
-function Header() {
+function Header({ areaWord = 'LGA' }: { areaWord?: string }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h2 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-fg">My rewards</h2>
-        <p className="text-fg-muted text-sm mt-1">Earn coins for checked price updates. Top your LGA to win every month.</p>
+        <p className="text-fg-muted text-sm mt-1">Earn coins for checked price updates. Top your {areaWord} to win every month.</p>
       </div>
       <div className="flex gap-2">
         <Link href="/rewards" className={cx(ui.btn, ui.btnSm, ui.btnSecondary)}><Trophy className="w-4 h-4" aria-hidden /> Leaderboards</Link>
@@ -367,9 +395,11 @@ function Header() {
 }
 
 // ---------------------------------------------------------------- PHONE (SMS OTP via Supabase Auth)
-function PhoneStep({ currentPhone, verified, onDone }: { currentPhone: string | null; verified: boolean; onDone: () => void }) {
+function PhoneStep({ currentPhone, verified, isNg, onDone }: { currentPhone: string | null; verified: boolean; isNg: boolean; onDone: () => void }) {
   const [supabase] = useState(() => createClient());
-  const [phone, setPhone] = useState(currentPhone ? `0${String(currentPhone).replace(/^\+?234/, '')}` : '');
+  const [phone, setPhone] = useState(currentPhone
+    ? (isNg ? `0${String(currentPhone).replace(/^\+?234/, '')}` : `+${String(currentPhone).replace(/^\+/, '')}`)
+    : '');
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -377,8 +407,8 @@ function PhoneStep({ currentPhone, verified, onDone }: { currentPhone: string | 
 
   const send = async () => {
     setError('');
-    const e164 = normaliseNgPhone(phone);
-    if (!e164) return setError('Enter a Nigerian mobile number, for example 0803 123 4567.');
+    const e164 = isNg ? normaliseNgPhone(phone) : normaliseIntlPhone(phone);
+    if (!e164) return setError(isNg ? 'Enter a Nigerian mobile number, for example 0803 123 4567.' : 'Enter your mobile number with the country code, for example +233 24 123 4567.');
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ phone: e164 });
     setBusy(false);
@@ -410,7 +440,7 @@ function PhoneStep({ currentPhone, verified, onDone }: { currentPhone: string | 
         <>
           <div>
             <label htmlFor="rw-phone" className={ui.label}>Mobile number</label>
-            <input id="rw-phone" type="tel" inputMode="tel" autoComplete="tel" className={ui.input} value={phone} onChange={e => setPhone(e.target.value)} placeholder="0803 123 4567" />
+            <input id="rw-phone" type="tel" inputMode="tel" autoComplete="tel" className={ui.input} value={phone} onChange={e => setPhone(e.target.value)} placeholder={isNg ? '0803 123 4567' : '+233 24 123 4567'} />
             <p className={ui.hint}>We only use this to confirm it is really you and to contact you about prizes. No marketing SMS.</p>
           </div>
           <button type="button" onClick={send} disabled={busy} className={cx(ui.btn, ui.btnMd, ui.btnPrimary)}>{busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : 'Send code'}</button>
@@ -436,11 +466,12 @@ function PhoneStep({ currentPhone, verified, onDone }: { currentPhone: string | 
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 const DOC_TYPES: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf' };
 
-function IdStep({ pending, onDone }: { pending: boolean; onDone: () => void }) {
+function IdStep({ pending, isNg, onDone }: { pending: boolean; isNg: boolean; onDone: () => void }) {
   const [supabase] = useState(() => createClient());
+  const idTypes: { value: string; label: string; hint: string }[] = isNg ? ID_TYPES : ID_TYPES_INTL;
   const [legalName, setLegalName] = useState('');
   const [dob, setDob] = useState('');
-  const [idType, setIdType] = useState<(typeof ID_TYPES)[number]['value']>('nin');
+  const [idType, setIdType] = useState<string>(idTypes[0].value);
   const [idNumber, setIdNumber] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [accept, setAccept] = useState(false);
@@ -476,7 +507,7 @@ function IdStep({ pending, onDone }: { pending: boolean; onDone: () => void }) {
     onDone();
   };
 
-  const hint = ID_TYPES.find(t => t.value === idType)?.hint;
+  const hint = idTypes.find(t => t.value === idType)?.hint;
   return (
     <form onSubmit={submit} className="pt-3 space-y-4">
       {pending && <div className={ui.alertWarning}><Hourglass className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> We already have your details and are reviewing them. Submitting again replaces them.</div>}
@@ -492,8 +523,8 @@ function IdStep({ pending, onDone }: { pending: boolean; onDone: () => void }) {
         </div>
         <div>
           <label htmlFor="rw-idtype" className={ui.label}>ID type</label>
-          <select id="rw-idtype" className={ui.select} value={idType} onChange={e => setIdType(e.target.value as typeof idType)}>
-            {ID_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          <select id="rw-idtype" className={ui.select} value={idType} onChange={e => setIdType(e.target.value)}>
+            {idTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
         <div>
@@ -518,7 +549,7 @@ function IdStep({ pending, onDone }: { pending: boolean; onDone: () => void }) {
 }
 
 // ---------------------------------------------------------------- BANK ACCOUNT
-function BankStep({ bank, onDone }: { bank: Summary['bank']; onDone: () => void }) {
+function BankStep({ bank, isNg, country, onDone }: { bank: Summary['bank']; isNg: boolean; country: string | null; onDone: () => void }) {
   const [supabase] = useState(() => createClient());
   const [bankName, setBankName] = useState(bank?.bank_name ?? '');
   const [number, setNumber] = useState('');
@@ -529,9 +560,12 @@ function BankStep({ bank, onDone }: { bank: Summary['bank']; onDone: () => void 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!/^\d{10}$/.test(number.replace(/\D/g, ''))) return setError('Nigerian account numbers (NUBAN) have exactly 10 digits.');
+    if (isNg && !/^\d{10}$/.test(number.replace(/\D/g, ''))) return setError('Nigerian account numbers (NUBAN) have exactly 10 digits.');
+    if (!isNg && !/^[A-Za-z0-9]{6,34}$/.test(number.replace(/[^A-Za-z0-9]/g, ''))) return setError('Enter your account, IBAN or mobile-money number (6 to 34 letters/digits).');
     setBusy(true);
-    const { error } = await supabase.rpc('save_payout_account', { p_bank_name: bankName, p_account_number: number, p_account_name: accountName });
+    const args: Record<string, string> = { p_bank_name: bankName, p_account_number: number, p_account_name: accountName };
+    if (!isNg && country) args.p_country = country;
+    const { error } = await supabase.rpc('save_payout_account', args);
     setBusy(false);
     if (error) return setError(errText(error));
     onDone();
@@ -551,15 +585,23 @@ function BankStep({ bank, onDone }: { bank: Summary['bank']; onDone: () => void 
       {bank && <p className={ui.body}>Saved: {bank.bank_name} ····{bank.last4}. To change it, enter the new details below.</p>}
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="rw-bank" className={ui.label}>Bank</label>
-          <select id="rw-bank" className={ui.select} value={bankName} onChange={e => setBankName(e.target.value)} required>
-            <option value="">Choose your bank</option>
-            {NIGERIAN_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
+          <label htmlFor="rw-bank" className={ui.label}>{isNg ? 'Bank' : 'Bank or mobile-money provider'}</label>
+          {isNg ? (
+            <select id="rw-bank" className={ui.select} value={bankName} onChange={e => setBankName(e.target.value)} required>
+              <option value="">Choose your bank</option>
+              {NIGERIAN_BANKS.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          ) : (
+            <input id="rw-bank" className={ui.input} value={bankName} onChange={e => setBankName(e.target.value)} placeholder="e.g. Ecobank, MTN MoMo, M-Pesa" required minLength={2} />
+          )}
         </div>
         <div>
-          <label htmlFor="rw-acct" className={ui.label}>Account number</label>
-          <input id="rw-acct" inputMode="numeric" maxLength={10} className={cx(ui.input, 'tabular tracking-wider')} value={number} onChange={e => setNumber(e.target.value.replace(/\D/g, ''))} placeholder="10 digits" required autoComplete="off" />
+          <label htmlFor="rw-acct" className={ui.label}>{isNg ? 'Account number' : 'Account / mobile-money number'}</label>
+          {isNg ? (
+            <input id="rw-acct" inputMode="numeric" maxLength={10} className={cx(ui.input, 'tabular tracking-wider')} value={number} onChange={e => setNumber(e.target.value.replace(/\D/g, ''))} placeholder="10 digits" required autoComplete="off" />
+          ) : (
+            <input id="rw-acct" maxLength={40} className={cx(ui.input, 'tabular tracking-wider')} value={number} onChange={e => setNumber(e.target.value)} placeholder="Account, IBAN or phone number" required autoComplete="off" />
+          )}
         </div>
         <div className="sm:col-span-2">
           <label htmlFor="rw-acctname" className={ui.label}>Account name</label>

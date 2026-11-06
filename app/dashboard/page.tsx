@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Building2, MapPin, Tag, Image as ImageIcon, 
@@ -20,6 +20,8 @@ import { RatingDistribution } from '@/components/analytics/RatingDistribution';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { QUEUE_OPTIONS, normaliseQueue } from '@/lib/queue';
+import { formatMoney, currencySymbol, currencyLabel, DEFAULT_CURRENCY } from '@/lib/currency';
+import { loadRegions, allowedCurrencies, NIGERIA_FALLBACK, type Region } from '@/lib/regions';
 
 // =========================================================================
 // TYPES
@@ -40,10 +42,14 @@ interface Station {
   pump_accuracy?: number | null;
   accuracy_votes?: number | null;
   last_updated?: string | null;
+  country_code?: string | null;
+  currency?: string | null;
 }
 
+/** Fallback typo range when the country has no usual range set (any currency). */
 const PRICE_MIN = 300;
 const PRICE_MAX = 3000;
+const ANY_PRICE_MAX = 10_000_000;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 
@@ -81,7 +87,9 @@ export default function DashboardPage() {
 
   const [user, setUser] = useState<any>(null);
   const [stations, setStations] = useState<Station[]>([]);
-  const [marketAveragePrice, setMarketAveragePrice] = useState<number>(915);
+  const [market, setMarket] = useState<{ price_pms: number; currency: string }[]>([]);
+  const [regions, setRegions] = useState<Record<string, Region>>({ NG: NIGERIA_FALLBACK });
+  const [editCurrency, setEditCurrency] = useState('');
   const [loading, setLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
@@ -112,6 +120,35 @@ export default function DashboardPage() {
     setNotice({ ok, text });
     window.setTimeout(() => setNotice(null), 6000);
   };
+
+  // ---- Currency: every station shows prices in its own currency ----
+  const stationCurrency = useCallback((s: Partial<Station> | null | undefined) =>
+    s?.currency || (s?.country_code ? regions[s.country_code]?.default_currency : null) || DEFAULT_CURRENCY, [regions]);
+  /** Typo range for a station: its country's usual range (main currency only), else anything positive. */
+  const priceRange = useCallback((s: Partial<Station> | null | undefined, currency?: string) => {
+    const region = s?.country_code ? regions[s.country_code] : (regions.NG ?? NIGERIA_FALLBACK);
+    const cur = currency || stationCurrency(s);
+    if (region && region.price_min && region.price_max && cur === region.default_currency) {
+      return { min: Number(region.price_min), max: Number(region.price_max) };
+    }
+    if (!s?.country_code && cur === DEFAULT_CURRENCY) return { min: PRICE_MIN, max: PRICE_MAX };
+    return { min: 0.01, max: ANY_PRICE_MAX };
+  }, [regions, stationCurrency]);
+  const rangeText = (s: Partial<Station> | null | undefined, currency?: string) => {
+    const r = priceRange(s, currency);
+    const cur = currency || stationCurrency(s);
+    return r.max >= ANY_PRICE_MAX ? `a price in ${cur}` : `${formatMoney(r.min, cur)} and ${formatMoney(r.max, cur)}`;
+  };
+  // Main currency of this owner's stations (for the summary cards and market benchmark)
+  const homeCurrency = useMemo(() => {
+    const approved = stations.filter(s => s.claim_status === 'Approved');
+    return approved.length ? stationCurrency(approved[0]) : DEFAULT_CURRENCY;
+  }, [stations, stationCurrency]);
+  const marketAveragePrice = useMemo(() => {
+    const same = market.filter(m => m.currency === homeCurrency).map(m => m.price_pms);
+    return same.length ? Math.round(same.reduce((a, b) => a + b, 0) / same.length) : 0;
+  }, [market, homeCurrency]);
+  const money = (n: number | null | undefined, cur: string = homeCurrency) => formatMoney(n, cur);
 
   // Keep the header name in sync when the profile form updates the account
   useEffect(() => {
@@ -145,25 +182,28 @@ export default function DashboardPage() {
       if (user.email) claimFilters.push(`official_email.eq."${user.email}"`);
       if (phone) claimFilters.push(`phone_number.eq."${phone}"`);
 
-      // Parallel fetch: Verified Stations + User's Claims + Market Average sample
+      // Parallel fetch: Verified Stations + User's Claims + Market sample (with currency when available)
+      const marketQuery = async () => {
+        const withCur = await supabase.from('stations').select('price_pms, currency').not('price_pms', 'is', null).limit(1000);
+        if (!withCur.error) return withCur.data as { price_pms: number; currency: string | null }[];
+        const plain = await supabase.from('stations').select('price_pms').not('price_pms', 'is', null).limit(100);
+        return (plain.data || []).map(r => ({ price_pms: r.price_pms as number, currency: DEFAULT_CURRENCY }));
+      };
       const [
         { data: verifiedStations }, 
         { data: pendingClaims },
-        { data: marketSample }
+        marketSample,
+        regionMap,
       ] = await Promise.all([
         supabase.from('stations').select('*').eq('manager_id', user.id),
         supabase.from('station_claims').select('*').eq('status', 'Pending Review').or(claimFilters.join(',')),
-        supabase.from('stations').select('price_pms').not('price_pms', 'is', null).limit(100),
+        marketQuery(),
+        loadRegions(supabase),
       ]);
-      
-      // Calculate market benchmark
-      if (marketSample && marketSample.length > 0) {
-        const valid = marketSample.map(s => s.price_pms).filter((p): p is number => typeof p === 'number' && p > 0);
-        if (valid.length > 0) {
-          const avg = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
-          setMarketAveragePrice(avg);
-        }
-      }
+      setRegions(regionMap);
+      setMarket((marketSample || [])
+        .filter(s => typeof s.price_pms === 'number' && s.price_pms > 0)
+        .map(s => ({ price_pms: Number(s.price_pms), currency: s.currency || DEFAULT_CURRENCY })));
 
       const userClaims = (pendingClaims || []).filter(
         c => c.user_id === user.id || c.official_email === user.email || c.phone_number === phone
@@ -209,16 +249,18 @@ export default function DashboardPage() {
     setEditName(station.name || "");
     setEditAddress(station.address || "");
     setEditPrice(station.price_pms ? station.price_pms.toString() : "");
+    setEditCurrency(stationCurrency(station));
     setEditQueue(normaliseQueue(station.queue_status));
     setEditLogoUrl(station.custom_logo_url || "");
   };
 
   /** Validates a price typed by the owner. Empty = keep the current price. */
-  const parsePrice = (raw: string): { ok: true; value: number | null } | { ok: false } => {
-    const t = raw.trim().replace(/[₦,\s]/g, '');
+  const parsePrice = (raw: string, station?: Partial<Station> | null, currency?: string): { ok: true; value: number | null } | { ok: false } => {
+    const t = raw.trim().replace(/[^\d.]/g, '');
     if (!t) return { ok: true, value: null };
     const n = Number(t);
-    if (!Number.isFinite(n) || n < PRICE_MIN || n > PRICE_MAX) return { ok: false };
+    const r = priceRange(station, currency);
+    if (!Number.isFinite(n) || n < r.min || n > r.max) return { ok: false };
     return { ok: true, value: Math.round(n * 100) / 100 };
   };
 
@@ -264,8 +306,8 @@ export default function DashboardPage() {
     if (!editingStation) return;
     const name = editName.trim();
     if (name.length < 2) return setEditError("Please enter the station name.");
-    const price = parsePrice(editPrice);
-    if (!price.ok) return setEditError(`Enter a realistic PMS price between ₦${PRICE_MIN.toLocaleString()} and ₦${PRICE_MAX.toLocaleString()}, or leave it empty to keep the current price.`);
+    const price = parsePrice(editPrice, editingStation, editCurrency);
+    if (!price.ok) return setEditError(`Enter a realistic PMS price between ${rangeText(editingStation, editCurrency)}, or leave it empty to keep the current price.`);
     setEditError("");
     setIsSaving(true);
 
@@ -276,13 +318,14 @@ export default function DashboardPage() {
     };
     if (price.value !== null) patch.price_pms = price.value;
     if (editQueue !== 'Unknown') patch.queue_status = editQueue;
+    if (editCurrency && editingStation.currency && editCurrency !== editingStation.currency) patch.currency = editCurrency;
 
     const { data, error } = await supabase
       .from('stations')
       .update(patch)
       .eq('station_id', editingStation.station_id)
       .eq('manager_id', user.id)
-      .select('station_id, name, address, price_pms, queue_status, custom_logo_url, last_updated')
+      .select('*')
       .maybeSingle();
 
     setIsSaving(false);
@@ -292,15 +335,18 @@ export default function DashboardPage() {
     applySaved(data as Station);
     setEditingStation(null);
     const logoRejected = !!editLogoUrl && data.custom_logo_url !== editLogoUrl;
-    flash(!logoRejected, logoRejected
+    const currencyRejected = !!patch.currency && data.currency && data.currency !== patch.currency;
+    flash(!logoRejected && !currencyRejected, logoRejected
       ? 'Saved, but the logo was not accepted. Upload it again from this screen.'
-      : `${data.name} updated. Drivers now see the new details on the map.`);
+      : currencyRejected
+        ? `Saved, but ${patch.currency} isn't allowed for this country, so prices stay in ${data.currency}.`
+        : `${data.name} updated. Drivers now see the new details on the map.`);
   };
 
   // Quick Inline Price Save
   const handleInlinePriceSave = async (station: Station) => {
-    const price = parsePrice(inlinePriceVal);
-    if (!price.ok) return flash(false, `Please enter a realistic fuel price between ₦${PRICE_MIN.toLocaleString()} and ₦${PRICE_MAX.toLocaleString()}.`);
+    const price = parsePrice(inlinePriceVal, station);
+    if (!price.ok) return flash(false, `Please enter a realistic fuel price between ${rangeText(station)}.`);
     if (price.value === null || price.value === station.price_pms) { setEditingPriceId(null); return; }
 
     setIsSavingInline(true);
@@ -316,7 +362,7 @@ export default function DashboardPage() {
     if (error || !data) return flash(false, "Failed to update price: " + (error?.message ?? 'station not linked to your account.'));
     applySaved(data as Station);
     setEditingPriceId(null);
-    flash(true, `Price updated to ₦${Number(data.price_pms).toLocaleString()}. It is live on the map.`);
+    flash(true, `Price updated to ${formatMoney(Number(data.price_pms), stationCurrency(station))}. It is live on the map.`);
   };
 
   // Quick Queue Status Toggle
@@ -379,7 +425,7 @@ export default function DashboardPage() {
           if (row.length < 5 || !row[0]?.trim()) continue;
           const systemId = row[0].trim();
           if (!mine.has(systemId)) { errorCount++; continue; }
-          const price = parsePrice(row[4] || '');
+          const price = parsePrice(row[4] || '', stations.find(s => String(s.station_id) === systemId));
           if (!price.ok) { errorCount++; continue; }
           const patch: Record<string, string | number> = {};
           if (row[2]?.trim()) patch.name = row[2].trim();
@@ -402,7 +448,7 @@ export default function DashboardPage() {
           });
         }
         saved.forEach(applySaved);
-        flash(errorCount === 0, `Bulk update finished: ${successCount} station(s) updated${errorCount ? `, ${errorCount} row(s) skipped (unknown station or price outside ₦${PRICE_MIN}–₦${PRICE_MAX})` : ''}.`);
+        flash(errorCount === 0, `Bulk update finished: ${successCount} station(s) updated${errorCount ? `, ${errorCount} row(s) skipped (unknown station or unrealistic price)` : ''}.`);
       } catch {
         flash(false, "Could not read that file. Please upload the CSV template you downloaded.");
       } finally {
@@ -418,13 +464,14 @@ export default function DashboardPage() {
   const managerAnalytics = useMemo(() => {
     const approved = stations.filter(s => s.claim_status === 'Approved');
     const pending = stations.filter(s => s.claim_status === 'Pending Review');
-    const priced = approved.filter(s => typeof s.price_pms === 'number' && s.price_pms > 0);
+    // Averages only use stations priced in the owner's main currency
+    const priced = approved.filter(s => typeof s.price_pms === 'number' && s.price_pms > 0 && stationCurrency(s) === homeCurrency);
     
     const avgPrice = priced.length > 0 
       ? Math.round(priced.reduce((acc, s) => acc + (s.price_pms || 0), 0) / priced.length)
       : 0;
 
-    const diffVsMarket = avgPrice > 0 ? avgPrice - marketAveragePrice : 0;
+    const diffVsMarket = avgPrice > 0 && marketAveragePrice > 0 ? avgPrice - marketAveragePrice : 0;
 
     // Pump accuracy
     const rated = approved.filter(s => (s.accuracy_votes || 0) > 0);
@@ -447,20 +494,24 @@ export default function DashboardPage() {
       { label: 'Not reported', value: Math.max(0, other), color: 'var(--chart-neutral)' },
     ];
 
-    // Price comparison bars for each station vs market benchmark
-    const priceBars: BarItem[] = approved.map(s => ({
-      label: s.name.length > 20 ? s.name.slice(0, 18) + '...' : s.name,
-      value: s.price_pms || 0,
-      formattedValue: s.price_pms ? `₦${s.price_pms}` : 'Not set',
-      secondaryLabel: s.price_pms 
-        ? s.price_pms <= marketAveragePrice 
-          ? `₦${marketAveragePrice - s.price_pms} below market` 
-          : `₦${s.price_pms - marketAveragePrice} above market`
-        : 'Unset',
-      color: s.price_pms 
-        ? s.price_pms <= marketAveragePrice ? 'var(--chart-pos)' : 'var(--chart-warn)'
-        : 'var(--chart-neutral)'
-    }));
+    // Price comparison bars for each station vs market benchmark (same currency only)
+    const priceBars: BarItem[] = approved.map(s => {
+      const cur = stationCurrency(s);
+      const comparable = !!s.price_pms && cur === homeCurrency && marketAveragePrice > 0;
+      return {
+        label: s.name.length > 20 ? s.name.slice(0, 18) + '...' : s.name,
+        value: s.price_pms || 0,
+        formattedValue: s.price_pms ? formatMoney(s.price_pms, cur) : 'Not set',
+        secondaryLabel: !s.price_pms ? 'Unset'
+          : !comparable ? cur
+          : s.price_pms <= marketAveragePrice
+            ? `${formatMoney(marketAveragePrice - s.price_pms, cur)} below market`
+            : `${formatMoney(s.price_pms - marketAveragePrice, cur)} above market`,
+        color: comparable
+          ? (s.price_pms as number) <= marketAveragePrice ? 'var(--chart-pos)' : 'var(--chart-warn)'
+          : 'var(--chart-neutral)'
+      };
+    });
 
     return {
       totalCount: stations.length,
@@ -474,7 +525,7 @@ export default function DashboardPage() {
       priceBars,
       queueAlertCount: moderate + severe,
     };
-  }, [stations, marketAveragePrice]);
+  }, [stations, marketAveragePrice, homeCurrency, stationCurrency]);
 
   if (loading) {
     return (
@@ -635,13 +686,15 @@ export default function DashboardPage() {
 
           <StatCard
             title="Fleet Average PMS"
-            value={managerAnalytics.avgPrice > 0 ? `₦${managerAnalytics.avgPrice}` : '—'}
+            value={managerAnalytics.avgPrice > 0 ? money(managerAnalytics.avgPrice) : '—'}
             subtitle={
-              managerAnalytics.diffVsMarket < 0 
-                ? `₦${Math.abs(managerAnalytics.diffVsMarket)} below market (₦${marketAveragePrice})`
+              marketAveragePrice <= 0
+                ? 'No market average in this currency yet'
+                : managerAnalytics.diffVsMarket < 0 
+                ? `${money(Math.abs(managerAnalytics.diffVsMarket))} below market (${money(marketAveragePrice)})`
                 : managerAnalytics.diffVsMarket > 0
-                ? `₦${managerAnalytics.diffVsMarket} above market (₦${marketAveragePrice})`
-                : `Matches market average (₦${marketAveragePrice})`
+                ? `${money(managerAnalytics.diffVsMarket)} above market (${money(marketAveragePrice)})`
+                : `Matches market average (${money(marketAveragePrice)})`
             }
             icon={Fuel}
             badge={{
@@ -678,7 +731,7 @@ export default function DashboardPage() {
             <div className="lg:col-span-2">
               <BarChart
                 title="Outlet Price Comparison vs Market"
-                subtitle={`Benchmark: Nationwide regional average is ₦${marketAveragePrice}/Litre`}
+                subtitle={marketAveragePrice > 0 ? `Benchmark: average community price is ${money(marketAveragePrice)}/litre (${homeCurrency})` : `Benchmark: no community prices in ${homeCurrency} yet`}
                 data={managerAnalytics.priceBars}
                 layout="horizontal"
                 valuePrefix=""
@@ -786,7 +839,7 @@ export default function DashboardPage() {
                           ) : (
                             <div className="flex items-center gap-2">
                               <span className="text-xl font-semibold text-fg font-mono">
-                                {station.price_pms ? `₦${station.price_pms}` : 'Not Set'}
+                                {station.price_pms ? formatMoney(station.price_pms, stationCurrency(station)) : 'Not Set'}
                               </span>
                               <button
                                 onClick={() => {
@@ -942,20 +995,39 @@ export default function DashboardPage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="ed-price" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">PMS Price (₦/L)</label>
-                  <input 
-                    id="ed-price"
-                    type="number" 
-                    inputMode="decimal"
-                    min={PRICE_MIN}
-                    max={PRICE_MAX}
-                    step="0.01" 
-                    value={editPrice} 
-                    onChange={(e) => setEditPrice(e.target.value)} 
-                    className="w-full bg-surface-2 border border-line rounded-lg p-3 text-lg font-semibold outline-none focus:border-primary text-fg font-mono" 
-                    placeholder={editingStation.price_pms ? String(editingStation.price_pms) : '950'} 
-                  />
-                  <p className="text-[11px] text-fg-subtle mt-1">₦{PRICE_MIN.toLocaleString()}–₦{PRICE_MAX.toLocaleString()}. Leave empty to keep the current price.</p>
+                  <label htmlFor="ed-price" className="text-xs font-semibold text-fg-muted uppercase mb-1 block">PMS Price ({currencySymbol(editCurrency || stationCurrency(editingStation))}/L)</label>
+                  <div className="flex gap-2">
+                    <input 
+                      id="ed-price"
+                      type="number" 
+                      inputMode="decimal"
+                      min={0}
+                      step="0.01" 
+                      value={editPrice} 
+                      onChange={(e) => setEditPrice(e.target.value)} 
+                      className="min-w-0 flex-1 bg-surface-2 border border-line rounded-lg p-3 text-lg font-semibold outline-none focus:border-primary text-fg font-mono" 
+                      placeholder={editingStation.price_pms ? String(editingStation.price_pms) : ''} 
+                    />
+                    {(() => {
+                      const options = allowedCurrencies(editingStation.country_code ? regions[editingStation.country_code] : null);
+                      if (options.length < 2 || !editingStation.currency) return null;
+                      return (
+                        <select
+                          aria-label="Currency"
+                          value={editCurrency}
+                          onChange={(e) => setEditCurrency(e.target.value)}
+                          className="shrink-0 bg-surface-2 border border-line rounded-lg px-2 text-sm font-semibold outline-none focus:border-primary text-fg"
+                        >
+                          {options.map(c => <option key={c} value={c}>{currencyLabel(c)}</option>)}
+                        </select>
+                      );
+                    })()}
+                  </div>
+                  <p className="text-[11px] text-fg-subtle mt-1">
+                    {(() => { const r = priceRange(editingStation, editCurrency); return r.max < ANY_PRICE_MAX ? `${formatMoney(r.min, editCurrency || stationCurrency(editingStation))}–${formatMoney(r.max, editCurrency || stationCurrency(editingStation))}. ` : ''; })()}
+                    Leave empty to keep the current price.
+                    {editCurrency && editingStation.currency && editCurrency !== editingStation.currency && ' Changing currency? Enter the price in the new currency too.'}
+                  </p>
                 </div>
 
                 <div>

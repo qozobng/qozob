@@ -80,8 +80,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'API key missing on server' }, { status: 500 });
   }
 
-  // The explicit field mask absolutely blocks costly Atmosphere/Contact Data
-  const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.location';
+  // The explicit field mask absolutely blocks costly Atmosphere/Contact Data.
+  // addressComponents is in the same "Pro" tier as displayName, so the country costs nothing extra.
+  const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.location,places.addressComponents';
   
   // Base headers for both requests
   const headers = {
@@ -145,6 +146,10 @@ export async function GET(request: Request) {
       place_id: place.id,
       name: place.displayName?.text || "Unknown Station",
       vicinity: place.formattedAddress || "No address provided",
+      // ISO country code ("NG", "GH"...) so the station gets the right currency
+      country_code: (Array.isArray(place.addressComponents)
+        ? place.addressComponents.find((c: any) => Array.isArray(c?.types) && c.types.includes('country'))?.shortText
+        : null) || null,
       geometry: {
         location: {
           lat: place.location?.latitude,
@@ -166,6 +171,8 @@ export async function GET(request: Request) {
         address: place.vicinity,
         lat: place.geometry.location.lat,
         lng: place.geometry.location.lng,
+        // Country decides the station's currency (the database fills the currency itself)
+        country_code: place.country_code,
         // Default values for new stations so your frontend doesn't crash
         price_pms: null,
         queue_status: 'Unknown',
@@ -177,9 +184,16 @@ export async function GET(request: Request) {
       }));
 
       // Insert into DB. 'onConflict' ensures we don't duplicate existing stations
-      const { error: insertError } = await supabase
+      let { error: insertError } = await supabase
         .from('stations')
         .upsert(stationsToInsert, { onConflict: 'station_id', ignoreDuplicates: true });
+
+      // Database update 20261105 not run yet (no country_code column): save without it
+      if (insertError && (insertError.code === 'PGRST204' || /country_code/i.test(insertError.message || ''))) {
+        ({ error: insertError } = await supabase
+          .from('stations')
+          .upsert(stationsToInsert.map(({ country_code: _cc, ...rest }: any) => rest), { onConflict: 'station_id', ignoreDuplicates: true }));
+      }
 
       if (insertError) {
         console.error("Error saving new stations to Supabase:", insertError);

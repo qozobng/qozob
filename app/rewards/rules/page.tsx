@@ -24,6 +24,12 @@ export default function RewardsRulesPage() {
           {SITE.name} Rewards is run by {SITE.name} ({SITE.domain}). Contact us at <a href={`mailto:${SITE.contactEmail}`}>{SITE.contactEmail}</a>.
           It is free to join. You never have to pay, buy fuel or buy anything else to take part or to win.
         </p>
+        <p>
+          <strong>Where these rules apply.</strong> These rules are for the Nigeria programme (prizes in Naira, one winner per LGA).
+          If {SITE.name} runs Rewards in another country, the same rules apply there with that country&apos;s prize, currency,
+          local areas, accepted ID and payment methods, as shown on the Rewards page for that country. A country without local
+          area maps has one national monthly winner. You can only win in the country where you live and update prices.
+        </p>
       </section>
 
       <section>

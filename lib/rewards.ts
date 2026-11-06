@@ -4,6 +4,7 @@
 // (supabase/migrations/20261011_rewards.sql); this file only explains them.
 // =========================================================================
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { formatMoney } from '@/lib/currency';
 
 export interface RewardSettings {
   program_active: boolean;
@@ -53,6 +54,7 @@ export const REASON_TEXT: Record<string, string> = {
   fresh_bonus: 'Bonus: first update at this station in 24 hours',
   not_eligible: 'Qozob staff, reps and station owners/managers do not earn coins',
   programme_paused: 'The rewards programme is paused right now',
+  no_programme_region: 'There is no rewards programme in this country yet',
   price_out_of_range: 'That price is outside the usual range, so a reviewer will check it',
   reporter_suspended: 'Your rewards account is suspended, so your updates are reviewed first',
   no_location: 'Turn on location so we can confirm you are at the station',
@@ -92,6 +94,16 @@ export const NIGERIAN_BANKS = [
 
 export const naira = (n: number | null | undefined) =>
   n === null || n === undefined ? '—' : `\u20A6${Math.round(Number(n)).toLocaleString('en-NG')}`;
+
+/** Prize / payout amount in its own currency (whole units). */
+export const money = (n: number | null | undefined, currency?: string | null) =>
+  n === null || n === undefined ? '—' : formatMoney(Math.round(Number(n)), currency || 'NGN');
+
+export const ID_TYPES_INTL: { value: 'national_id' | 'drivers_licence' | 'passport'; label: string; hint: string }[] = [
+  { value: 'national_id', label: 'National ID card', hint: 'ID card number' },
+  { value: 'drivers_licence', label: "Driver's licence", hint: 'Licence number' },
+  { value: 'passport', label: 'Passport', hint: 'Passport number' },
+];
 
 /** Nigeria is UTC+1 all year. */
 export function lagosToday(): Date {
@@ -153,6 +165,7 @@ export interface SubmitResult {
   distance_m?: number | null;
   lga?: string | null;
   price: number;
+  currency?: string | null;
   queue_status: string;
   last_updated: string | null;
   updated_by_role: string;
@@ -160,7 +173,7 @@ export interface SubmitResult {
 }
 
 export type SubmitErrorCode =
-  | 'auth' | 'too_far' | 'no_location' | 'weak_gps' | 'too_soon' | 'invalid_price'
+  | 'auth' | 'too_far' | 'no_location' | 'weak_gps' | 'too_soon' | 'invalid_price' | 'region_closed'
   | 'station_location_unknown' | 'station_not_found' | 'not_deployed' | 'unknown';
 
 export class SubmitPriceError extends Error {
@@ -192,7 +205,7 @@ export async function submitPrice(supabase: SupabaseClient, input: SubmitPriceIn
   if (error) {
     // PGRST202 = function not found (database update 20261014 not run yet)
     if (error.code === 'PGRST202') throw new SubmitPriceError('not_deployed', error.message);
-    const known: SubmitErrorCode[] = ['auth', 'too_far', 'no_location', 'weak_gps', 'too_soon', 'invalid_price', 'station_location_unknown', 'station_not_found'];
+    const known: SubmitErrorCode[] = ['auth', 'too_far', 'no_location', 'weak_gps', 'too_soon', 'invalid_price', 'region_closed', 'station_location_unknown', 'station_not_found'];
     const code = (known as string[]).includes(error.hint || '') ? (error.hint as SubmitErrorCode) : 'unknown';
     throw new SubmitPriceError(code, error.message || 'Could not save the price. Please try again.');
   }

@@ -16,7 +16,8 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { cx, ui } from '@/lib/ui';
-import { REASON_TEXT, naira, monthRange, isoDate, lagosToday } from '@/lib/rewards';
+import { REASON_TEXT, money, monthRange, isoDate, lagosToday } from '@/lib/rewards';
+import { flagEmoji } from '@/lib/regions';
 import { queueLabel } from '@/lib/queue';
 import { downloadXlsx, formatWat } from '@/lib/xlsx';
 import { fetchAllRows, isMissingFunction } from '@/lib/fetchAll';
@@ -47,6 +48,8 @@ interface QueueRow {
   coins: number;
   reasons: string[];
   applied: boolean | null;
+  country_code?: string | null;
+  currency?: string | null;
 }
 
 interface LogRow {
@@ -57,6 +60,8 @@ interface LogRow {
   live_on_map: string;
   coins: number;
   price: number;
+  currency?: string | null;
+  country_code?: string | null;
   queue_status: string | null;
   ref_median: number | null;
   station_id: string;
@@ -80,9 +85,11 @@ const STATUS_TEXT: Record<string, string> = {
 
 const reasonText = (r: string) => REASON_TEXT[r]?.split(/[.(]/)[0] ?? r.replace(/_/g, ' ');
 
-export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; compact?: boolean }) {
+export function PriceReviews({ onChanged, compact, country = '' }: { onChanged?: () => void; compact?: boolean; country?: string }) {
   const [view, setView] = useState<'queue' | 'log'>('queue');
-  const [rows, setRows] = useState<QueueRow[] | null>(null);
+  const [allRows, setRows] = useState<QueueRow[] | null>(null);
+  // The admin's working country (the database already limits rows to the countries they cover)
+  const rows = useMemo(() => (allRows && country ? allRows.filter(r => (r.country_code || 'NG') === country) : allRows), [allRows, country]);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [notDeployed, setNotDeployed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +139,7 @@ export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; c
     const res = (data && typeof data === 'object' ? data : {}) as { published?: boolean; already_live?: boolean };
     setRows((prev) => (prev || []).filter((x) => x.id !== r.id));
     if (!approve) flash(true, 'Rejected. The price stays off the map and a strike was recorded.');
-    else if (res.published) flash(true, `Approved and published: ${naira(r.price)} now shows on the map, timed ${formatWat(r.created_at)}.`);
+    else if (res.published) flash(true, `Approved and published: ${money(r.price, r.currency)} now shows on the map, timed ${formatWat(r.created_at)}.`);
     else if (res.already_live) flash(true, `Approved: ${r.coins} coins confirmed.`);
     else flash(true, 'Approved and coins kept. The map was not changed because a newer price was already live.');
     onChanged?.();
@@ -144,18 +151,18 @@ export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; c
     downloadXlsx('qozob-prices-waiting-for-review', [{
       name: 'Waiting for review',
       title: 'Qozob · Prices waiting for review',
-      meta: [`Data as of: ${formatWat(loadedAt)} WAT`, `Rows: ${list.length}`],
+      meta: [`Data as of: ${formatWat(loadedAt)} WAT`, `Rows: ${list.length}`, `Country: ${country || 'All my countries'}`],
       columns: [
         { header: 'Report ID', type: 'integer' }, { header: 'Reported at', type: 'datetime' }, { header: 'Station' },
-        { header: 'LGA' }, { header: 'State' }, { header: 'Reported price (₦)', type: 'money' },
-        { header: 'Price on map (₦)', type: 'money' }, { header: 'Nearby median (₦)', type: 'money' },
+        { header: 'Country' }, { header: 'LGA / area' }, { header: 'State' }, { header: 'Currency' }, { header: 'Reported price', type: 'money' },
+        { header: 'Price on map', type: 'money' }, { header: 'Nearby median', type: 'money' },
         { header: 'Queue' }, { header: 'Why held', width: 50 }, { header: 'On map now?' },
         { header: 'Reporter' }, { header: 'Reporter email', width: 28 }, { header: 'Strikes', type: 'integer' },
         { header: 'Distance (m)', type: 'integer' }, { header: 'GPS accuracy (m)', type: 'integer' },
         { header: 'Coins if approved', type: 'integer' }, { header: 'Station ID' },
       ],
       rows: list.map((r) => [
-        r.id, r.created_at, r.station_name, r.lga, r.state, r.price, r.current_price, r.ref_median,
+        r.id, r.created_at, r.station_name, r.country_code || 'NG', r.lga, r.state, r.currency || 'NGN', r.price, r.current_price, r.ref_median,
         queueLabel(r.queue_status), r.reasons.filter((x) => x !== 'fresh_bonus').map(reasonText).join('; '),
         r.applied === false ? 'No (waiting)' : 'Yes (older rules)', r.display_name, r.email, r.strikes,
         r.distance_m, r.gps_accuracy_m === null ? null : Math.round(r.gps_accuracy_m), r.coins, r.station_id,
@@ -214,7 +221,7 @@ export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; c
       {error && <div className={ui.alertError}><AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden /> {error}</div>}
 
       {view === 'log' ? (
-        <PriceReportLog />
+        <PriceReportLog country={country} />
       ) : !rows ? (
         <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-primary" aria-label="Loading" /></div>
       ) : (
@@ -252,7 +259,8 @@ export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; c
                         </span>
                       </div>
                       <p className="text-xs text-fg-muted mt-0.5 inline-flex items-center gap-1">
-                        <MapPin className="w-3 h-3" aria-hidden /> {[r.lga, r.state].filter(Boolean).join(', ') || 'LGA not assigned'}
+                        <MapPin className="w-3 h-3" aria-hidden /> {r.country_code && r.country_code !== 'NG' && <span aria-hidden>{flagEmoji(r.country_code)}</span>}
+                        {[r.lga, r.state].filter(Boolean).join(', ') || (r.country_code && r.country_code !== 'NG' ? r.country_code : 'LGA not assigned')}
                         {r.station_lat !== null && r.station_lng !== null && (
                           <a className={cx(ui.link, 'ml-1 inline-flex items-center gap-0.5')} target="_blank" rel="noopener noreferrer"
                              href={`https://www.google.com/maps/search/?api=1&query=${r.station_lat},${r.station_lng}`}>
@@ -262,9 +270,9 @@ export function PriceReviews({ onChanged, compact }: { onChanged?: () => void; c
                       </p>
 
                       <div className="mt-3 grid grid-cols-3 gap-2 max-w-md">
-                        <Figure label="Reported" value={naira(r.price)} strong />
-                        <Figure label="On map now" value={r.current_price ? naira(r.current_price) : '—'} sub={diff !== null ? `${diff > 0 ? '+' : ''}${diff}%` : undefined} />
-                        <Figure label="Nearby median" value={r.ref_median ? naira(r.ref_median) : '—'} />
+                        <Figure label="Reported" value={money(r.price, r.currency)} strong />
+                        <Figure label="On map now" value={r.current_price ? money(r.current_price, r.currency) : '—'} sub={diff !== null ? `${diff > 0 ? '+' : ''}${diff}%` : undefined} />
+                        <Figure label="Nearby median" value={r.ref_median ? money(r.ref_median, r.currency) : '—'} />
                       </div>
 
                       <p className="text-xs text-fg-muted mt-3">
@@ -319,7 +327,7 @@ function Figure({ label, value, sub, strong }: { label: string; value: string; s
 // ---------------------------------------------------------------------------
 // Full price-report log (every community/owner report with outcome)
 // ---------------------------------------------------------------------------
-export function PriceReportLog({ initialFrom, initialTo, initialStatus }: { initialFrom?: string; initialTo?: string; initialStatus?: string }) {
+export function PriceReportLog({ initialFrom, initialTo, initialStatus, country = '' }: { initialFrom?: string; initialTo?: string; initialStatus?: string; country?: string }) {
   const [from, setFrom] = useState(initialFrom ?? isoDate(new Date(lagosToday().getTime() - 29 * 86400000)));
   const [to, setTo] = useState(initialTo ?? isoDate(lagosToday()));
   const [status, setStatus] = useState(initialStatus ?? 'all');
@@ -331,23 +339,27 @@ export function PriceReportLog({ initialFrom, initialTo, initialStatus }: { init
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const args: Record<string, unknown> = { p_from: from || null, p_to: to || null, p_status: status === 'all' ? null : status, p_lga_id: null };
+    if (country) args.p_country = country;   // only sent when a country is picked (needs the 20261105 update)
     const res = await fetchAllRows<LogRow>((a, b) =>
-      supabase.rpc('admin_report_rows', { p_from: from || null, p_to: to || null, p_status: status === 'all' ? null : status, p_lga_id: null }).range(a, b),
+      supabase.rpc('admin_report_rows', args).range(a, b),
     );
-    if (res.error) setError(isMissingFunction(res.error) ? 'Run the 20261014 database update to enable this report.' : res.error.message);
+    if (res.error) setError(isMissingFunction(res.error) ? 'Run the latest database update to enable this report.' : res.error.message);
     setRows(res.rows);
     setLoadedAt(new Date());
     setLoading(false);
-  }, [from, to, status]);
+  }, [from, to, status, country]);
   useEffect(() => { load(); }, [load]);
 
   const columns = useMemo<ReportColumn<LogRow>[]>(() => [
     { key: 'created_at', header: 'Reported at', get: (r) => r.created_at, type: 'datetime' },
     { key: 'station', header: 'Station', get: (r) => r.station_name, width: 30 },
-    { key: 'lga', header: 'LGA', get: (r) => r.lga },
+    { key: 'country', header: 'Country', get: (r) => r.country_code || 'NG' },
+    { key: 'lga', header: 'LGA / area', get: (r) => r.lga },
     { key: 'state', header: 'State', get: (r) => r.state },
-    { key: 'price', header: 'Price (₦)', get: (r) => r.price, type: 'money', align: 'right' },
-    { key: 'median', header: 'Nearby median (₦)', get: (r) => r.ref_median, type: 'money', align: 'right', defaultVisible: false },
+    { key: 'currency', header: 'Currency', get: (r) => r.currency || 'NGN' },
+    { key: 'price', header: 'Price', get: (r) => r.price, type: 'money', align: 'right', render: (r) => <span className="whitespace-nowrap">{money(r.price, r.currency)}</span> },
+    { key: 'median', header: 'Nearby median', get: (r) => r.ref_median, type: 'money', align: 'right', defaultVisible: false },
     { key: 'queue', header: 'Queue', get: (r) => (r.queue_status ? queueLabel(r.queue_status) : null), defaultVisible: false },
     {
       key: 'status', header: 'Outcome', get: (r) => STATUS_TEXT[r.status] ?? r.status,

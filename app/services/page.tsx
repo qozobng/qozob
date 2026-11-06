@@ -15,6 +15,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { PhoneField } from '@/components/PhoneField';
 import { NIGERIAN_STATES, joinPhone } from '@/lib/nigeria';
 import { splitPhone } from '@/lib/profile';
+import { loadRegions, countryCodeFromName, type Region } from '@/lib/regions';
 import { AUTO_SERVICE_CATALOG, ServiceCategory } from '@/types/services';
 import { submitServiceRequest } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
@@ -53,6 +54,12 @@ export default function ServicesPage() {
   const [submittedRequest, setSubmittedRequest] = useState<any | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [user, setUser] = useState<any | null>(null);
+  // Auto services run in Nigeria only (for now): signed-in people from other countries see "coming soon"
+  const [regions, setRegions] = useState<Record<string, Region>>({});
+  useEffect(() => { loadRegions(supabase).then(setRegions); }, [supabase]);
+  const userCountry = user ? countryCodeFromName(user.user_metadata?.country, regions) : null;
+  const outsideNigeria = !!userCountry && userCountry !== 'NG';
+  const userCountryName = userCountry ? (regions[userCountry]?.name || userCountry) : '';
 
   // Check auth user to pre-fill
   useEffect(() => {
@@ -110,6 +117,7 @@ export default function ServicesPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (outsideNigeria) return;   // button is disabled too; services are Nigeria-only for now
     setErrorMessage(null);
 
     const fullPhone = joinPhone(phoneCode, phoneNum);
@@ -284,6 +292,15 @@ export default function ServicesPage() {
 
       {/* Main Content Area */}
       <main className="max-w-6xl mx-auto w-full px-4 py-8 flex-1">
+        {outsideNigeria && !submittedRequest && (
+          <div className="mb-6 rounded-2xl border border-line bg-surface-2 p-4 sm:p-5 flex items-start gap-3 animate-in fade-in duration-300">
+            <span aria-hidden className="text-2xl leading-none">🌍</span>
+            <div className="text-sm">
+              <p className="font-semibold text-fg">Auto services are coming soon to {userCountryName}</p>
+              <p className="text-fg-muted mt-0.5">Vehicle papers, insurance and trackers are only available in Nigeria for now. You can still explore the services; requests open when we launch in your country.</p>
+            </div>
+          </div>
+        )}
         {submittedRequest ? (
           /* ================= SUCCESS MODAL / RECEIPT ================= */
           <div className="max-w-xl mx-auto bg-surface rounded-3xl p-6 sm:p-8 border border-line shadow-2xl text-center animate-in zoom-in-95 duration-200">
@@ -771,7 +788,7 @@ export default function ServicesPage() {
 
                   <button
                     type="submit"
-                    disabled={isSubmitting || (activeTab === 'papers' && selectedItems.length === 0)}
+                    disabled={isSubmitting || outsideNigeria || (activeTab === 'papers' && selectedItems.length === 0)}
                     className={cx(
                       ui.btn, ui.btnLg, ui.btnPrimary,
                       'w-full mt-4 font-extrabold text-sm shadow-xl'
@@ -781,6 +798,8 @@ export default function ServicesPage() {
                       <span className="inline-flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" /> Submitting Request…
                       </span>
+                    ) : outsideNigeria ? (
+                      <span>Coming soon to {userCountryName}</span>
                     ) : (
                       <span>Submit Request & Get Quote</span>
                     )}

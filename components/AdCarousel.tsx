@@ -36,7 +36,7 @@ function dwellMs(weight: number) {
 
 const sameIds = (a: Ad[], b: Ad[]) => a.length === b.length && a.every((ad, i) => ad.id === b[i].id);
 
-export function AdCarousel({ placement, className = '', lat, lng, viewerState }: {
+export function AdCarousel({ placement, className = '', lat, lng, viewerState, viewerCountry }: {
   placement: AdPlacement;
   className?: string;
   /** Viewer's position, used only to pick local adverts (rounded to ~1 km, never stored). */
@@ -44,6 +44,8 @@ export function AdCarousel({ placement, className = '', lat, lng, viewerState }:
   lng?: number | null;
   /** State from the viewer's profile, used when their position isn't known. */
   viewerState?: string | null;
+  /** Country the map is showing (nearest station's country), for country-targeted adverts. */
+  viewerCountry?: string | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [ads, setAds] = useState<Ad[]>([]);
@@ -69,12 +71,12 @@ export function AdCarousel({ placement, className = '', lat, lng, viewerState }:
   const load = useCallback(async () => {
     const [pLat, pLng] = locKey ? locKey.split(',').map(Number) : [null, null];
     let list: Ad[] | null = null;
-    const { data, error } = await supabase.rpc('ads_for_viewer', {
-      p_placement: placement,
-      p_lat: pLat,
-      p_lng: pLng,
-      p_state: viewerState || null,
-    });
+    const args = { p_placement: placement, p_lat: pLat, p_lng: pLng, p_state: viewerState || null };
+    let { data, error } = await supabase.rpc('ads_for_viewer', viewerCountry ? { ...args, p_country: viewerCountry } : args);
+    // Country targeting not installed yet (20261105): ask again without the country
+    if (error && error.code === 'PGRST202' && viewerCountry) {
+      ({ data, error } = await supabase.rpc('ads_for_viewer', args));
+    }
     if (!error && data && Array.isArray((data as { ads?: unknown }).ads)) {
       list = (data as { ads: Ad[] }).ads;
     } else if (error && (error.code === 'PGRST202' || /ads_for_viewer/i.test(error.message || ''))) {
@@ -93,7 +95,7 @@ export function AdCarousel({ placement, className = '', lat, lng, viewerState }:
       setAds((prev) => (sameIds(prev, next) ? prev : next)); // keep the current slide if nothing changed
     }
     setLoaded(true);
-  }, [supabase, placement, locKey, viewerState]);
+  }, [supabase, placement, locKey, viewerState, viewerCountry]);
 
   useEffect(() => {
     load();

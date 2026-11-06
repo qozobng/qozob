@@ -13,6 +13,8 @@ import { Leaderboard } from '@/components/rewards/Leaderboard';
 import { useRewardSettings } from '@/components/rewards/hooks';
 import { createClient } from '@/utils/supabase/client';
 import { naira } from '@/lib/rewards';
+import { formatMoney } from '@/lib/currency';
+import { loadRegions, loadRewardPrograms, flagEmoji, type RewardProgram } from '@/lib/regions';
 import { ui, cx } from '@/lib/ui';
 import { SITE } from '@/lib/site';
 
@@ -27,6 +29,7 @@ function RewardsContent() {
     createClient().auth.getUser().then(({ data }) => setSignedIn(!!data.user));
   }, []);
 
+  // This page's campaign is the Nigeria programme (other countries are listed further down)
   const prize = naira(settings.monthly_prize_ngn);
   const annual = settings.annual_prize_ngn ? naira(settings.annual_prize_ngn) : 'To be announced';
   const joinHref = signedIn ? '/user-dashboard?tab=rewards' : '/login?redirect=rewards';
@@ -133,6 +136,9 @@ function RewardsContent() {
           <Leaderboard settings={settings} initialLgaId={initialLgaId} />
         </section>
 
+        {/* OTHER COUNTRIES (only when a programme runs outside Nigeria) */}
+        <OtherCountries settings={settings} />
+
         {/* QUALIFY + FAIR PLAY */}
         <section className="grid lg:grid-cols-2 gap-4">
           <div className={cx(ui.card, 'p-5 sm:p-6')}>
@@ -192,6 +198,51 @@ function RewardsContent() {
         <p className="mt-1">&copy; {new Date().getFullYear()} {SITE.name}. All rights reserved.</p>
       </footer>
     </div>
+  );
+}
+
+/** Reward programmes running outside Nigeria, each with its own national leaderboard. */
+function OtherCountries({ settings }: { settings: ReturnType<typeof useRewardSettings>['settings'] }) {
+  const [list, setList] = useState<{ code: string; name: string; program: RewardProgram }[]>([]);
+  const [pick, setPick] = useState('');
+  useEffect(() => {
+    const supabase = createClient();
+    Promise.all([loadRewardPrograms(supabase), loadRegions(supabase)]).then(([programs, regions]) => {
+      const rows = Object.values(programs)
+        .filter(p => p.country_code !== 'NG' && p.program_active)
+        .map(p => ({ code: p.country_code, name: regions[p.country_code]?.name || p.country_code, program: p }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setList(rows);
+      setPick(rows[0]?.code || '');
+    });
+  }, []);
+  if (!list.length) return null;
+  const current = list.find(l => l.code === pick) || list[0];
+  return (
+    <section aria-labelledby="other-title" className="space-y-4">
+      <div>
+        <p className={ui.eyebrow}>Beyond Nigeria</p>
+        <h2 id="other-title" className={cx(ui.h1, 'mt-1')}>Rewards in other countries</h2>
+        <p className={cx(ui.body, 'mt-1')}>Each country has its own programme, prize and currency. Coins count in the country where you update prices.</p>
+      </div>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Country">
+        {list.map(l => (
+          <button key={l.code} type="button" role="tab" aria-selected={l.code === current.code} onClick={() => setPick(l.code)}
+            className={cx('inline-flex items-center gap-2 h-10 px-4 rounded-full border text-sm font-semibold transition-colors',
+              l.code === current.code ? 'bg-primary text-on-primary border-primary' : 'bg-surface border-line text-fg hover:bg-surface-2')}>
+            <span aria-hidden>{flagEmoji(l.code)}</span> {l.name}
+            <span className={cx('text-xs font-bold', l.code === current.code ? 'text-on-primary/80' : 'text-fg-muted')}>{formatMoney(l.program.monthly_prize, l.program.currency)}/month</span>
+          </button>
+        ))}
+      </div>
+      <Leaderboard
+        key={current.code}
+        settings={settings}
+        country={current.code}
+        countryName={current.name}
+        minDaysOverride={{ month: current.program.min_active_days, year: current.program.annual_min_active_days }}
+      />
+    </section>
   );
 }
 

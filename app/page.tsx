@@ -21,6 +21,8 @@ import { BrandLogo } from '@/components/BrandLogo';
 import { getRole, hasRequestedManager, ensureManagerRequestFiled } from '@/lib/roles';
 import { displayName, initialOf } from '@/lib/profile';
 import { CommunityNotice } from '@/components/CommunityNotice';
+import { currencySymbol, formatMoney, DEFAULT_CURRENCY } from '@/lib/currency';
+import { loadRegions, loadRewardPrograms, NIGERIA_FALLBACK, type Region, type RewardProgram } from '@/lib/regions';
 import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
@@ -43,8 +45,7 @@ const GOOGLE_MAPS_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "AIza
 const DEFAULT_CENTER = { lat: 6.5244, lng: 3.3792 }; // Lagos
 const REFETCH_DISTANCE_KM = 2.0;   // don't re-query an area within this distance of one already loaded
 const STALE_AFTER_HOURS = 48;      // prices older than this are flagged as possibly outdated
-const PRICE_SANITY_MIN = 300;      // soft bounds for PMS price typo detection (₦/L)
-const PRICE_SANITY_MAX = 3000;
+// (Typo check for prices uses each country's usual range from the regions table.)
 
 // =========================================================================
 // TYPES
@@ -66,6 +67,9 @@ interface Station {
   pump_accuracy: number;
   accuracy_votes: number;
   custom_logo_url: string | null;
+  /** ISO country ("NG") and currency ("NGN") the price is in (20261105). */
+  country_code: string | null;
+  currency: string | null;
 }
 
 type OnStationSaved = (stationId: string, patch: Record<string, any>, message: string) => void;
@@ -176,14 +180,17 @@ function getHeroPriceColor(role: string | null | undefined): string {
   return `var(--hero-${priceSource(role)})`;
 }
 
-function formatPrice(price: number | string | null | undefined, decimalClass: string): React.ReactNode {
+function formatPrice(price: number | string | null | undefined, decimalClass: string, currency?: string | null): React.ReactNode {
   if (price === null || price === undefined) return "---";
   const numPrice = Number(price);
+  const symbol = currencySymbol(currency || DEFAULT_CURRENCY);
+  // Longer symbols ("GH₵", "F CFA") get a thin gap so they don't run into the number
+  const sym = symbol.length > 1 ? <span className="mr-0.5">{symbol}</span> : symbol;
   if (numPrice % 1 === 0) {
-    return <>₦{numPrice}</>;
+    return <>{sym}{numPrice.toLocaleString('en')}</>;
   } else {
     const [whole, decimal] = numPrice.toFixed(2).split('.');
-    return <>₦{whole}<span className={decimalClass}>.{decimal}</span></>;
+    return <>{sym}{Number(whole).toLocaleString('en')}<span className={decimalClass}>.{decimal}</span></>;
   }
 }
 
@@ -216,10 +223,11 @@ interface StationMarkerProps {
   price?: number | null;
   role?: string | null;
   lastUpdated?: string | null;
+  currency?: string | null;
 }
 
 // Memoised: with dozens of markers on screen, this avoids re-rendering every marker on unrelated state changes
-const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUrl, price, role, lastUpdated }: StationMarkerProps) {
+const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUrl, price, role, lastUpdated, currency }: StationMarkerProps) {
   const stale = isStale(lastUpdated);
   const pillBg = PILL_COLORS[priceSource(role)];
 
@@ -235,7 +243,7 @@ const StationMarker = memo(function StationMarker({ name, hasPrice, customLogoUr
           className={`relative z-20 -mt-1.5 px-1.5 py-0.5 rounded-md border border-white shadow-md text-xs font-semibold tabular leading-none whitespace-nowrap ${stale ? 'opacity-70' : ''}`}
           style={{ backgroundColor: pillBg, color: '#FFFFFF' }}
         >
-          ₦{Math.round(Number(price)).toLocaleString()}
+          {currencySymbol(currency)}{Math.round(Number(price)).toLocaleString('en')}
         </span>
       ) : (
         <div className="w-0 h-0 -mt-px border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
@@ -256,8 +264,14 @@ const ListLogo = memo(function ListLogo({ name, customLogoUrl }: { name: string,
 // MODALS
 // =========================================================================
 
-function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Station, onClose: () => void, onSaved: OnStationSaved, onClaim?: () => void }) {
+function PriceUpdateModal({ station, region, onClose, onSaved, onClaim }: { station: Station, region: Region | null, onClose: () => void, onSaved: OnStationSaved, onClaim?: () => void }) {
   const supabase = createClient();
+  const currency = station.currency || region?.default_currency || DEFAULT_CURRENCY;
+  const symbol = currencySymbol(currency);
+  // Typo check uses the country's usual range, only for prices in its main currency
+  const range = region && region.price_min && region.price_max && currency === region.default_currency
+    ? { min: Number(region.price_min), max: Number(region.price_max) } : null;
+  const closed = !region || !region.is_open;
   
   const [suggestedPrice, setSuggestedPrice] = useState("");
   const [suggestedQueue, setSuggestedQueue] = useState("Moderate");
@@ -293,8 +307,8 @@ function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Sta
       return setProblem({ code: 'invalid_price', message: 'Please enter a valid price per litre.' });
     }
     // Soft sanity check to catch typos (e.g. 95 or 95000) without blocking genuine outliers
-    if ((priceNum < PRICE_SANITY_MIN || priceNum > PRICE_SANITY_MAX) &&
-        !window.confirm(`₦${priceNum.toLocaleString()} looks unusual for PMS. Submit anyway?`)) {
+    if (range && (priceNum < range.min || priceNum > range.max) &&
+        !window.confirm(`${formatMoney(priceNum, currency)} looks unusual for PMS. Submit anyway?`)) {
       return;
     }
 
@@ -308,7 +322,7 @@ function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Sta
         });
         // Held prices are NOT shown until reviewed, so only patch the map when it is live
         const patch = r.status === 'live'
-          ? { price_pms: r.price, queue_status: r.queue_status, last_updated: r.last_updated, updated_by_role: r.updated_by_role, verified: r.verified, lat: station.lat, lng: station.lng }
+          ? { price_pms: r.price, currency: r.currency || currency, queue_status: r.queue_status, last_updated: r.last_updated, updated_by_role: r.updated_by_role, verified: r.verified, lat: station.lat, lng: station.lng }
           : {};
         onSaved(station.id, patch, describeSubmission(r));
         onClose();
@@ -342,9 +356,18 @@ function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Sta
         </h2>
         <p className="text-sm text-fg-muted mt-1 mb-6 pr-8">{station.name}</p>
 
+        {closed ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-line bg-surface-2 px-4 py-3.5 text-sm text-fg-muted">
+              <p className="font-semibold text-fg">Coming soon to {region?.name || 'this country'}</p>
+              <p className="mt-1">Qozob isn&apos;t taking prices here yet. You can still find stations and get directions. We&apos;ll switch prices on as soon as we launch locally.</p>
+            </div>
+            <button type="button" onClick={onClose} className={cx(ui.btn, ui.btnLg, ui.btnSecondary, 'w-full')}>OK</button>
+          </div>
+        ) : (
         <div className="space-y-4">
           <div>
-            <label htmlFor="pms-price" className={ui.label}>PMS price per litre (₦)</label>
+            <label htmlFor="pms-price" className={ui.label}>PMS price per litre ({symbol}{symbol !== currency ? ` · ${currency}` : ''})</label>
             <input 
               id="pms-price"
               type="number" 
@@ -353,7 +376,7 @@ function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Sta
               value={suggestedPrice} 
               onChange={(e) => { setSuggestedPrice(e.target.value); setProblem(null); }} 
               className={cx(ui.input, 'h-14 text-2xl font-semibold tabular')} 
-              placeholder="e.g. 950" 
+              placeholder={range ? `e.g. ${Math.round((range.min + range.max) / 2 / 10) * 10}` : 'Price per litre'} 
             />
           </div>
           
@@ -391,6 +414,7 @@ function PriceUpdateModal({ station, onClose, onSaved, onClaim }: { station: Sta
             To keep prices honest, updates are accepted when you are at the station. Unusual prices are checked by our team before they show.
           </p>
         </div>
+        )}
       </div>
     </div>
   );
@@ -665,6 +689,15 @@ function QozobLanding() {
   // Supabase rows + claim statuses keyed by station_id (O(1) lookups instead of Array.find per station per render)
   const [dbRows, setDbRows] = useState<Map<string, any>>(() => new Map());
   const [claimStatuses, setClaimStatuses] = useState<Map<string, string>>(() => new Map());
+  // Countries (currency, open for prices) and their reward programmes
+  const [regions, setRegions] = useState<Record<string, Region>>({ NG: NIGERIA_FALLBACK });
+  const [programs, setPrograms] = useState<Record<string, RewardProgram>>({});
+  useEffect(() => {
+    let alive = true;
+    loadRegions(supabase).then(r => { if (alive) setRegions(r); });
+    loadRewardPrograms(supabase).then(p => { if (alive) setPrograms(p); });
+    return () => { alive = false; };
+  }, [supabase]);
   // Store the selected station by ID so the info window always shows the latest (live) data
   const [selectedId, setSelectedId] = useState<string | null>(null);
   
@@ -938,6 +971,7 @@ function QozobLanding() {
       computedClaimStatus = claimStatus;
     }
 
+    const country = dbData?.country_code || googlePlace.country_code || null;
     return {
       id: googlePlace.place_id,
       name: dbData?.name || googlePlace.name,
@@ -953,9 +987,12 @@ function QozobLanding() {
       updated_by_role: dbData ? (dbData.updated_by_role || "User") : "User",
       pump_accuracy: dbData ? (dbData.pump_accuracy || 0) : 0, 
       accuracy_votes: dbData ? (dbData.accuracy_votes || 0) : 0,
-      custom_logo_url: dbData ? dbData.custom_logo_url : null
+      custom_logo_url: dbData ? dbData.custom_logo_url : null,
+      country_code: country,
+      // Before the database update every price is in Naira; after it, the station's own currency
+      currency: dbData?.currency || (country ? regions[country]?.default_currency : null) || (dbData && !('currency' in dbData) ? DEFAULT_CURRENCY : null),
     };
-  }), [googleStations, dbRows, claimStatuses, userLoc]);
+  }), [googleStations, dbRows, claimStatuses, userLoc, regions]);
 
   const stationsById = useMemo(() => {
     const byId = new Map<string, Station>();
@@ -1013,9 +1050,28 @@ function QozobLanding() {
     return () => { cancelled = true; };
   }, [autoSelectId, map, supabase, fetchStationsAt]);
 
+  // "Local" country + currency = those of the closest station (prices are only compared
+  // with prices in the same currency, e.g. near a border)
+  const { localCountry, localCurrency } = useMemo(() => {
+    const known = mergedStations.filter(s => s.currency || s.country_code);
+    if (!known.length) return { localCountry: null as string | null, localCurrency: null as string | null };
+    const nearest = [...known].sort((a, b) => parseFloat(a.distance || '1e9') - parseFloat(b.distance || '1e9'))[0];
+    return { localCountry: nearest.country_code, localCurrency: nearest.currency };
+  }, [mergedStations]);
+
+  // Reward programme where the map is (Nigeria until stations load / before the database update)
+  const promoCountry = localCountry || 'NG';
+  const localProgram: { monthly_prize: number; currency: string } | null = Object.keys(programs).length
+    ? (programs[promoCountry]?.program_active && programs[promoCountry].monthly_prize > 0 ? programs[promoCountry] : null)
+    : (promoCountry === 'NG' ? { monthly_prize: 10000, currency: 'NGN' } : null);
+  const localProgramAreaLabel = programs[promoCountry] && regions[promoCountry]
+    ? (regions[promoCountry].area_label === 'LGA' ? 'LGA' : 'area')
+    : 'LGA';
+
   // Determine the Best/Hero Station (+ area average for the savings badge)
   const { heroStation, areaAvgPrice, pricedCount } = useMemo(() => {
-    const pricedStations = mergedStations.filter(s => s.price_pms !== null);
+    const pricedStations = mergedStations.filter(s => s.price_pms !== null
+      && (!localCurrency || (s.currency || DEFAULT_CURRENCY) === localCurrency));
     const sortedByPriceAndDistance = [...pricedStations].sort((a, b) => {
       if (a.price_pms === b.price_pms) {
         const distA = parseFloat(a.distance || "0");
@@ -1030,7 +1086,7 @@ function QozobLanding() {
       ? pricedStations.reduce((sum, s) => sum + Number(s.price_pms), 0) / pricedStations.length
       : null;
     return { heroStation: sortedByPriceAndDistance[0], areaAvgPrice: avg, pricedCount: pricedStations.length };
-  }, [mergedStations]);
+  }, [mergedStations, localCurrency]);
   const heroSavings = heroStation && areaAvgPrice !== null && pricedCount >= 3
     ? Math.round(areaAvgPrice - Number(heroStation.price_pms))
     : 0;
@@ -1216,7 +1272,7 @@ function QozobLanding() {
   // Share a station via the native share sheet (WhatsApp, SMS...) or copy the deep link
   const handleShareStation = async (station: Station) => {
     const url = `${window.location.origin}/?select=${encodeURIComponent(station.id)}`;
-    const priceText = station.price_pms !== null ? ` — PMS ₦${station.price_pms}/L` : '';
+    const priceText = station.price_pms !== null ? ` — PMS ${formatMoney(station.price_pms, station.currency)}/L` : '';
     const text = `${station.name}${priceText}. Live fuel prices & queues on Qozob:`;
     try {
       if (navigator.share) {
@@ -1262,11 +1318,11 @@ function QozobLanding() {
           <span className="block text-[15px] font-bold text-on-hero leading-snug truncate mt-0.5">{station.name}</span>
           <span className="block text-xs text-on-hero-muted truncate">
             {distancePrefix(station.distance)}{station.queue_status}
-            {isBest && heroSavings > 0 && <span className="font-semibold text-brand-accent"> · ₦{heroSavings.toLocaleString()} below avg</span>}
+            {isBest && heroSavings > 0 && <span className="font-semibold text-brand-accent"> · {formatMoney(heroSavings, station.currency)} below avg</span>}
           </span>
         </button>
         <div className="relative shrink-0 text-xl font-extrabold tabular leading-none" style={{ color: getHeroPriceColor(station.updated_by_role) }}>
-          {formatPrice(station.price_pms, "text-xs")}
+          {formatPrice(station.price_pms, "text-xs", station.currency)}
         </div>
         <a
           {...directionsProps(station)}
@@ -1313,7 +1369,7 @@ function QozobLanding() {
           </button>
           <div className="text-right shrink-0">
             <div className="text-3xl font-extrabold tabular leading-none" style={{ color: getHeroPriceColor(station.updated_by_role) }}>
-              {formatPrice(station.price_pms, "text-sm")}
+              {formatPrice(station.price_pms, "text-sm", station.currency)}
             </div>
             <span className="mt-1.5 block text-xs text-on-hero-muted">{PRICE_SOURCE_LABEL[priceSource(station.updated_by_role)]} price</span>
           </div>
@@ -1323,7 +1379,7 @@ function QozobLanding() {
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             {isBest && heroSavings > 0 && (
               <span className="inline-flex items-center rounded-full bg-brand-accent/15 text-brand-accent border border-brand-accent/30 px-2.5 py-0.5 text-xs font-semibold tabular" title="Compared with the average price of stations loaded on the map">
-                ₦{heroSavings.toLocaleString()} below avg
+                {formatMoney(heroSavings, station.currency)} below avg
               </span>
             )}
             {station.accuracy_votes > 0 && (
@@ -1420,7 +1476,7 @@ function QozobLanding() {
                           )}
                         </div>
                         <div className="text-2xl font-bold tabular leading-tight flex items-baseline" style={{ color: getPriceColor(selectedStation.updated_by_role) }}>
-                          {formatPrice(selectedStation.price_pms, "text-sm")}
+                          {formatPrice(selectedStation.price_pms, "text-sm", selectedStation.currency)}
                         </div>
                         {selectedStation.price_pms ? (
                           <div className="flex items-center gap-1 text-xs text-fg-muted min-w-0">
@@ -1511,7 +1567,7 @@ function QozobLanding() {
           
           {/* DESKTOP AD SPACE (Hidden on Mobile) */}
           <div className="hidden lg:flex flex-1 justify-center mx-4 min-w-0">
-            <AdCarousel placement="desktop_header" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
+            <AdCarousel placement="desktop_header" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} viewerCountry={localCountry} />
           </div>
 
           {/* THEME + USER PROFILE & MENU */}
@@ -1655,7 +1711,9 @@ function QozobLanding() {
           {heroStation && renderHeroCard(heroStation, 'best')}
           {nearestStation && renderHeroCard(nearestStation, 'nearest')}
 
-          {/* REWARDS PROMO (desktop only, so the mobile landing view keeps the map in sight) */}
+          {/* REWARDS PROMO (desktop only, so the mobile landing view keeps the map in sight).
+              Shows the programme of the country the map is in; hidden where there isn't one. */}
+          {localProgram && (
           <a
             href="/rewards"
             className="hidden lg:flex items-center gap-3 rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-300 to-amber-400 text-slate-900 p-4 shadow-sm hover:shadow-md transition-shadow"
@@ -1664,10 +1722,13 @@ function QozobLanding() {
               <Trophy className="w-5 h-5" />
             </span>
             <span className="min-w-0">
-              <span className="block text-sm font-extrabold leading-tight">Win ₦10,000 every month</span>
-              <span className="block text-xs font-medium text-slate-800 mt-0.5">Be the top price updater in your LGA. See the leaderboard →</span>
+              <span className="block text-sm font-extrabold leading-tight">Win {formatMoney(localProgram.monthly_prize, localProgram.currency)} every month</span>
+              <span className="block text-xs font-medium text-slate-800 mt-0.5">
+                Be the top price updater in your {localProgramAreaLabel}. See the leaderboard →
+              </span>
             </span>
           </a>
+          )}
         </div>
 
         {/* ======================= MAIN MAP CONTAINER ======================= */}
@@ -1739,6 +1800,7 @@ function QozobLanding() {
                     price={station.price_pms} 
                     role={station.updated_by_role} 
                     lastUpdated={station.last_updated} 
+                    currency={station.currency}
                   />
                 </AdvancedMarker>
               ))}
@@ -1824,7 +1886,7 @@ function QozobLanding() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="text-lg font-semibold tabular flex items-baseline justify-end" style={{ color: station.price_pms !== null ? getPriceColor(station.updated_by_role) : undefined }}>
-                      {station.price_pms !== null ? formatPrice(station.price_pms, "text-xs") : <span className="text-sm font-medium text-fg-subtle">No price</span>}
+                      {station.price_pms !== null ? formatPrice(station.price_pms, "text-xs", station.currency) : <span className="text-sm font-medium text-fg-subtle">No price</span>}
                     </div>
                     {station.price_pms && (
                       <div className="flex items-center justify-end gap-1 text-xs text-fg-subtle mt-0.5">
@@ -1892,7 +1954,7 @@ function QozobLanding() {
       {/* ======================= PERMANENT MOBILE BOTTOM CAROUSEL AD ======================= */}
       <div className="fixed bottom-0 left-0 right-0 z-[100] bg-brand-grad border-t border-brand-line pb-2 lg:hidden shadow-[0_-8px_24px_rgb(0_0_0/0.25)]">
         <div className="px-2 pt-1">
-          <AdCarousel placement="mobile_bottom" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} />
+          <AdCarousel placement="mobile_bottom" lat={userLoc?.lat} lng={userLoc?.lng} viewerState={viewerState} viewerCountry={localCountry} />
         </div>
       </div>
 
@@ -1916,7 +1978,7 @@ function QozobLanding() {
         </div>
       </footer>
 
-      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} onClaim={['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status) ? undefined : handleDynamicClaimAction} />}
+      {showPriceForm && selectedStation && <PriceUpdateModal station={selectedStation} region={selectedStation.country_code ? (regions[selectedStation.country_code] ?? null) : (regions.NG ?? NIGERIA_FALLBACK)} onClose={() => setShowPriceForm(false)} onSaved={handleStationSaved} onClaim={['Claimed', 'Approved', 'Pending Review'].includes(selectedStation.claim_status) ? undefined : handleDynamicClaimAction} />}
       {showClaimForm && selectedStation && <ClaimStationModal station={selectedStation} onClose={() => setShowClaimForm(false)} onSaved={handleClaimSaved} />}
       {showRateForm && selectedStation && <RateStationModal station={selectedStation} onClose={() => setShowRateForm(false)} onSaved={handleStationSaved} />}
 

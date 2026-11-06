@@ -19,9 +19,15 @@ function periodFor(key: PeriodKey) {
   return { ...yearRange(-1), kind: 'year' as const };
 }
 
-export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { settings: RewardSettings; initialLgaId?: number | null; limit?: number }) {
+export function Leaderboard({ settings, initialLgaId = null, limit = 20, country = 'NG', countryName = 'Nigeria', minDaysOverride }: {
+  settings: RewardSettings; initialLgaId?: number | null; limit?: number;
+  /** Other countries' programmes: national board (no state / LGA pickers). */
+  country?: string; countryName?: string;
+  minDaysOverride?: { month: number; year: number };
+}) {
   const [supabase] = useState(() => createClient());
-  const lgas = useLgaList();
+  const isNg = country === 'NG';
+  const lgas = useLgaList(country);
   const [period, setPeriod] = useState<PeriodKey>('m0');
   const [lgaId, setLgaId] = useState<number | null>(initialLgaId);
   const [stateName, setStateName] = useState<string>('');
@@ -42,17 +48,22 @@ export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { set
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    supabase.rpc('reward_leaderboard', { p_start: p.start, p_end: p.end, p_lga_id: lgaId, p_limit: limit }).then(({ data, error }) => {
+    // Nigeria: same call as before (the database defaults to Nigeria); other countries add p_country
+    const args: Record<string, unknown> = { p_start: p.start, p_end: p.end, p_lga_id: isNg ? lgaId : null, p_limit: limit };
+    if (!isNg) args.p_country = country;
+    supabase.rpc('reward_leaderboard', args).then(({ data, error }) => {
       if (!alive) return;
       setFailed(!!error);
       setRows(((data || []) as Row[]).map(r => ({ ...r, rank: Number(r.rank), coins: Number(r.coins), active_days: Number(r.active_days), stations: Number(r.stations) })));
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [supabase, p.start, p.end, lgaId, limit]);
+  }, [supabase, p.start, p.end, lgaId, limit, isNg, country]);
 
-  const minDays = p.kind === 'month' ? settings.min_active_days : settings.annual_min_active_days;
-  const scopeLabel = selectedLga ? `${selectedLga.name}, ${selectedLga.state}` : 'All of Nigeria';
+  const minDays = minDaysOverride
+    ? (p.kind === 'month' ? minDaysOverride.month : minDaysOverride.year)
+    : (p.kind === 'month' ? settings.min_active_days : settings.annual_min_active_days);
+  const scopeLabel = isNg && selectedLga ? `${selectedLga.name}, ${selectedLga.state}` : `All of ${countryName}`;
 
   const tab = (key: PeriodKey, label: string) => (
     <button
@@ -81,6 +92,7 @@ export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { set
           </div>
         </div>
 
+        {isNg && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label htmlFor="lb-state" className={ui.label}>State</label>
@@ -110,8 +122,9 @@ export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { set
             {stateName && !lgaId && <p className={ui.hint}>Prizes are per LGA. Pick one to see who is leading there.</p>}
           </div>
         </div>
+        )}
 
-        {stateName && !lgaId ? (
+        {isNg && stateName && !lgaId ? (
           <p className="text-sm text-fg-muted">Choose an LGA in {stateName} to see its leaderboard.</p>
         ) : loading ? (
           <div className="flex items-center justify-center py-10 text-fg-muted"><Loader2 className="w-6 h-6 animate-spin" aria-label="Loading" /></div>
@@ -150,7 +163,7 @@ export function Leaderboard({ settings, initialLgaId = null, limit = 20 }: { set
                         {r.is_me && <span className="ml-2 rounded-full bg-primary text-on-primary text-xs font-bold px-2 py-0.5">You</span>}
                         {r.verified && <CheckCircle2 className="inline w-4 h-4 ml-1.5 text-success align-[-3px]" aria-label="Verified participant" />}
                       </td>
-                      <td className="py-2.5 pr-2 text-right font-bold tabular text-fg">{r.coins.toLocaleString('en-NG')}</td>
+                      <td className="py-2.5 pr-2 text-right font-bold tabular text-fg">{r.coins.toLocaleString('en')}</td>
                       <td className="py-2.5 pr-2 text-right tabular text-fg-muted hidden sm:table-cell">{r.stations}</td>
                       <td className="py-2.5 pr-4 sm:pr-2 text-right tabular">
                         <span className={qualifies ? 'text-success font-semibold' : 'text-fg-muted'}>{r.active_days}/{minDays}</span>

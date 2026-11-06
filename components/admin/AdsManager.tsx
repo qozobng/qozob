@@ -14,6 +14,7 @@ import { NIGERIAN_STATES, stateLabel } from '@/lib/nigeria';
 import { useLgaList, type LgaOption } from '@/components/rewards/hooks';
 import { downloadXlsx } from '@/lib/xlsx';
 import { fetchAllRows } from '@/lib/fetchAll';
+import { loadRegions, flagEmoji, type Region } from '@/lib/regions';
 
 // =========================================================================
 // ADMIN → ADVERTS
@@ -50,6 +51,8 @@ interface AdRow {
   target_scope?: TargetScope;
   target_states?: string[];
   target_lga_ids?: number[];
+  // Country targeting (20261105_multiregion.sql): null = worldwide
+  target_country?: string | null;
 }
 
 type TargetScope = 'national' | 'states' | 'lgas';
@@ -62,6 +65,9 @@ const TARGET_LABEL: Record<TargetScope, string> = {
 /** Short "who sees it" label for the list */
 function targetSummary(ad: AdRow, lgaName: (id: number) => string): { label: string; title: string } {
   const scope = ad.target_scope || 'national';
+  const cc = ad.target_country === undefined ? 'NG' : ad.target_country;
+  if (cc === null) return { label: 'Worldwide', title: 'Shown in every country' };
+  const where = cc === 'NG' ? 'Nigeria' : cc;
   if (scope === 'states' && ad.target_states?.length) {
     const names = ad.target_states.map(stateLabel);
     return { label: names.length <= 2 ? names.join(', ') : `${names.length} states`, title: names.join(', ') };
@@ -70,7 +76,7 @@ function targetSummary(ad: AdRow, lgaName: (id: number) => string): { label: str
     const names = ad.target_lga_ids.map(lgaName);
     return { label: names.length <= 2 ? names.join(', ') : `${names.length} LGAs`, title: names.join(', ') };
   }
-  return { label: 'Nationwide', title: 'Shown to everyone in Nigeria' };
+  return { label: cc === 'NG' ? 'Nationwide' : `${flagEmoji(cc)} ${where}`, title: `Shown to everyone in ${where}` };
 }
 
 const ARCON_MISSING_WARNING =
@@ -127,8 +133,14 @@ function readImageSize(file: File): Promise<{ w: number; h: number }> {
 }
 
 // ---------------------------------------------------------------------------------------
-export function AdsManager() {
-  const [ads, setAds] = useState<AdRow[]>([]);
+export function AdsManager({ country = '' }: { country?: string }) {
+  const [allAds, setAds] = useState<AdRow[]>([]);
+  // Working country from the admin header: its adverts plus worldwide ones
+  const ads = useMemo(() => (country
+    ? allAds.filter(a => (a.target_country === undefined ? 'NG' : a.target_country) === country || a.target_country === null)
+    : allAds), [allAds, country]);
+  const [regions, setRegions] = useState<Record<string, Region>>({});
+  useEffect(() => { loadRegions(supabase).then(setRegions); }, []);
   const [stats, setStats] = useState<StatRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -358,17 +370,21 @@ export function AdsManager() {
         )}
       </section>
 
-      {editing && <AdEditor ad={editing === 'new' ? null : editing} lgas={lgas} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {editing && <AdEditor ad={editing === 'new' ? null : editing} lgas={lgas} regions={regions} defaultCountry={country || 'NG'} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------------------
-function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaOption[]; onClose: () => void; onSaved: () => void }) {
+function AdEditor({ ad, lgas, regions, defaultCountry, onClose, onSaved }: { ad: AdRow | null; lgas: LgaOption[]; regions: Record<string, Region>; defaultCountry: string; onClose: () => void; onSaved: () => void }) {
   const [title, setTitle] = useState(ad?.title || '');
   const [advertiser, setAdvertiser] = useState(ad?.advertiser || '');
   const [linkUrl, setLinkUrl] = useState(ad?.link_url || '');
   const [placement, setPlacement] = useState<Placement>(ad?.placement || 'both');
+  // Which country ('' = worldwide). States / LGAs exist for Nigeria only.
+  const hasCountries = Object.keys(regions).length > 0;
+  const [targetCountry, setTargetCountry] = useState<string>(ad ? (ad.target_country === undefined ? 'NG' : (ad.target_country ?? '')) : defaultCountry);
+  const localTargeting = targetCountry === 'NG';
   // Who sees it: whole country, chosen states or chosen LGAs
   const [scope, setScope] = useState<TargetScope>(ad?.target_scope || 'national');
   const [targetStates, setTargetStates] = useState<string[]>(ad?.target_states || []);
@@ -427,9 +443,9 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
     if (e && new Date(e) <= new Date(s)) return setErr('The end date must be after the start date.');
     const ref = arconRef.trim();
     if (ref && (ref.length < 3 || ref.length > 80)) return setErr('The ARCON approval number should be 3 to 80 characters.');
-    if (scope === 'states' && targetStates.length === 0) return setErr('Pick at least one state, or choose "Whole country".');
-    if (scope === 'lgas' && targetLgaIds.length === 0) return setErr('Pick at least one LGA, or choose "Whole country".');
-    if (isActive && !ref && !window.confirm(ARCON_MISSING_WARNING)) return;
+    if (localTargeting && scope === 'states' && targetStates.length === 0) return setErr('Pick at least one state, or choose "Whole country".');
+    if (localTargeting && scope === 'lgas' && targetLgaIds.length === 0) return setErr('Pick at least one LGA, or choose "Whole country".');
+    if (isActive && !ref && targetCountry === 'NG' && !window.confirm(ARCON_MISSING_WARNING)) return;
 
     setSaving(true);
     try {
@@ -460,10 +476,12 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
         ...(uploaded.desktop ? { desktop_image_url: uploaded.desktop.url, desktop_image_path: uploaded.desktop.path } : {}),
         ...(uploaded.mobile ? { mobile_image_url: uploaded.mobile.url, mobile_image_path: uploaded.mobile.path } : {}),
       };
-      const targeting = {
-        target_scope: scope,
-        target_states: scope === 'states' ? targetStates : [],
-        target_lga_ids: scope === 'lgas' ? targetLgaIds : [],
+      const effScope: TargetScope = localTargeting ? scope : 'national';
+      const targeting: Record<string, unknown> = {
+        target_scope: effScope,
+        target_states: effScope === 'states' ? targetStates : [],
+        target_lga_ids: effScope === 'lgas' ? targetLgaIds : [],
+        ...(hasCountries ? { target_country: targetCountry || null } : {}),
       };
 
       const write = (values: Record<string, unknown>) => (ad
@@ -471,8 +489,8 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
         : supabase.from('ads').insert({ id: folder, ...values }));
       let { error: dbErr } = await write({ ...row, ...targeting });
       // Targeting columns not installed yet: nationwide adverts can still be saved the old way
-      if (dbErr && /target_(scope|states|lga_ids)/.test(dbErr.message)) {
-        if (scope === 'national') {
+      if (dbErr && /target_(scope|states|lga_ids|country)/.test(dbErr.message)) {
+        if (effScope === 'national' && (targetCountry === 'NG' || !hasCountries)) {
           ({ error: dbErr } = await write(row));
         } else {
           dbErr = { ...dbErr, message: 'Location targeting is not set up yet. Run supabase/migrations/20261012_ad_targeting.sql in the Supabase SQL editor, then try again.' };
@@ -548,6 +566,18 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
             <legend className="px-1 text-sm font-semibold text-fg inline-flex items-center gap-1.5">
               <MapPin className="w-4 h-4 text-primary" aria-hidden /> Who sees it
             </legend>
+            {hasCountries && (
+              <div className="mb-3">
+                <label className={ui.label} htmlFor="ad-country">Country</label>
+                <select id="ad-country" value={targetCountry} onChange={e => { setTargetCountry(e.target.value); if (e.target.value !== 'NG') setScope('national'); }} className={ui.select}>
+                  <option value="">🌍 Worldwide (every country)</option>
+                  {Object.values(regions).sort((a, b) => (a.country_code === 'NG' ? -1 : b.country_code === 'NG' ? 1 : a.name.localeCompare(b.name))).map(r => (
+                    <option key={r.country_code} value={r.country_code}>{flagEmoji(r.country_code)} {r.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {localTargeting ? (
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-surface-2 p-1 border border-line" role="radiogroup" aria-label="Target area">
               {(Object.keys(TARGET_LABEL) as TargetScope[]).map(s => (
                 <button
@@ -565,13 +595,16 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
                 </button>
               ))}
             </div>
-            <p className={ui.hint}>
+            ) : (
+              <p className={ui.hint}>{targetCountry ? `Shown to everyone whose map is in ${regions[targetCountry]?.name || targetCountry}. States and areas can be targeted in Nigeria only.` : 'Shown in every country, after local adverts.'}</p>
+            )}
+            {localTargeting && <p className={ui.hint}>
               {scope === 'national' && 'Shown to everyone, everywhere in Nigeria.'}
               {scope === 'states' && 'Shown to people whose map location (or profile state) is in one of these states.'}
               {scope === 'lgas' && 'Shown only to people whose map location is inside one of these LGAs. Local adverts appear before nationwide ones.'}
-            </p>
+            </p>}
 
-            {scope === 'states' && (
+            {localTargeting && scope === 'states' && (
               <div className="mt-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium text-fg-muted">{targetStates.length} of {NIGERIAN_STATES.length} selected</span>
@@ -602,7 +635,7 @@ function AdEditor({ ad, lgas, onClose, onSaved }: { ad: AdRow | null; lgas: LgaO
               </div>
             )}
 
-            {scope === 'lgas' && (
+            {localTargeting && scope === 'lgas' && (
               <LgaPicker
                 lgas={lgas}
                 selected={targetLgaIds}

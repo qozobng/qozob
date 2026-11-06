@@ -22,16 +22,19 @@ export function useRewardSettings() {
 
 export interface LgaOption { id: number; name: string; state: string }
 
-/** All 774 LGAs (id, name, state) for pickers. Empty until boundaries are imported. */
-export function useLgaList() {
+/** Areas (id, name, state) of one country for pickers — Nigeria's 774 LGAs by default. Empty until boundaries are imported. */
+export function useLgaList(country: string = 'NG') {
   const [lgas, setLgas] = useState<LgaOption[]>([]);
   useEffect(() => {
     let alive = true;
-    createClient().from('lgas').select('id,name,state').order('state').order('name').limit(1000).then(({ data }) => {
+    const base = () => createClient().from('lgas').select('id,name,state').order('state').order('name').limit(1000);
+    base().eq('country_code', country).then(async ({ data, error }) => {
+      // Database update 20261105 not run yet (no country column): every area is Nigerian
+      if (error && country === 'NG') ({ data } = await base());
       if (alive && data) setLgas(data as LgaOption[]);
     });
     return () => { alive = false; };
-  }, []);
+  }, [country]);
   return lgas;
 }
 

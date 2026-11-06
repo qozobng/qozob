@@ -9,11 +9,12 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Copy, Crown, History, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, Users, X,
+  AlertTriangle, CheckCircle2, Copy, Crown, Globe2, History, Loader2, Pencil, ShieldCheck, Trash2, UserPlus, Users, X,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { cx, ui } from '@/lib/ui';
 import { formatWat } from '@/lib/xlsx';
+import { loadRegions, flagEmoji, type Region } from '@/lib/regions';
 import { ReportTable, type ReportColumn } from './ReportTable';
 
 const supabase = createClient();
@@ -37,6 +38,8 @@ interface AdminRow {
   full_name: string | null;
   is_master: boolean;
   modules: string[];
+  /** Countries this admin covers; empty = every country (20261105). */
+  countries?: string[];
   note: string | null;
   has_access_row: boolean;
   granted_by_email: string | null;
@@ -168,6 +171,12 @@ export function AdminsManager() {
                   <span className="text-xs text-danger font-semibold">No sections yet: this admin can&rsquo;t open anything.</span>
                 )}
               </div>
+              {!a.is_master && a.countries !== undefined && (
+                <p className="text-xs text-fg-muted inline-flex items-center gap-1.5">
+                  <Globe2 className="w-3.5 h-3.5" aria-hidden />
+                  {a.countries.length ? <>Only: {a.countries.map(c => `${flagEmoji(c)} ${c}`).join(', ')}</> : 'Every country'}
+                </p>
+              )}
 
               <p className="text-xs text-fg-subtle">
                 {a.note && <>{a.note} · </>}
@@ -215,6 +224,13 @@ function AccessDialog({
   const [note, setNote] = useState(admin?.note ?? '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Country limit (only offered once the multi-country database update is in)
+  const [regions, setRegions] = useState<Record<string, Region>>({});
+  const [limitCountries, setLimitCountries] = useState((admin?.countries?.length ?? 0) > 0);
+  const [countries, setCountries] = useState<Set<string>>(new Set(admin?.countries ?? []));
+  useEffect(() => { loadRegions(supabase).then(r => setRegions(admin?.countries !== undefined || Object.keys(r).length > 1 ? r : {})); }, [admin]);
+  const hasCountries = Object.keys(regions).length > 1;
+  const toggleCountry = (c: string) => setCountries((s) => { const n = new Set(s); if (n.has(c)) n.delete(c); else n.add(c); return n; });
 
   const toggle = (k: string) => setMods((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
 
@@ -222,12 +238,19 @@ function AccessDialog({
     e.preventDefault();
     setErr(null);
     if (!master && mods.size === 0) return setErr('Choose at least one section.');
+    const limited = hasCountries && !master && limitCountries;
+    if (limited && countries.size === 0) return setErr('Choose at least one country, or allow every country.');
+    if (limited && mods.has('mailing')) return setErr('Mailing reaches subscribers in every country, so it needs access to every country.');
+    if (limited && mods.has('services') && !countries.has('NG')) return setErr('Auto services only run in Nigeria. Add Nigeria or remove Auto services.');
     setBusy(true);
     try {
       const res = await fetch('/api/admin/admins', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), is_master: master, modules: [...mods], note }),
+        body: JSON.stringify({
+          email: email.trim(), is_master: master, modules: [...mods], note,
+          ...(hasCountries ? { countries: limited ? [...countries] : [] } : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setErr(body.error || 'Could not save.'); return; }
@@ -296,6 +319,36 @@ function AccessDialog({
               ))}
             </div>
             <p className={cx(ui.hint, 'mt-2')}>Everyone with admin access can see the Overview.</p>
+          </fieldset>
+        )}
+
+        {!master && hasCountries && (
+          <fieldset className="mt-4 animate-in fade-in duration-200">
+            <legend className={ui.label}>Countries</legend>
+            <div className="grid grid-cols-2 gap-2">
+              {([[false, 'Every country'], [true, 'Only some countries']] as const).map(([v, label]) => (
+                <button key={label} type="button" onClick={() => setLimitCountries(v)} aria-pressed={limitCountries === v}
+                  className={cx('rounded-xl border p-2.5 text-sm font-semibold transition-all',
+                    limitCountries === v ? 'border-primary bg-accent-soft text-fg ring-2 ring-primary/20' : 'border-line bg-surface text-fg-muted hover:bg-surface-2')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {limitCountries && (
+              <div className="mt-2 flex flex-wrap gap-1.5 max-h-44 overflow-y-auto pr-1">
+                {Object.values(regions).sort((a, b) => (a.country_code === 'NG' ? -1 : b.country_code === 'NG' ? 1 : a.name.localeCompare(b.name))).map(r => {
+                  const on = countries.has(r.country_code);
+                  return (
+                    <button key={r.country_code} type="button" aria-pressed={on} onClick={() => toggleCountry(r.country_code)}
+                      className={cx('h-8 px-3 rounded-full border text-xs font-semibold transition-colors',
+                        on ? 'bg-primary text-on-primary border-primary' : 'bg-surface text-fg border-line-strong hover:bg-surface-2')}>
+                      {flagEmoji(r.country_code)} {r.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className={cx(ui.hint, 'mt-2')}>A country-limited admin only sees claims, manager requests, stations, prices, rewards and adverts from those countries. Mailing needs every country; Auto services need Nigeria.</p>
           </fieldset>
         )}
 

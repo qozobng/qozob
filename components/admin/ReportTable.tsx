@@ -96,8 +96,9 @@ export function formatCell(v: XlsxValue, type: XlsxColumnType | undefined): stri
     case 'date':
       return formatWat(v as string | Date | number, false) || String(v);
     case 'money': {
+      // No currency symbol: amounts can be in different currencies (see the row's Currency column)
       const n = typeof v === 'number' ? v : Number(v);
-      return Number.isFinite(n) ? `₦${n.toLocaleString('en-NG', { maximumFractionDigits: 2 })}` : String(v);
+      return Number.isFinite(n) ? n.toLocaleString('en', { maximumFractionDigits: 2 }) : String(v);
     }
     case 'integer':
     case 'number': {

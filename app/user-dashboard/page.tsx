@@ -24,6 +24,8 @@ import { MyRewards } from '@/components/rewards/MyRewards';
 import { MyGarage } from '@/components/garage/MyGarage';
 import { FuelLogbook } from '@/components/fuellog/FuelLogbook';
 import { listSavedStations, unsaveStation } from '@/lib/savedStations';
+import { formatMoney, currencySymbol, DEFAULT_CURRENCY } from '@/lib/currency';
+import { loadRegions, countryCodeFromName, NIGERIA_FALLBACK } from '@/lib/regions';
 
 interface RatedStationItem {
   station_id: string;
@@ -32,6 +34,7 @@ interface RatedStationItem {
   station_name?: string;
   address?: string;
   price_pms?: number | null;
+  currency?: string | null;
 }
 
 interface FavoriteStation {
@@ -39,6 +42,7 @@ interface FavoriteStation {
   name: string;
   address: string;
   price_pms: number | null;
+  currency?: string | null;
   queue_status: string;
   last_updated?: string | null;
   lat?: number | null;
@@ -67,6 +71,8 @@ function UserDashboardContent() {
   const [userRatings, setUserRatings] = useState<RatedStationItem[]>([]);
   const [favoriteStations, setFavoriteStations] = useState<FavoriteStation[]>([]);
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
+  const [benchCurrency, setBenchCurrency] = useState(DEFAULT_CURRENCY);
+  const bm = (n: number) => formatMoney(n, benchCurrency);
   const [notice, setNotice] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
   const flash = (text: string, tone: 'ok' | 'error' = 'ok') => {
     setNotice({ text, tone });
@@ -118,7 +124,7 @@ function UserDashboardContent() {
       if (lookupIds.length > 0) {
         const { data: stationsData } = await supabase
           .from('stations')
-          .select('station_id, name, address, price_pms, queue_status, last_updated, lat, lng')
+          .select('*')
           .in('station_id', lookupIds);
         
         (stationsData || []).forEach(s => stationsMap.set(s.station_id, s));
@@ -133,6 +139,7 @@ function UserDashboardContent() {
           station_name: s?.name || "Fuel Station",
           address: s?.address || "Address unavailable",
           price_pms: s?.price_pms || null,
+          currency: s?.currency || DEFAULT_CURRENCY,
         };
       });
       setUserRatings(mergedRatings);
@@ -144,6 +151,7 @@ function UserDashboardContent() {
           name: s?.name || saved.name || 'Fuel station',
           address: s?.address || saved.address || '',
           price_pms: s?.price_pms != null ? Number(s.price_pms) : null,
+          currency: s?.currency || DEFAULT_CURRENCY,
           queue_status: s?.queue_status || 'Unknown',
           last_updated: s?.last_updated ?? null,
           lat: s?.lat ?? saved.lat,
@@ -151,15 +159,26 @@ function UserDashboardContent() {
         };
       }));
 
-      // 3. Price benchmark from the most recently updated community prices
-      const { data: recent } = await supabase
+      // 3. Price benchmark from the most recently updated community prices in the person's own currency
+      const regionMap = await loadRegions(supabase);
+      const home = regionMap[countryCodeFromName(user.user_metadata?.country, regionMap) || 'NG'] || NIGERIA_FALLBACK;
+      let benchQuery = supabase
         .from('stations')
         .select('price_pms')
         .not('price_pms', 'is', null)
-        .gte('price_pms', 300)
-        .lte('price_pms', 3000)
+        .eq('currency', home.default_currency);
+      if (home.price_min && home.price_max) benchQuery = benchQuery.gte('price_pms', home.price_min).lte('price_pms', home.price_max);
+      let { data: recent, error: benchError } = await benchQuery
         .order('last_updated', { ascending: false, nullsFirst: false })
         .limit(500);
+      if (benchError) {
+        // Database update 20261105 not run yet: every price is in Naira
+        ({ data: recent } = await supabase
+          .from('stations').select('price_pms').not('price_pms', 'is', null)
+          .gte('price_pms', 300).lte('price_pms', 3000)
+          .order('last_updated', { ascending: false, nullsFirst: false }).limit(500));
+      }
+      setBenchCurrency(benchError ? DEFAULT_CURRENCY : home.default_currency);
       const prices = (recent || []).map(s => Number(s.price_pms)).filter(p => Number.isFinite(p) && p > 0).sort((a, b) => a - b);
       if (prices.length >= 5) {
         setBenchmark({
@@ -272,26 +291,27 @@ function UserDashboardContent() {
       {
         label: 'Cheaper stations (lowest 10%)',
         value: benchmark.low,
-        formattedValue: `₦${benchmark.low.toLocaleString()}/L`,
-        secondaryLabel: `Save ₦${savingsEstimate.spreadPerLiter.toLocaleString()}/L`,
+        formattedValue: `${bm(benchmark.low)}/L`,
+        secondaryLabel: `Save ${bm(savingsEstimate.spreadPerLiter)}/L`,
         color: 'var(--chart-pos)',
       },
       {
         label: 'Average price',
         value: benchmark.avg,
-        formattedValue: `₦${benchmark.avg.toLocaleString()}/L`,
+        formattedValue: `${bm(benchmark.avg)}/L`,
         secondaryLabel: 'Benchmark',
         color: 'var(--chart-1)',
       },
       {
         label: 'Pricier stations (highest 10%)',
         value: benchmark.high,
-        formattedValue: `₦${benchmark.high.toLocaleString()}/L`,
-        secondaryLabel: `₦${Math.max(0, benchmark.high - benchmark.low).toLocaleString()}/L more than the cheaper end`,
+        formattedValue: `${bm(benchmark.high)}/L`,
+        secondaryLabel: `${bm(Math.max(0, benchmark.high - benchmark.low))}/L more than the cheaper end`,
         color: 'var(--chart-warn)',
       },
     ];
-  }, [benchmark, savingsEstimate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [benchmark, savingsEstimate, benchCurrency]);
 
   if (loading) {
     return (
@@ -349,7 +369,7 @@ function UserDashboardContent() {
 
             <button onClick={() => setActiveTab('rewards')} className={sideTab(activeTab === 'rewards')} aria-current={activeTab === 'rewards' ? 'page' : undefined}>
               <span className="flex items-center gap-3"><Trophy className="w-4 h-4" aria-hidden /> Rewards</span>
-              <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-xs font-bold ${activeTab === 'rewards' ? 'bg-brand text-on-brand' : 'bg-amber-300 text-slate-900'}`}>₦10k</span>
+              <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-xs font-bold ${activeTab === 'rewards' ? 'bg-brand text-on-brand' : 'bg-amber-300 text-slate-900'}`}>Win</span>
             </button>
 
             <button onClick={() => setActiveTab('garage')} className={sideTab(activeTab === 'garage')} aria-current={activeTab === 'garage' ? 'page' : undefined}>
@@ -427,7 +447,7 @@ function UserDashboardContent() {
 
               <StatCard
                 title="Potential Savings / Month"
-                value={benchmark ? `₦${savingsEstimate.monthlySavings.toLocaleString()}` : '—'}
+                value={benchmark ? bm(savingsEstimate.monthlySavings) : '—'}
                 subtitle={benchmark ? `Cheaper 10% vs average · 50 L × 4 refills` : 'Not enough recent prices yet'}
                 icon={TrendingDown}
                 badge={{ text: 'Savings', variant: 'positive' }}
@@ -459,8 +479,8 @@ function UserDashboardContent() {
               <div className="lg:col-span-2">
                 {benchmark ? (
                   <BarChart
-                    title="Fuel price spread (₦ / litre)"
-                    subtitle={`From the ${benchmark.n} most recently updated prices on Qozob. Filling a 50-litre tank at the cheaper end saves about ₦${savingsEstimate.savingsPerTank50L.toLocaleString()}.`}
+                    title={`Fuel price spread (${currencySymbol(benchCurrency)} / litre)`}
+                    subtitle={`From the ${benchmark.n} most recently updated prices on Qozob. Filling a 50-litre tank at the cheaper end saves about ${bm(savingsEstimate.savingsPerTank50L)}.`}
                     data={savingsChartBars}
                     layout="horizontal"
                     valuePrefix=""
@@ -488,11 +508,11 @@ function UserDashboardContent() {
                 <div className="bg-success-soft rounded-xl p-4 border border-success-line my-4 text-xs">
                   <div className="flex justify-between items-center mb-2">
                     <span className="font-semibold text-success">Savings per 50L Tank</span>
-                    <span className="font-semibold text-success text-sm">₦{savingsEstimate.savingsPerTank50L.toLocaleString()}</span>
+                    <span className="font-semibold text-success text-sm">{bm(savingsEstimate.savingsPerTank50L)}</span>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-success-line">
                     <span className="font-semibold text-success">4 Refills / Month</span>
-                    <span className="font-semibold text-success text-sm">₦{savingsEstimate.monthlySavings.toLocaleString()}</span>
+                    <span className="font-semibold text-success text-sm">{bm(savingsEstimate.monthlySavings)}</span>
                   </div>
                 </div>
 
@@ -538,7 +558,7 @@ function UserDashboardContent() {
 
                       <div className="flex justify-between items-center pt-3 border-t border-line">
                         <span className="text-lg font-semibold text-fg font-mono">
-                          {fav.price_pms ? `₦${fav.price_pms.toLocaleString()}` : 'No price yet'}
+                          {fav.price_pms ? formatMoney(fav.price_pms, fav.currency) : 'No price yet'}
                         </span>
                         <a
                           href={directionsUrl(fav)}
@@ -616,7 +636,7 @@ function UserDashboardContent() {
                           </td>
                           <td className="px-6 py-4">
                             <span className="font-mono font-semibold text-fg">
-                              {rating.price_pms ? `₦${rating.price_pms}` : '—'}
+                              {rating.price_pms ? formatMoney(rating.price_pms, rating.currency) : '—'}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-fg-subtle">
@@ -697,7 +717,7 @@ function UserDashboardContent() {
                     <div>
                       <span className="text-xs font-semibold text-fg-subtle uppercase tracking-wider block">PMS price</span>
                       <span className="text-2xl font-semibold text-fg font-mono">
-                        {station.price_pms ? `₦${station.price_pms.toLocaleString()}` : 'No price yet'}
+                        {station.price_pms ? formatMoney(station.price_pms, station.currency) : 'No price yet'}
                       </span>
                       {station.price_pms && station.last_updated && !Number.isNaN(Date.parse(station.last_updated)) && (
                         <span className="block text-xs text-fg-muted mt-0.5">
