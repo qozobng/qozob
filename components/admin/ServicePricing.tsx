@@ -21,16 +21,25 @@ import { NIGERIAN_STATES } from '@/lib/nigeria';
 import { downloadXlsx } from '@/lib/xlsx';
 import { isMissingFunction } from '@/lib/fetchAll';
 import { loadServiceCatalog, SERVICE_CATEGORY_LABEL } from '@/lib/servicePricing';
-import type { ServiceCategory } from '@/types/services';
+import { VEHICLE_TIERS, vehicleTierLabel, type VehicleTier } from '@/lib/vehicles';
+import type { ServiceCategory, TierPriceMap } from '@/types/services';
 import { ReportTable, type ReportColumn } from './ReportTable';
 
 const supabase = createClient();
 
 // ---------- data from admin_service_overview() ----------
-export interface OvStatePrice { state: string; private_price: number; commercial_price: number | null; updated_at: string }
+export interface OvStatePrice {
+  state: string;
+  private_price: number;
+  commercial_price: number | null;
+  tier_prices?: TierPriceMap;
+  updated_at: string;
+}
 export interface OvService {
   id: string; title: string; category: ServiceCategory; description: string | null; statutory: boolean; turnaround: string | null;
-  private_price: number; commercial_price: number | null; currency: string; is_active: boolean; sort_order: number;
+  private_price: number; commercial_price: number | null;
+  tier_prices?: TierPriceMap; rate_percent?: number | null; min_price?: number | null;
+  currency: string; is_active: boolean; sort_order: number;
   updated_at: string; updated_by_email: string | null; state_prices: OvStatePrice[]; pending: number;
 }
 export interface OvMember { user_id: string; role: 'lead' | 'agent'; email: string; name: string | null; last_sign_in_at: string | null }
@@ -40,6 +49,7 @@ export interface OvPartner {
 }
 export interface OvProposal {
   id: number; service_id: string; service_title: string; state: string | null; private_price: number; commercial_price: number | null;
+  tier_prices?: TierPriceMap | null; rate_percent?: number | null;
   current_private: number | null; current_commercial: number | null; partner_id: string; partner_name: string;
   proposed_by_email: string | null; note: string | null; status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
   review_note: string | null; reviewed_at: string | null; reviewer_email: string | null; created_at: string;
@@ -184,6 +194,12 @@ export function PricesView({ data, onChanged, flash }: { data: ServiceOverview; 
                 <div className="flex flex-wrap items-center gap-1.5">
                   <h3 className="text-sm font-bold text-fg">{sv.title}</h3>
                   <span className={pillMuted}>{SERVICE_CATEGORY_LABEL[sv.category] ?? sv.category}</span>
+                  {sv.rate_percent != null && sv.rate_percent > 0 && (
+                    <span className={pillOk}>{sv.rate_percent}% of vehicle value · min {money(sv.private_price)}</span>
+                  )}
+                  {sv.tier_prices && Object.keys(sv.tier_prices).length > 0 && (
+                    <span className={pillMuted}>{Object.keys(sv.tier_prices).length} engine/body tiers</span>
+                  )}
                   {!sv.is_active && <span className={pillWarn}>Hidden from customers</span>}
                   {sv.pending > 0 && <span className={pillWarn}><Inbox className="w-3 h-3" aria-hidden />{sv.pending} proposal{sv.pending === 1 ? '' : 's'} waiting</span>}
                 </div>
@@ -241,33 +257,89 @@ function PriceEditor({ service, initialState, onClose, onSaved, onError }: {
   service: OvService; initialState: string; onClose: () => void; onSaved: (m: string) => void; onError: (m: string) => void;
 }) {
   const currentFor = (scope: string) => {
-    if (!scope) return { priv: service.private_price, comm: service.commercial_price, own: true };
+    if (!scope) return { priv: service.private_price, comm: service.commercial_price, tiers: service.tier_prices ?? {}, own: true };
     const sp = service.state_prices.find(s => s.state === scope);
-    return sp ? { priv: sp.private_price, comm: sp.commercial_price, own: true } : { priv: service.private_price, comm: service.commercial_price, own: false };
+    return sp
+      ? { priv: sp.private_price, comm: sp.commercial_price, tiers: sp.tier_prices ?? {}, own: true }
+      : { priv: service.private_price, comm: service.commercial_price, tiers: service.tier_prices ?? {}, own: false };
   };
+  const initTiersState = (tiers: TierPriceMap | undefined) => {
+    const out: Record<VehicleTier, { priv: string; comm: string }> = {
+      saloon_small: { priv: '', comm: '' },
+      saloon_large: { priv: '', comm: '' },
+      suv_pickup: { priv: '', comm: '' },
+      bus: { priv: '', comm: '' },
+      truck: { priv: '', comm: '' },
+      motorcycle: { priv: '', comm: '' },
+    };
+    if (!tiers) return out;
+    for (const t of VEHICLE_TIERS) {
+      const e = tiers[t.key];
+      if (e) {
+        out[t.key] = {
+          priv: e.private !== null && e.private !== undefined ? String(e.private) : '',
+          comm: e.commercial !== null && e.commercial !== undefined ? String(e.commercial) : '',
+        };
+      }
+    }
+    return out;
+  };
+
   const start = currentFor(initialState);
   const [scope, setScope] = useState(initialState);
   const [priv, setPriv] = useState(String(start.priv));
   const [comm, setComm] = useState(start.comm === null ? '' : String(start.comm));
+  const [ratePct, setRatePct] = useState(service.rate_percent != null ? String(service.rate_percent) : '');
+  const [tierInputs, setTierInputs] = useState(() => initTiersState(start.tiers));
+  const [showTiers, setShowTiers] = useState(() => Object.keys(start.tiers || {}).length > 0);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const cur = currentFor(scope);
+  const supportsRate = service.rate_percent != null || service.id === 'comprehensive_insurance';
 
   const changeScope = (s: string) => {
     setScope(s);
     const c = currentFor(s);
     setPriv(String(c.priv));
     setComm(c.comm === null ? '' : String(c.comm));
+    setTierInputs(initTiersState(c.tiers));
+    setShowTiers(Object.keys(c.tiers || {}).length > 0);
   };
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const p = numOrNull(priv); const c = numOrNull(comm);
+    const r = !scope && supportsRate ? numOrNull(ratePct) : null;
     if (p === null || badNumber(p) || badNumber(c)) return onError('Prices must be numbers of 0 or more. The private price is required.');
+    if (r !== null && (badNumber(r) || r > 100)) return onError('Rate % must be between 0 and 100.');
+
+    const tierPayload: TierPriceMap = {};
+    if (showTiers) {
+      for (const t of VEHICLE_TIERS) {
+        const tp = numOrNull(tierInputs[t.key].priv);
+        const tc = numOrNull(tierInputs[t.key].comm);
+        if (badNumber(tp) || badNumber(tc)) return onError(`Tier price for ${t.short} must be 0 or more.`);
+        if (tp !== null || tc !== null) {
+          tierPayload[t.key] = { private: tp, commercial: tc };
+        }
+      }
+    }
+
     setBusy(true);
-    const { error } = await supabase.rpc('admin_set_service_price', {
-      p_service_id: service.id, p_state: scope || null, p_private: p, p_commercial: c, p_note: note.trim() || null,
+    let { error } = await supabase.rpc('admin_set_service_price', {
+      p_service_id: service.id,
+      p_state: scope || null,
+      p_private: p,
+      p_commercial: c,
+      p_note: note.trim() || null,
+      p_tier_prices: showTiers ? tierPayload : {},
+      p_rate_percent: r,
     });
+    if (error && /function|p_tier_prices/i.test(error.message)) {
+      ({ error } = await supabase.rpc('admin_set_service_price', {
+        p_service_id: service.id, p_state: scope || null, p_private: p, p_commercial: c, p_note: note.trim() || null,
+      }));
+    }
     setBusy(false);
     if (error) return onError(errText(error));
     onSaved(`${service.title}: ${scope ? `${scope} price` : 'national price'} is now ${money(p)}${c !== null && c !== p ? ` / ${money(c)} commercial` : ''}.`);
@@ -283,7 +355,7 @@ function PriceEditor({ service, initialState, onClose, onSaved, onError }: {
   };
 
   return (
-    <Modal title="Change price" subtitle={service.title} onClose={onClose}>
+    <Modal title="Change price" subtitle={service.title} onClose={onClose} wide>
       <form onSubmit={save} className="space-y-4">
         <div>
           <label className={ui.label} htmlFor="pe-scope">Applies to</label>
@@ -298,16 +370,73 @@ function PriceEditor({ service, initialState, onClose, onSaved, onError }: {
             {scope && !cur.own ? ' (national price — no separate price for this state yet)' : ''}
           </p>
         </div>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className={cx('grid gap-3', !scope && supportsRate ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
           <div>
-            <label className={ui.label} htmlFor="pe-priv">Private vehicles (₦) *</label>
+            <label className={ui.label} htmlFor="pe-priv">{supportsRate ? 'Minimum private premium (₦) *' : 'Base private price (₦) *'}</label>
             <input id="pe-priv" type="number" min={0} step="any" inputMode="decimal" required value={priv} onChange={e => setPriv(e.target.value)} className={ui.input} />
           </div>
           <div>
-            <label className={ui.label} htmlFor="pe-comm">Commercial vehicles (₦)</label>
+            <label className={ui.label} htmlFor="pe-comm">{supportsRate ? 'Minimum commercial premium (₦)' : 'Base commercial price (₦)'}</label>
             <input id="pe-comm" type="number" min={0} step="any" inputMode="decimal" value={comm} onChange={e => setComm(e.target.value)} className={ui.input} placeholder="Same as private" />
           </div>
+          {!scope && supportsRate && (
+            <div>
+              <label className={ui.label} htmlFor="pe-rate">Value Rate (% of car value)</label>
+              <input id="pe-rate" type="number" min={0} max={100} step="0.1" inputMode="decimal" value={ratePct} onChange={e => setRatePct(e.target.value)} className={ui.input} placeholder="e.g. 3.5" />
+            </div>
+          )}
         </div>
+
+        {/* Engine-capacity / body-type tiered pricing */}
+        {!supportsRate && (
+          <div className="rounded-2xl border border-line bg-surface-2 p-3.5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-bold text-fg">Engine-Capacity / Body-Type Tier Prices</p>
+                <p className="text-[11px] text-fg-muted">Optional per-vehicle-tier overrides (Saloon ≤1.8L, Saloon 2.0L+, SUV/Pickup, Bus, Truck, Motorcycle).</p>
+              </div>
+              <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-fg cursor-pointer shrink-0">
+                <input type="checkbox" checked={showTiers} onChange={e => setShowTiers(e.target.checked)} className="h-4 w-4 accent-primary" />
+                <span>Enable tiers</span>
+              </label>
+            </div>
+            {showTiers && (
+              <div className="space-y-2 pt-1">
+                <div className="grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider text-fg-subtle px-1">
+                  <span className="col-span-6">Vehicle Tier</span>
+                  <span className="col-span-3">Private (₦)</span>
+                  <span className="col-span-3">Commercial (₦)</span>
+                </div>
+                {VEHICLE_TIERS.map(t => (
+                  <div key={t.key} className="grid grid-cols-12 gap-2 items-center">
+                    <span className="col-span-6 text-xs font-semibold text-fg truncate" title={t.label}>{t.short}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      placeholder={priv || 'Base'}
+                      value={tierInputs[t.key].priv}
+                      onChange={e => setTierInputs(prev => ({ ...prev, [t.key]: { ...prev[t.key], priv: e.target.value } }))}
+                      className={cx(ui.input, 'col-span-3 h-9 text-xs px-2.5')}
+                      aria-label={`${t.short} private price`}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      step="any"
+                      placeholder={comm || priv || 'Same'}
+                      value={tierInputs[t.key].comm}
+                      onChange={e => setTierInputs(prev => ({ ...prev, [t.key]: { ...prev[t.key], comm: e.target.value } }))}
+                      className={cx(ui.input, 'col-span-3 h-9 text-xs px-2.5')}
+                      aria-label={`${t.short} commercial price`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div>
           <label className={ui.label} htmlFor="pe-note">Reason (kept in History)</label>
           <input id="pe-note" value={note} onChange={e => setNote(e.target.value)} className={ui.input} maxLength={300} placeholder="e.g. New NIID tariff from 1 Dec" />
@@ -516,6 +645,26 @@ export function ProposalsView({ data, onChanged, flash, loading, loadedAt }: {
                 <div className="flex justify-between gap-2"><span className="text-fg-muted">Commercial</span>
                   <Change from={p.current_commercial ?? p.current_private} to={p.commercial_price ?? p.private_price} />
                 </div>
+                {p.rate_percent != null && (
+                  <div className="flex justify-between gap-2 pt-1 border-t border-line">
+                    <span className="text-fg-muted">Proposed rate (% of value)</span>
+                    <span className="font-bold text-fg tabular">{p.rate_percent}%</span>
+                  </div>
+                )}
+                {p.tier_prices && Object.keys(p.tier_prices).length > 0 && (
+                  <div className="pt-1.5 border-t border-line space-y-0.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-fg-subtle">Proposed engine/body tier prices</p>
+                    {Object.entries(p.tier_prices).map(([tk, tv]) => tv && (
+                      <div key={tk} className="flex justify-between gap-2 text-[11px]">
+                        <span className="text-fg-muted">{vehicleTierLabel(tk, true) || tk}</span>
+                        <span className="font-semibold text-fg tabular">
+                          {tv.private != null ? money(tv.private) : 'Base'}
+                          {tv.commercial != null && tv.commercial !== tv.private ? ` / ${money(tv.commercial)} comm.` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
               {p.note && <p className="text-xs text-fg"><span className="text-fg-muted">Partner says:</span> {p.note}</p>}
               <input value={notes[p.id] ?? ''} onChange={e => setNotes(n => ({ ...n, [p.id]: e.target.value }))} className={cx(ui.input, 'h-10')}

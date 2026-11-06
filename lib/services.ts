@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { ServiceRequest, UserVehicle, FuelLog, ServiceCategory, ServiceStatus } from '@/types/services';
+import { ServiceRequest, UserVehicle, FuelLog, VehicleDocument, DocumentType } from '@/types/services';
 
 export async function submitServiceRequest(
   supabase: SupabaseClient,
@@ -94,23 +94,49 @@ export async function saveUserVehicle(
     };
     // Added in 20261107: only sent when given, and dropped if that update isn't installed yet
     if (payload.vehicle_type !== undefined) fields.vehicle_type = payload.vehicle_type || null;
+    if (payload.vehicle_tier !== undefined) fields.vehicle_tier = payload.vehicle_tier || null;
     if (payload.vehicle_usage !== undefined) fields.vehicle_usage = payload.vehicle_usage || 'private';
+    if (payload.poc_expiry !== undefined) fields.poc_expiry = payload.poc_expiry || null;
+    if (payload.hackney_expiry !== undefined) fields.hackney_expiry = payload.hackney_expiry || null;
+    if (payload.reminder_enabled !== undefined) fields.reminder_enabled = Boolean(payload.reminder_enabled);
 
     const run = (f: Record<string, unknown>) => (payload.id
       ? supabase.from('user_vehicles').update(f).eq('id', payload.id).eq('user_id', payload.user_id).select('*').single()
       : supabase.from('user_vehicles').insert({ user_id: payload.user_id, ...f }).select('*').single());
 
     let { data, error } = await run(fields);
-    if (error && /vehicle_(type|usage)/.test(error.message) && /column|schema cache/i.test(error.message)) {
-      const { vehicle_type: _t, vehicle_usage: _u, ...older } = fields;
-      void _t; void _u;
+    if (error && /(vehicle_type|vehicle_tier|vehicle_usage|poc_expiry|hackney_expiry|reminder_enabled)/.test(error.message) && /column|schema cache/i.test(error.message)) {
+      const {
+        vehicle_type: _t,
+        vehicle_tier: _tr,
+        vehicle_usage: _u,
+        poc_expiry: _p,
+        hackney_expiry: _h,
+        reminder_enabled: _r,
+        ...older
+      } = fields;
+      void _t; void _tr; void _u; void _p; void _h; void _r;
       ({ data, error } = await run(older));
     }
     if (error) return { data: null, error: error.message };
     return { data, error: null };
-  } catch (err: any) {
-    return { data: null, error: err.message || 'Error saving vehicle' };
+  } catch (err: unknown) {
+    return { data: null, error: err instanceof Error ? err.message : 'Error saving vehicle' };
   }
+}
+
+export async function toggleVehicleReminder(
+  supabase: SupabaseClient,
+  vehicleId: string,
+  userId: string,
+  enabled: boolean
+): Promise<{ error: string | null }> {
+  const { error } = await supabase
+    .from('user_vehicles')
+    .update({ reminder_enabled: enabled })
+    .eq('id', vehicleId)
+    .eq('user_id', userId);
+  return { error: error ? error.message : null };
 }
 
 export async function deleteUserVehicle(
@@ -124,6 +150,60 @@ export async function deleteUserVehicle(
     .eq('id', vehicleId)
     .eq('user_id', userId);
 
+  return !error;
+}
+
+// =========================================================================
+// DIGITAL DOCUMENT VAULT
+// =========================================================================
+export async function fetchVehicleDocuments(
+  supabase: SupabaseClient,
+  userId: string,
+  vehicleId?: string
+): Promise<VehicleDocument[]> {
+  try {
+    let q = supabase
+      .from('vehicle_documents')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (vehicleId) q = q.eq('vehicle_id', vehicleId);
+    const { data, error } = await q;
+    if (error) return [];
+    return (data || []) as VehicleDocument[];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveVehicleDocument(
+  supabase: SupabaseClient,
+  payload: {
+    vehicle_id?: string | null;
+    service_request_id?: string | null;
+    doc_type: DocumentType;
+    title: string;
+    file_url: string;
+    reference_number?: string | null;
+    issued_date?: string | null;
+    expiry_date?: string | null;
+  }
+): Promise<{ id: string | null; expiry_synced: boolean; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('save_vehicle_document', { p: payload });
+    if (error) return { id: null, expiry_synced: false, error: error.message };
+    const res = (data || {}) as { id?: string; expiry_synced?: boolean };
+    return { id: res.id || null, expiry_synced: Boolean(res.expiry_synced), error: null };
+  } catch (err: unknown) {
+    return { id: null, expiry_synced: false, error: err instanceof Error ? err.message : 'Error saving document' };
+  }
+}
+
+export async function deleteVehicleDocument(
+  supabase: SupabaseClient,
+  docId: string
+): Promise<boolean> {
+  const { error } = await supabase.from('vehicle_documents').delete().eq('id', docId);
   return !error;
 }
 
@@ -178,8 +258,8 @@ export async function saveFuelLog(
 
     if (error) return { data: null, error: error.message };
     return { data, error: null };
-  } catch (err: any) {
-    return { data: null, error: err.message || 'Error saving fuel log' };
+  } catch (err: unknown) {
+    return { data: null, error: err instanceof Error ? err.message : 'Error saving fuel log' };
   }
 }
 
@@ -196,4 +276,3 @@ export async function deleteFuelLog(
 
   return !error;
 }
-

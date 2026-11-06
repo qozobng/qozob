@@ -178,3 +178,74 @@ export function formatPlate(input: string): string {
   return input.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12);
 }
 
+// =========================================================================
+// ENGINE-CAPACITY / BODY-TYPE PRICING TIERS (CarPaddy+ statutory bands)
+// =========================================================================
+export type VehicleTier =
+  | 'saloon_small'
+  | 'saloon_large'
+  | 'suv_pickup'
+  | 'bus'
+  | 'truck'
+  | 'motorcycle';
+
+export const VEHICLE_TIERS: { key: VehicleTier; label: string; short: string }[] = [
+  { key: 'saloon_small', label: 'Saloon / Hatchback (≤ 1.6L – 1.8L · e.g. Corolla, Yaris, Civic, Rio)', short: 'Saloon ≤ 1.8L' },
+  { key: 'saloon_large', label: 'Saloon / Executive Sedan (2.0L – 3.5L+ · e.g. Camry, Accord, ES350, C-Class)', short: 'Saloon 2.0L+' },
+  { key: 'suv_pickup', label: 'SUV / Jeep / Pickup / Space Bus (e.g. Highlander, RX350, Prado, Hilux, Sienna)', short: 'SUV / Pickup / MPV' },
+  { key: 'bus', label: 'Mini-Bus / Coaster / Commuter Bus (e.g. Hiace, Urvan, Coaster, Sprinter)', short: 'Bus / Coaster' },
+  { key: 'truck', label: 'Heavy-Duty Truck / Tanker / Lorry (e.g. Mack, Sinotruk Howo, Actros, DAF)', short: 'Heavy-Duty Truck' },
+  { key: 'motorcycle', label: 'Motorcycle / Dispatch Bike / Tricycle (Keke)', short: 'Motorcycle / Keke' },
+];
+
+export const vehicleTierLabel = (k: string | null | undefined, short = false): string => {
+  const found = VEHICLE_TIERS.find(t => t.key === k);
+  return found ? (short ? found.short : found.label) : '';
+};
+
+const LARGE_SALOONS = new Set([
+  'Camry', 'Avalon', 'Avensis', 'Solara',
+  'Accord',
+  'ES', 'IS', 'GS', 'LS',
+  'Sonata', 'Azera',
+  'Optima', 'K5',
+  'Altima', 'Maxima',
+  'C-Class', 'E-Class', 'S-Class', 'CLA',
+  'Fusion', 'Mustang',
+  '406', '407', '504', '508',
+  'Passat',
+  'Galant',
+  'Mazda6', '626',
+  '3 Series', '5 Series', '7 Series',
+  'A4', 'A6', 'A8',
+  'TL', 'TLX', 'RL',
+  'G35', 'Q50', 'Q70',
+  'Malibu',
+  'Charger', 'Challenger',
+  'S60', 'S80',
+  'Panamera',
+  'Vectra',
+]);
+
+/** Automatically determines the statutory pricing tier from the selected vehicle body type / model. */
+export function inferVehicleTier(
+  type?: VehicleType | '' | null,
+  make?: string | null,
+  model?: string | null,
+): VehicleTier {
+  const md = (model || '').trim();
+  const mk = (make || '').trim();
+  const resolvedType = type || (mk && md ? typeOfModel(mk, md) : null) || 'saloon';
+
+  if (resolvedType === 'motorcycle' || resolvedType === 'tricycle') return 'motorcycle';
+  if (resolvedType === 'truck') return 'truck';
+  if (resolvedType === 'bus') return 'bus';
+  if (resolvedType === 'suv' || resolvedType === 'pickup' || resolvedType === 'minivan') return 'suv_pickup';
+  if (md && LARGE_SALOONS.has(md)) return 'saloon_large';
+  if (['Lexus', 'Mercedes-Benz', 'BMW', 'Audi', 'Infiniti', 'Acura', 'Volvo', 'Porsche'].includes(mk)) {
+    return 'saloon_large';
+  }
+  return 'saloon_small';
+}
+
+

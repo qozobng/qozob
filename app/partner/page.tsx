@@ -27,16 +27,19 @@ import { NIGERIAN_STATES } from '@/lib/nigeria';
 import { downloadXlsx } from '@/lib/xlsx';
 import { isMissingFunction } from '@/lib/fetchAll';
 import { SERVICE_CATEGORY_LABEL } from '@/lib/servicePricing';
-import type { ServiceCategory, ServiceStatus, PaymentStatus } from '@/types/services';
+import { VEHICLE_TIERS, type VehicleTier } from '@/lib/vehicles';
+import type { ServiceCategory, ServiceStatus, PaymentStatus, TierPriceMap } from '@/types/services';
 
 const supabase = createClient();
 
 interface PortalService {
-  id: string; title: string; category: ServiceCategory; private_price: number; commercial_price: number | null; currency: string;
-  is_active: boolean; state_prices: { state: string; private_price: number; commercial_price: number | null }[];
+  id: string; title: string; category: ServiceCategory; private_price: number; commercial_price: number | null;
+  tier_prices?: TierPriceMap; rate_percent?: number | null; min_price?: number | null;
+  currency: string; is_active: boolean; state_prices: { state: string; private_price: number; commercial_price: number | null; tier_prices?: TierPriceMap }[];
 }
 interface PortalProposal {
   id: number; service_id: string; service_title: string | null; state: string | null; private_price: number; commercial_price: number | null;
+  tier_prices?: TierPriceMap | null; rate_percent?: number | null;
   current_private: number | null; current_commercial: number | null; note: string | null;
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn'; review_note: string | null; reviewed_at: string | null; created_at: string;
 }
@@ -483,8 +486,32 @@ function ProposeDialog({ service, states, onClose, onDone, onError }: {
   const [scope, setScope] = useState(scopes[0]);
   const [priv, setPriv] = useState('');
   const [comm, setComm] = useState('');
+  const [ratePct, setRatePct] = useState(service.rate_percent != null ? String(service.rate_percent) : '');
+  const [showTiers, setShowTiers] = useState(() => Boolean(service.tier_prices && Object.keys(service.tier_prices).length > 0));
+  const [tierInputs, setTierInputs] = useState<Record<VehicleTier, { priv: string; comm: string }>>(() => {
+    const out: Record<VehicleTier, { priv: string; comm: string }> = {
+      saloon_small: { priv: '', comm: '' },
+      saloon_large: { priv: '', comm: '' },
+      suv_pickup: { priv: '', comm: '' },
+      bus: { priv: '', comm: '' },
+      truck: { priv: '', comm: '' },
+      motorcycle: { priv: '', comm: '' },
+    };
+    const baseTiers = service.tier_prices ?? {};
+    for (const t of VEHICLE_TIERS) {
+      const e = baseTiers[t.key];
+      if (e) {
+        out[t.key] = {
+          priv: e.private != null ? String(e.private) : '',
+          comm: e.commercial != null ? String(e.commercial) : '',
+        };
+      }
+    }
+    return out;
+  });
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const supportsRate = service.rate_percent != null || service.id === 'comprehensive_insurance';
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -500,11 +527,37 @@ function ProposeDialog({ service, states, onClose, onDone, onError }: {
     e.preventDefault();
     const p = priv.trim() === '' ? null : Number(priv);
     const c = comm.trim() === '' ? null : Number(comm);
+    const r = !scope && supportsRate && ratePct.trim() !== '' ? Number(ratePct) : null;
     if (p === null || !Number.isFinite(p) || p < 0 || (c !== null && (!Number.isFinite(c) || c < 0))) return onError('Enter prices of 0 or more. The private price is required.');
+    if (r !== null && (!Number.isFinite(r) || r < 0 || r > 100)) return onError('Rate % must be between 0 and 100.');
+
+    const tierPayload: TierPriceMap = {};
+    if (showTiers) {
+      for (const t of VEHICLE_TIERS) {
+        const tp = tierInputs[t.key].priv.trim() === '' ? null : Number(tierInputs[t.key].priv);
+        const tc = tierInputs[t.key].comm.trim() === '' ? null : Number(tierInputs[t.key].comm);
+        if ((tp !== null && (!Number.isFinite(tp) || tp < 0)) || (tc !== null && (!Number.isFinite(tc) || tc < 0))) {
+          return onError(`Tier price for ${t.short} must be 0 or more.`);
+        }
+        if (tp !== null || tc !== null) tierPayload[t.key] = { private: tp, commercial: tc };
+      }
+    }
+
     setBusy(true);
-    const { error } = await supabase.rpc('partner_propose_price', {
-      p_service_id: service.id, p_state: scope || null, p_private: p, p_commercial: c, p_note: note.trim() || null,
+    let { error } = await supabase.rpc('partner_propose_price', {
+      p_service_id: service.id,
+      p_state: scope || null,
+      p_private: p,
+      p_commercial: c,
+      p_note: note.trim() || null,
+      p_tier_prices: showTiers ? tierPayload : null,
+      p_rate_percent: r,
     });
+    if (error && /function|p_tier_prices/i.test(error.message)) {
+      ({ error } = await supabase.rpc('partner_propose_price', {
+        p_service_id: service.id, p_state: scope || null, p_private: p, p_commercial: c, p_note: note.trim() || null,
+      }));
+    }
     setBusy(false);
     if (error) return onError(errText(error));
     onDone(`Sent to Qozob for approval: ${service.title}${scope ? ` (${scope})` : ''} at ${money(p)}. The current price stays until it is approved.`);
@@ -512,13 +565,13 @@ function ProposeDialog({ service, states, onClose, onDone, onError }: {
 
   return (
     <div className={cx(ui.overlay, 'z-50')} onClick={onClose}>
-      <div className={cx(ui.modal, 'max-w-md p-0 overflow-hidden')} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="pp-title">
+      <div className={cx(ui.modal, 'max-w-lg p-0 overflow-hidden')} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="pp-title">
         <div className="p-5 border-b border-line">
           <h3 id="pp-title" className="text-base font-bold text-fg">Propose a new price</h3>
           <p className="text-xs text-fg-muted">{service.title}</p>
           <button type="button" onClick={onClose} className={ui.modalClose} aria-label="Close"><X className="w-4 h-4" /></button>
         </div>
-        <form onSubmit={submit} className="p-5 space-y-4">
+        <form onSubmit={submit} className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
           <div>
             <label className={ui.label} htmlFor="pp-scope">Applies to</label>
             <select id="pp-scope" value={scope} onChange={e => setScope(e.target.value)} className={ui.select}>
@@ -526,16 +579,64 @@ function ProposeDialog({ service, states, onClose, onDone, onError }: {
             </select>
             <p className={ui.hint}>Now: {money(curPriv)} private · {money(curComm ?? curPriv)} commercial{scope && !sp ? ' (national price)' : ''}</p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className={cx('grid gap-3', !scope && supportsRate ? 'grid-cols-3' : 'grid-cols-2')}>
             <div>
-              <label className={ui.label} htmlFor="pp-priv">Private (₦) *</label>
+              <label className={ui.label} htmlFor="pp-priv">{supportsRate ? 'Min. Private (₦) *' : 'Private (₦) *'}</label>
               <input id="pp-priv" type="number" min={0} step="any" inputMode="decimal" required value={priv} onChange={e => setPriv(e.target.value)} className={ui.input} placeholder={String(curPriv)} />
             </div>
             <div>
-              <label className={ui.label} htmlFor="pp-comm">Commercial (₦)</label>
+              <label className={ui.label} htmlFor="pp-comm">{supportsRate ? 'Min. Commercial (₦)' : 'Commercial (₦)'}</label>
               <input id="pp-comm" type="number" min={0} step="any" inputMode="decimal" value={comm} onChange={e => setComm(e.target.value)} className={ui.input} placeholder="Same as private" />
             </div>
+            {!scope && supportsRate && (
+              <div>
+                <label className={ui.label} htmlFor="pp-rate">Rate (% of value)</label>
+                <input id="pp-rate" type="number" min={0} max={100} step="0.1" inputMode="decimal" value={ratePct} onChange={e => setRatePct(e.target.value)} className={ui.input} placeholder="e.g. 3.5" />
+              </div>
+            )}
           </div>
+
+          {!supportsRate && (
+            <div className="rounded-2xl border border-line bg-surface-2 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-fg">Engine / Body-Type Tier Prices</span>
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-fg cursor-pointer">
+                  <input type="checkbox" checked={showTiers} onChange={e => setShowTiers(e.target.checked)} className="h-4 w-4 accent-primary" />
+                  <span>Include tier prices</span>
+                </label>
+              </div>
+              {showTiers && (
+                <div className="space-y-1.5 pt-1">
+                  {VEHICLE_TIERS.map(t => (
+                    <div key={t.key} className="grid grid-cols-12 gap-2 items-center">
+                      <span className="col-span-6 text-[11px] font-semibold text-fg truncate" title={t.label}>{t.short}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        placeholder={priv || String(curPriv)}
+                        value={tierInputs[t.key].priv}
+                        onChange={e => setTierInputs(prev => ({ ...prev, [t.key]: { ...prev[t.key], priv: e.target.value } }))}
+                        className={cx(ui.input, 'col-span-3 h-8 text-xs px-2')}
+                        aria-label={`${t.short} private price`}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        placeholder={comm || 'Same'}
+                        value={tierInputs[t.key].comm}
+                        onChange={e => setTierInputs(prev => ({ ...prev, [t.key]: { ...prev[t.key], comm: e.target.value } }))}
+                        className={cx(ui.input, 'col-span-3 h-8 text-xs px-2')}
+                        aria-label={`${t.short} commercial price`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className={ui.label} htmlFor="pp-note">Why? (helps Qozob approve faster)</label>
             <input id="pp-note" value={note} onChange={e => setNote(e.target.value)} className={ui.input} maxLength={300} placeholder="e.g. New government tariff from 1 Dec" />

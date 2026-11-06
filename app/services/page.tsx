@@ -22,8 +22,8 @@ import { ServiceCategory, type UserVehicle } from '@/types/services';
 import { submitServiceRequest, fetchUserVehicles } from '@/lib/services';
 import { VehicleFields, EMPTY_VEHICLE, normaliseVehicle, type VehicleValue } from '@/components/forms/VehicleFields';
 import { LocationFields } from '@/components/forms/LocationFields';
-import { formatPlate } from '@/lib/vehicles';
-import { loadServiceCatalog, effectivePrice, hasStatePrice, FALLBACK_CATALOG, type CatalogItem } from '@/lib/servicePricing';
+import { formatPlate, VEHICLE_TIERS, inferVehicleTier, vehicleTierLabel, type VehicleTier } from '@/lib/vehicles';
+import { loadServiceCatalog, effectivePrice, hasStatePrice, hasTierPrices, FALLBACK_CATALOG, type CatalogItem } from '@/lib/servicePricing';
 import { formatMoney } from '@/lib/currency';
 import { cx, ui } from '@/lib/ui';
 import { SITE } from '@/lib/site';
@@ -34,9 +34,13 @@ export default function ServicesPage() {
 
   const [activeTab, setActiveTab] = useState<'papers' | 'tracker' | 'fleet'>('papers');
   const [vehicleUsage, setVehicleUsage] = useState<'private' | 'commercial'>('private');
+  const [tierOverride, setTierOverride] = useState<VehicleTier | ''>('');
+  const [vehicleValue, setVehicleValue] = useState<number>(8000000);
+  const [customPlateText, setCustomPlateText] = useState('');
   const [selectedItems, setSelectedItems] = useState<string[]>([
     'insurance_3rd_party',
     'vehicle_license',
+    'proof_of_ownership',
     'roadworthiness'
   ]);
 
@@ -102,6 +106,7 @@ export default function ServicesPage() {
             if (g) {
               setGaragePick(g.id);
               setVehicle(normaliseVehicle({ type: (g.vehicle_type || '') as VehicleValue['type'], make: g.vehicle_make || '', model: g.vehicle_model || '', year: g.vehicle_year || '', colour: g.color || '' }));
+              setTierOverride((g.vehicle_tier as VehicleTier) || '');
               setPlateNumber(g.plate_number || '');
               if (g.vehicle_usage === 'private' || g.vehicle_usage === 'commercial') setVehicleUsage(g.vehicle_usage);
             }
@@ -111,11 +116,14 @@ export default function ServicesPage() {
     });
   }, [supabase]);
 
+  const effectiveTier: VehicleTier = tierOverride || inferVehicleTier(vehicle.type, vehicle.make, vehicle.model);
+
   const pickGarageVehicle = (id: string) => {
     setGaragePick(id);
     const g = garage.find(x => x.id === id);
     if (!g) return;
     setVehicle(normaliseVehicle({ type: (g.vehicle_type || '') as VehicleValue['type'], make: g.vehicle_make || '', model: g.vehicle_model || '', year: g.vehicle_year || '', colour: g.color || '' }));
+    setTierOverride((g.vehicle_tier as VehicleTier) || '');
     setPlateNumber(g.plate_number || '');
     if (g.vehicle_usage === 'private' || g.vehicle_usage === 'commercial') setVehicleUsage(g.vehicle_usage);
   };
@@ -135,29 +143,59 @@ export default function ServicesPage() {
   const chosenPapers = useMemo(() => paperItems.filter(i => selectedItems.includes(i.id)), [paperItems, selectedItems]);
   const money = (n: number) => formatMoney(n, 'NGN');
 
-  // Calculation for Papers & Insurance (prices for the chosen state; falls back to the national price)
+  // Calculation for Papers & Insurance (prices for the chosen state + engine/body tier + comprehensive vehicle value)
   const calculatedTotal = useMemo(() => {
     if (activeTab === 'tracker') {
-      return trackerItem ? effectivePrice(trackerItem, vehicleUsage, state) : 0;
+      return trackerItem ? effectivePrice(trackerItem, vehicleUsage, state, effectiveTier, vehicleValue) : 0;
     }
-    return chosenPapers.reduce((sum, item) => sum + effectivePrice(item, vehicleUsage, state), 0);
-  }, [chosenPapers, trackerItem, vehicleUsage, activeTab, state]);
+    return chosenPapers.reduce(
+      (sum, item) => sum + effectivePrice(item, vehicleUsage, state, effectiveTier, vehicleValue),
+      0,
+    );
+  }, [chosenPapers, trackerItem, vehicleUsage, activeTab, state, effectiveTier, vehicleValue]);
   const trackerHasCommercialPrice = !!trackerItem
-    && effectivePrice(trackerItem, 'commercial', state) !== effectivePrice(trackerItem, 'private', state);
+    && effectivePrice(trackerItem, 'commercial', state, effectiveTier) !== effectivePrice(trackerItem, 'private', state, effectiveTier);
 
   const toggleItem = (id: string) => {
-    setSelectedItems(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+    setSelectedItems(prev => {
+      const has = prev.includes(id);
+      if (has) return prev.filter(x => x !== id);
+      // Selecting Comprehensive Insurance unchecks Third-Party Insurance (and vice-versa) so customers don't double-pay
+      if (id === 'comprehensive_insurance') {
+        return [...prev.filter(x => x !== 'insurance_3rd_party'), id];
+      }
+      if (id === 'insurance_3rd_party') {
+        return [...prev.filter(x => x !== 'comprehensive_insurance'), id];
+      }
+      return [...prev, id];
+    });
   };
 
-  const handleSelectPackage = (pack: 'complete_renewal' | 'new_registration' | 'insurance_only') => {
+  const handleSelectPackage = (
+    pack:
+      | 'complete_renewal'
+      | 'new_registration'
+      | 'insurance_only'
+      | 'comprehensive'
+      | 'custom_plate'
+      | 'haulage_dispatch'
+      | 'driver_permits',
+  ) => {
     if (pack === 'complete_renewal') {
-      setSelectedItems(['insurance_3rd_party', 'vehicle_license', 'roadworthiness']);
+      setSelectedItems(['insurance_3rd_party', 'vehicle_license', 'proof_of_ownership', 'roadworthiness']);
     } else if (pack === 'new_registration') {
-      setSelectedItems(['new_plate_number', 'insurance_3rd_party']);
+      setSelectedItems(['new_plate_number', 'insurance_3rd_party', 'cmris_police']);
     } else if (pack === 'insurance_only') {
       setSelectedItems(['insurance_3rd_party']);
+    } else if (pack === 'comprehensive') {
+      setSelectedItems(['comprehensive_insurance', 'vehicle_license', 'proof_of_ownership', 'roadworthiness']);
+    } else if (pack === 'custom_plate') {
+      setSelectedItems(['custom_plate_number', 'proof_of_ownership']);
+    } else if (pack === 'haulage_dispatch') {
+      setVehicleUsage('commercial');
+      setSelectedItems(['hackney_permit', 'heavy_duty_haulage_permit', 'roadworthiness']);
+    } else if (pack === 'driver_permits') {
+      setSelectedItems(['drivers_license_renewal', 'learners_permit']);
     }
   };
 
@@ -228,10 +266,17 @@ export default function ServicesPage() {
       chassis_number: chassisNumber || null,
       details: {
         vehicle_usage: vehicleUsage,
+        vehicle_tier: effectiveTier,
         vehicle_type: vehicle.type || null,
         vehicle_colour: vehicle.colour || null,
+        vehicle_value_ngn: selectedItems.includes('comprehensive_insurance') ? vehicleValue : null,
+        custom_plate_inscription: selectedItems.includes('custom_plate_number') ? customPlateText.trim() || null : null,
         selected_item_ids: lineItems.map(i => i.id),
-        line_items: lineItems.map(i => ({ id: i.id, title: i.title, price: effectivePrice(i, vehicleUsage, state) })),
+        line_items: lineItems.map(i => ({
+          id: i.id,
+          title: i.title,
+          price: effectivePrice(i, vehicleUsage, state, effectiveTier, vehicleValue),
+        })),
         priced_for_state: state,
         price_list: catalogLive ? 'live' : 'built-in',
         calculated_estimate: calculatedTotal,
@@ -521,51 +566,189 @@ export default function ServicesPage() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => handleSelectPackage('comprehensive')}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-surface-2 hover:bg-surface-3 border border-line transition-colors"
+                    >
+                      💎 Comprehensive Insurance Calculator
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleSelectPackage('new_registration')}
                       className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-surface-2 hover:bg-surface-3 border border-line transition-colors"
                     >
                       🚗 New Plate Registration
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPackage('custom_plate')}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-surface-2 hover:bg-surface-3 border border-line transition-colors"
+                    >
+                      👑 Custom / Fancy Plate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPackage('haulage_dispatch')}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-surface-2 hover:bg-surface-3 border border-line transition-colors"
+                    >
+                      🚛 Haulage &amp; Dispatch Permits
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPackage('driver_permits')}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-surface-2 hover:bg-surface-3 border border-line transition-colors"
+                    >
+                      🪪 Learner’s &amp; Driver’s License
+                    </button>
                   </div>
 
-                  {/* Private vs Commercial Toggle */}
-                  <div className="bg-surface rounded-2xl p-4 border border-line flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-fg-muted uppercase tracking-wider block">Vehicle Category</span>
-                      <span className="text-sm font-semibold text-fg">
-                        {vehicleUsage === 'private' ? 'Private Saloon / SUV' : 'Commercial Bus / Transport / Logistics'}
-                      </span>
+                  {/* Engine-Capacity / Body-Type Pricing Tier & Private vs Commercial Toggle */}
+                  <div className="bg-surface rounded-2xl p-4 border border-line space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-bold text-fg-muted uppercase tracking-wider block">Vehicle Usage &amp; Engine / Body Tier</span>
+                        <span className="text-sm font-semibold text-fg">
+                          {vehicleUsage === 'private' ? 'Private Vehicle' : 'Commercial / Fleet / Dispatch'} · {vehicleTierLabel(effectiveTier, true)}
+                        </span>
+                      </div>
+                      <div className="flex p-1 rounded-xl bg-surface-2 border border-line">
+                        <button
+                          type="button"
+                          onClick={() => setVehicleUsage('private')}
+                          className={cx(
+                            'px-3 py-1 rounded-lg text-xs font-bold transition-colors',
+                            vehicleUsage === 'private' ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg'
+                          )}
+                        >
+                          Private
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setVehicleUsage('commercial')}
+                          className={cx(
+                            'px-3 py-1 rounded-lg text-xs font-bold transition-colors',
+                            vehicleUsage === 'commercial' ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg'
+                          )}
+                        >
+                          Commercial
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex p-1 rounded-xl bg-surface-2 border border-line">
-                      <button
-                        type="button"
-                        onClick={() => setVehicleUsage('private')}
-                        className={cx(
-                          'px-3 py-1 rounded-lg text-xs font-bold transition-colors',
-                          vehicleUsage === 'private' ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg'
-                        )}
+
+                    <div>
+                      <label className={ui.label} htmlFor="srv-tier">
+                        Engine Capacity / Vehicle Body Type (auto-syncs when you pick your car)
+                      </label>
+                      <select
+                        id="srv-tier"
+                        value={effectiveTier}
+                        onChange={e => setTierOverride(e.target.value as VehicleTier)}
+                        className={ui.select}
                       >
-                        Private
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setVehicleUsage('commercial')}
-                        className={cx(
-                          'px-3 py-1 rounded-lg text-xs font-bold transition-colors',
-                          vehicleUsage === 'commercial' ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg'
-                        )}
-                      >
-                        Commercial
-                      </button>
+                        {VEHICLE_TIERS.map(t => (
+                          <option key={t.key} value={t.key}>{t.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
+
+                  {/* Interactive Comprehensive Auto Insurance Calculator */}
+                  {selectedItems.includes('comprehensive_insurance') && (() => {
+                    const compItem = paperItems.find(i => i.id === 'comprehensive_insurance');
+                    const baseRate = compItem?.rate_percent ?? 3.5;
+                    const rate = vehicleUsage === 'commercial' ? baseRate + 1.0 : baseRate;
+                    const premium = compItem ? effectivePrice(compItem, vehicleUsage, state, effectiveTier, vehicleValue) : 0;
+                    return (
+                      <div className="bg-surface rounded-2xl p-4 sm:p-5 border-2 border-primary/40 shadow-sm space-y-3 animate-in fade-in duration-200">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-bold">
+                              💎 Comprehensive Auto Insurance Calculator
+                            </span>
+                            <h3 className="text-sm font-bold text-fg mt-1">Enter Your Estimated Vehicle Value (₦)</h3>
+                            <p className="text-xs text-fg-muted">
+                              Calculated at <strong>{rate}%</strong> ({vehicleUsage}) · Covers accidental collision, vehicle theft, fire, flood extension &amp; up to ₦3M third-party property damage.
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-[10px] font-semibold uppercase text-fg-subtle block">Annual Premium</span>
+                            <span className="text-xl font-black text-accent tabular">{money(premium)}</span>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                          <div>
+                            <label className={ui.label} htmlFor="srv-car-val">Vehicle Market Value (₦)</label>
+                            <input
+                              id="srv-car-val"
+                              type="number"
+                              min={500000}
+                              step={100000}
+                              value={vehicleValue || ''}
+                              onChange={e => setVehicleValue(Math.max(0, Number(e.target.value) || 0))}
+                              className={cx(ui.input, 'font-bold tabular')}
+                              placeholder="e.g. 8000000"
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 pt-2 sm:pt-5">
+                            {[3000000, 5000000, 8000000, 12000000, 20000000, 35000000].map(v => (
+                              <button
+                                key={v}
+                                type="button"
+                                onClick={() => setVehicleValue(v)}
+                                className={cx(
+                                  'px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors tabular',
+                                  vehicleValue === v
+                                    ? 'bg-primary text-on-primary border-primary'
+                                    : 'bg-surface-2 text-fg-muted border-line hover:text-fg'
+                                )}
+                              >
+                                ₦{(v / 1000000).toFixed(0)}M
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Interactive Customised / Fancy Plate Inscription Preview */}
+                  {selectedItems.includes('custom_plate_number') && (
+                    <div className="bg-surface rounded-2xl p-4 sm:p-5 border-2 border-accent/40 shadow-sm space-y-3 animate-in fade-in duration-200">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 text-accent px-2.5 py-0.5 text-[11px] font-bold">
+                            👑 JTB / FRSC Customised Plate Configurator
+                          </span>
+                          <h3 className="text-sm font-bold text-fg mt-1">Desired Fancy Plate Inscription</h3>
+                          <p className="text-xs text-fg-muted">Up to 8 letters/numbers (e.g. ODOGWU-1, KING-01, CEO-LAG).</p>
+                        </div>
+                        <div className="rounded-xl border-2 border-emerald-700 bg-white text-emerald-900 px-4 py-2 text-center shadow-inner shrink-0">
+                          <span className="block text-[9px] font-extrabold uppercase tracking-widest text-emerald-700">
+                            {state.toUpperCase()} · FEDERAL REPUBLIC OF NIGERIA
+                          </span>
+                          <span className="block font-mono text-lg font-black tracking-widest text-blue-900">
+                            {customPlateText.trim() || 'ODOGWU-1'}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        maxLength={8}
+                        placeholder="Type desired plate text (max 8 chars, e.g. ODOGWU-1)"
+                        value={customPlateText}
+                        onChange={e => setCustomPlateText(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 8))}
+                        className={cx(ui.input, 'font-mono uppercase tracking-wider')}
+                        aria-label="Desired custom plate text"
+                      />
+                    </div>
+                  )}
 
                   {/* Checklist of Services */}
                   <div className="space-y-3">
                     {paperItems.map(item => {
                       const isSelected = selectedItems.includes(item.id);
-                      const price = effectivePrice(item, vehicleUsage, state);
+                      const price = effectivePrice(item, vehicleUsage, state, effectiveTier, vehicleValue);
                       const local = hasStatePrice(item, state);
+                      const tiered = hasTierPrices(item, state);
 
                       return (
                         <div
@@ -590,9 +773,13 @@ export default function ServicesPage() {
                               <h3 className="text-sm font-bold text-fg">{item.title}</h3>
                               <span className="text-right">
                                 <span className="block text-sm font-extrabold text-accent tabular">
-                                  {price > 0 ? money(price) : 'Free Addon'}
+                                  {price > 0 ? money(price) : 'Commercial Only'}
                                 </span>
-                                {local && <span className="block text-[10px] font-semibold text-fg-subtle">{state} price</span>}
+                                <span className="block text-[10px] font-semibold text-fg-subtle">
+                                  {item.rate_percent
+                                    ? `${vehicleUsage === 'commercial' ? item.rate_percent + 1 : item.rate_percent}% of value`
+                                    : [local ? `${state} rate` : null, tiered ? vehicleTierLabel(effectiveTier, true) : null].filter(Boolean).join(' · ')}
+                                </span>
                               </span>
                             </div>
                             {item.description && <p className="text-xs text-fg-muted mt-1 leading-relaxed">{item.description}</p>}
@@ -761,7 +948,7 @@ export default function ServicesPage() {
                   <VehicleFields
                     idPrefix="srv"
                     value={vehicle}
-                    onChange={v => { setVehicle(v); setGaragePick(''); }}
+                    onChange={v => { setVehicle(v); setGaragePick(''); setTierOverride(''); }}
                     fields={['make', 'model', 'year']}
                     className="sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem] lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem]"
                   />
@@ -880,6 +1067,82 @@ export default function ServicesPage() {
             </div>
           </div>
         )}
+
+        {/* ================= SEO GUIDE & FREQUENTLY ASKED QUESTIONS ================= */}
+        <section aria-labelledby="seo-guide-heading" className="mt-16 pt-12 border-t border-line space-y-10">
+          <div className="max-w-3xl">
+            <p className={ui.eyebrow}>Complete Nigerian Vehicle Compliance &amp; Security Hub</p>
+            <h2 id="seo-guide-heading" className="text-2xl sm:text-3xl font-extrabold text-fg mt-1">
+              Why Drivers &amp; Fleet Managers Renew Vehicle Papers on Qozob
+            </h2>
+            <p className="text-sm text-fg-muted mt-2 leading-relaxed">
+              Whether you drive a private saloon car in Lagos, an SUV in Abuja, a commercial bus in Port Harcourt, or manage heavy-duty haulage trucks and dispatch motorcycles nationwide, Qozob calculates accurate statutory rates by engine capacity and state—with digital copies stored in your personal Document Vault.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <article className="bg-surface rounded-2xl p-5 border border-line space-y-2">
+              <h3 className="text-sm font-bold text-fg">1. Engine-Capacity &amp; Body-Type Tiered Pricing</h3>
+              <p className="text-xs text-fg-muted leading-relaxed">
+                Vehicle License, Roadworthiness (LACVIS), and Proof of Ownership (POC) fees are automatically matched to your car’s statutory engine band (Saloon ≤1.8L, Saloon 2.0L+, SUV/Pickup, Coaster Bus, Heavy-Duty Truck, or Dispatch Motorcycle) so you never overpay.
+              </p>
+            </article>
+            <article className="bg-surface rounded-2xl p-5 border border-line space-y-2">
+              <h3 className="text-sm font-bold text-fg">2. NIID Third-Party &amp; Comprehensive Insurance</h3>
+              <p className="text-xs text-fg-muted leading-relaxed">
+                Get instant NAICOM-regulated Third-Party Motor Insurance verified on the Nigerian Insurance Industry Database (NIID / askniid.org), or use our live Comprehensive Auto Insurance Calculator for full collision, theft, fire, and flood protection.
+              </p>
+            </article>
+            <article className="bg-surface rounded-2xl p-5 border border-line space-y-2">
+              <h3 className="text-sm font-bold text-fg">3. Digital Document Vault &amp; Email Expiry Alerts</h3>
+              <p className="text-xs text-fg-muted leading-relaxed">
+                Save your vehicles in My Garage to receive automated 30, 14, and 7-day email reminders before VIO, FRSC, or Police stops catch you off guard—plus 24/7 access to your certificates in the Digital Document Vault.
+              </p>
+            </article>
+          </div>
+
+          <div className="bg-surface rounded-3xl p-6 sm:p-8 border border-line space-y-4">
+            <h3 className="text-lg font-extrabold text-fg">Frequently Asked Questions (Vehicle Papers, Permits &amp; Trackers in Nigeria)</h3>
+            <div className="divide-y divide-line text-sm">
+              <details className="py-3 group">
+                <summary className="font-bold text-fg cursor-pointer list-none flex items-center justify-between">
+                  <span>How are Vehicle License and Roadworthiness prices calculated on Qozob?</span>
+                  <ChevronRight className="w-4 h-4 text-fg-muted transition-transform group-open:rotate-90" />
+                </summary>
+                <p className="text-xs text-fg-muted mt-2 leading-relaxed">
+                  Statutory licensing authorities in Lagos, Abuja (FCT), Ogun, Rivers, and across Nigeria price renewals by vehicle category and engine capacity. When you choose your vehicle make and model on Qozob, our system automatically selects the matching tier (e.g. Saloon ≤1.8L vs Saloon 2.0L+ vs SUV/Pickup vs Bus vs Heavy-Duty Truck) and applies your state’s official rate.
+                </p>
+              </details>
+              <details className="py-3 group">
+                <summary className="font-bold text-fg cursor-pointer list-none flex items-center justify-between">
+                  <span>What is the Annual Proof of Ownership Certificate (POC) renewal?</span>
+                  <ChevronRight className="w-4 h-4 text-fg-muted transition-transform group-open:rotate-90" />
+                </summary>
+                <p className="text-xs text-fg-muted mt-2 leading-relaxed">
+                  Mandated by the Joint Tax Board (JTB) and state motor registries, the annual Proof of Ownership Certificate (POC) verifies legal title of a motor vehicle on the national database and is renewed alongside your annual Vehicle License.
+                </p>
+              </details>
+              <details className="py-3 group">
+                <summary className="font-bold text-fg cursor-pointer list-none flex items-center justify-between">
+                  <span>Can I order Customised / Fancy Number Plates, Learner’s Permits, or Haulage Permits?</span>
+                  <ChevronRight className="w-4 h-4 text-fg-muted transition-transform group-open:rotate-90" />
+                </summary>
+                <p className="text-xs text-fg-muted mt-2 leading-relaxed">
+                  Yes. Qozob processes official JTB/FRSC Customised (Fancy) Number Plates, lost/damaged number plate replacements, FRSC 3-month Learner’s Permits, Nigerian Driver’s License renewals, Police CMRIS &amp; Tinted Glass Permits, Commercial Hackney/Haulage permits for trucks and buses, and Dispatch Rider Cards for delivery motorcycles.
+                </p>
+              </details>
+              <details className="py-3 group">
+                <summary className="font-bold text-fg cursor-pointer list-none flex items-center justify-between">
+                  <span>How do automated expiry reminders and the Digital Document Vault work?</span>
+                  <ChevronRight className="w-4 h-4 text-fg-muted transition-transform group-open:rotate-90" />
+                </summary>
+                <p className="text-xs text-fg-muted mt-2 leading-relaxed">
+                  Once you add your vehicle in My Garage, Qozob monitors your Insurance, Vehicle License, Roadworthiness, POC, and Hackney Permit expiry dates and emails you 30, 14, and 7 days before expiration with a 1-click renewal link. All renewed certificates and uploaded scans are kept in your encrypted Digital Document Vault for instant inspection.
+                </p>
+              </details>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Global Footer */}
