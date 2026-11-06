@@ -45,6 +45,9 @@ const BRAND_RULES: BrandRule[] = [
   { match: includes("pinnacle"), logoUrl: "/logos/pinnacle.png", color: "#b12025", label: "Pinnacle" },
 ];
 
+/** Known brand names, A→Z, for pick-lists (plus "Independent" for unbranded stations). */
+export const BRAND_LABELS: string[] = [...new Set(BRAND_RULES.map((r) => r.label))].sort((a, b) => a.localeCompare(b));
+
 /** Real brand name for reports and filters ("Independent" when no known brand matches). */
 export function brandName(name: string | null | undefined): string {
   const lower = (name || "").toLowerCase();

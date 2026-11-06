@@ -10,7 +10,8 @@ import { safeNext } from '@/lib/roles';
 import { ui, cx } from '@/lib/ui';
 import { MAILING_CONSENT_TEXT } from '@/lib/mailingConsent';
 import { PhoneField } from '@/components/PhoneField';
-import { NIGERIAN_STATES, stateLabel, joinPhone } from '@/lib/nigeria';
+import { LocationFields } from '@/components/forms/LocationFields';
+import { joinPhone, dialCodeFor } from '@/lib/nigeria';
 
 const ROLE_OPTIONS = [
   {
@@ -104,6 +105,7 @@ function SignupContent() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [state, setState] = useState("");
+  const [lga, setLga] = useState("");
   const [country, setCountry] = useState("Nigeria");
   const [wantsEmails, setWantsEmails] = useState(false); // must start unticked (NDPA consent rules)
 
@@ -117,6 +119,12 @@ function SignupContent() {
     e.preventDefault();
     setLoading(true);
     setErrorMsg("");
+
+    if (!country.trim() || !state.trim()) {
+      setErrorMsg(isNigeria ? "Please choose your state." : "Please choose your country and enter your region or state.");
+      setLoading(false);
+      return;
+    }
 
     if (role === 'Manager' && (!companyName || !cacFile)) {
       setErrorMsg("Station owners must provide a registered company name and CAC certificate.");
@@ -146,6 +154,7 @@ function SignupContent() {
             full_phone: fullPhone,
             address: address,
             state: state,
+            lga: lga || null,
             country: country,
             company_name: role === 'Manager' ? companyName : null,
           }
@@ -372,24 +381,19 @@ function SignupContent() {
           </div>
         </Section>
 
-        {/* LOCATION DETAILS */}
+        {/* LOCATION DETAILS: country → state → LGA (each list follows the one before) */}
         <Section title="Location">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="min-w-0">
-              <label htmlFor="country" className={ui.label}>Country</label>
-              <input id="country" type="text" autoComplete="country-name" required value={country} onChange={(e) => setCountry(e.target.value)} className={ui.input} placeholder="Nigeria" />
-            </div>
-            <div className="min-w-0">
-              <label htmlFor="state" className={ui.label}>State</label>
-              {isNigeria ? (
-                <select id="state" required value={state} onChange={(e) => setState(e.target.value)} className={ui.select}>
-                  <option value="" disabled>Choose your state</option>
-                  {NIGERIAN_STATES.map((s) => <option key={s} value={s}>{stateLabel(s)}</option>)}
-                </select>
-              ) : (
-                <input id="state" type="text" autoComplete="address-level1" required value={state} onChange={(e) => setState(e.target.value)} className={ui.input} placeholder="State / region" />
-              )}
-            </div>
+          <LocationFields
+            idPrefix="su"
+            value={{ country, state, lga }}
+            onChange={v => { setCountry(v.country); setState(v.state); setLga(v.lga); }}
+            showCountry
+            showLga
+            required={{ country: true, state: true }}
+            onCountryChange={code => { const d = dialCodeFor(code); if (d) setPhoneCode(d); }}
+            className="md:grid-cols-3 gap-4"
+          />
+          <div className="grid grid-cols-1 gap-4 mt-4">
             <div className="min-w-0">
               <label htmlFor="address" className={ui.label}>Address <span className="font-normal text-fg-subtle">(optional)</span></label>
               <input id="address" type="text" autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)} className={ui.input} />

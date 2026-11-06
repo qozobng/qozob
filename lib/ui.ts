@@ -27,7 +27,7 @@ export const ui = {
   inputWithIcon: 'pl-11',
   select:
     'block w-full h-12 px-4 rounded-xl bg-surface border border-line-strong text-fg text-sm outline-none cursor-pointer ' +
-    'transition-colors focus:border-primary focus:ring-4 focus:ring-primary/20',
+    'transition-colors focus:border-primary focus:ring-4 focus:ring-primary/20 disabled:opacity-60 disabled:cursor-not-allowed',
   file:
     'block w-full text-sm text-fg-muted rounded-xl border border-line-strong bg-surface p-1.5 cursor-pointer ' +
     'file:mr-3 file:h-8 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-on-primary hover:file:bg-primary-hover',

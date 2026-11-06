@@ -14,11 +14,15 @@ import posthog from 'posthog-js';
 import { Wordmark } from '@/components/Wordmark';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { PhoneField } from '@/components/PhoneField';
-import { NIGERIAN_STATES, joinPhone } from '@/lib/nigeria';
+import { NIGERIAN_STATES, joinPhone, normaliseState } from '@/lib/nigeria';
+import { lgasOf } from '@/lib/nigeriaLgas';
 import { splitPhone } from '@/lib/profile';
 import { loadRegions, countryCodeFromName, type Region } from '@/lib/regions';
-import { ServiceCategory } from '@/types/services';
-import { submitServiceRequest } from '@/lib/services';
+import { ServiceCategory, type UserVehicle } from '@/types/services';
+import { submitServiceRequest, fetchUserVehicles } from '@/lib/services';
+import { VehicleFields, EMPTY_VEHICLE, normaliseVehicle, type VehicleValue } from '@/components/forms/VehicleFields';
+import { LocationFields } from '@/components/forms/LocationFields';
+import { formatPlate } from '@/lib/vehicles';
 import { loadServiceCatalog, effectivePrice, hasStatePrice, FALLBACK_CATALOG, type CatalogItem } from '@/lib/servicePricing';
 import { formatMoney } from '@/lib/currency';
 import { cx, ui } from '@/lib/ui';
@@ -44,9 +48,9 @@ export default function ServicesPage() {
   const [state, setState] = useState('Lagos');
   const [lga, setLga] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [vehicleMake, setVehicleMake] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [vehicleYear, setVehicleYear] = useState('');
+  const [vehicle, setVehicle] = useState<VehicleValue>(EMPTY_VEHICLE);
+  const [garage, setGarage] = useState<UserVehicle[]>([]);
+  const [garagePick, setGaragePick] = useState('');
   const [plateNumber, setPlateNumber] = useState('');
   const [chassisNumber, setChassisNumber] = useState('');
   const [voucherCode, setVoucherCode] = useState('');
@@ -64,8 +68,13 @@ export default function ServicesPage() {
   const outsideNigeria = !!userCountry && userCountry !== 'NG';
   const userCountryName = userCountry ? (regions[userCountry]?.name || userCountry) : '';
 
-  // Check auth user to pre-fill
+  // Check auth user to pre-fill (and honour ?tab= and ?vehicle= links from My Garage)
   useEffect(() => {
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const urlTab = params?.get('tab');
+    if (urlTab === 'tracker' || urlTab === 'fleet' || urlTab === 'papers') setActiveTab(urlTab);
+    const urlVehicle = params?.get('vehicle') || '';
+
     supabase.auth.getUser().then(({ data }) => {
       if (data?.user) {
         setUser(data.user);
@@ -79,9 +88,37 @@ export default function ServicesPage() {
           setPhoneCode(code);
           setPhoneNum(national);
         }
+        // Profile state/LGA as the starting location (still changeable)
+        const st = normaliseState(meta.state);
+        if (st) {
+          setState(st);
+          if (meta.lga && lgasOf(st).includes(String(meta.lga))) setLga(String(meta.lga));
+        }
+        // Cars saved in My Garage can be picked instead of re-entering them
+        fetchUserVehicles(supabase, data.user.id).then(list => {
+          setGarage(list);
+          if (urlVehicle) {
+            const g = list.find(x => x.id === urlVehicle);
+            if (g) {
+              setGaragePick(g.id);
+              setVehicle(normaliseVehicle({ type: (g.vehicle_type || '') as VehicleValue['type'], make: g.vehicle_make || '', model: g.vehicle_model || '', year: g.vehicle_year || '', colour: g.color || '' }));
+              setPlateNumber(g.plate_number || '');
+              if (g.vehicle_usage === 'private' || g.vehicle_usage === 'commercial') setVehicleUsage(g.vehicle_usage);
+            }
+          }
+        });
       }
     });
   }, [supabase]);
+
+  const pickGarageVehicle = (id: string) => {
+    setGaragePick(id);
+    const g = garage.find(x => x.id === id);
+    if (!g) return;
+    setVehicle(normaliseVehicle({ type: (g.vehicle_type || '') as VehicleValue['type'], make: g.vehicle_make || '', model: g.vehicle_model || '', year: g.vehicle_year || '', colour: g.color || '' }));
+    setPlateNumber(g.plate_number || '');
+    if (g.vehicle_usage === 'private' || g.vehicle_usage === 'commercial') setVehicleUsage(g.vehicle_usage);
+  };
 
   // Live price list (set by admins in Admin → Auto services → Prices); the built-in list is used until it loads
   const [catalog, setCatalog] = useState<CatalogItem[]>(FALLBACK_CATALOG);
@@ -184,13 +221,15 @@ export default function ServicesPage() {
       state: state,
       lga: lga || null,
       delivery_address: deliveryAddress || null,
-      vehicle_make: vehicleMake || null,
-      vehicle_model: vehicleModel || null,
-      vehicle_year: vehicleYear || null,
+      vehicle_make: vehicle.make.trim() || null,
+      vehicle_model: vehicle.model.trim() || null,
+      vehicle_year: vehicle.year || null,
       plate_number: plateNumber || null,
       chassis_number: chassisNumber || null,
       details: {
         vehicle_usage: vehicleUsage,
+        vehicle_type: vehicle.type || null,
+        vehicle_colour: vehicle.colour || null,
         selected_item_ids: lineItems.map(i => i.id),
         line_items: lineItems.map(i => ({ id: i.id, title: i.title, price: effectivePrice(i, vehicleUsage, state) })),
         priced_for_state: state,
@@ -705,33 +744,27 @@ export default function ServicesPage() {
                     />
                   </div>
 
-                  {/* Vehicle Details */}
-                  <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3">
+                  {/* Vehicle Details (pick-lists; a saved garage car fills them in) */}
+                  {garage.length > 0 && (
                     <div>
-                      <label className={ui.label} htmlFor="srv-make">Make & Model</label>
-                      <input
-                        id="srv-make"
-                        type="text"
-                        placeholder="e.g. Toyota Corolla"
-                        value={vehicleMake}
-                        onChange={e => setVehicleMake(e.target.value)}
-                        className={ui.input}
-                      />
+                      <label className={ui.label} htmlFor="srv-garage">Use a vehicle from My Garage</label>
+                      <select id="srv-garage" value={garagePick} onChange={e => pickGarageVehicle(e.target.value)} className={ui.select}>
+                        <option value="">Enter a different vehicle</option>
+                        {garage.map(g => (
+                          <option key={g.id} value={g.id}>
+                            {g.plate_number} · {[g.vehicle_make, g.vehicle_model, g.vehicle_year].filter(Boolean).join(' ') || 'Vehicle'}
+                          </option>
+                        ))}
+                      </select>
                     </div>
-                    <div>
-                      <label className={ui.label} htmlFor="srv-year">Year</label>
-                      <input
-                        id="srv-year"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder="2015"
-                        value={vehicleYear}
-                        onChange={e => setVehicleYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                        className={ui.input}
-                      />
-                    </div>
-                  </div>
+                  )}
+                  <VehicleFields
+                    idPrefix="srv"
+                    value={vehicle}
+                    onChange={v => { setVehicle(v); setGaragePick(''); }}
+                    fields={['make', 'model', 'year']}
+                    className="sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem] lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem]"
+                  />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={ui.label} htmlFor="srv-plate">Plate Number</label>
@@ -740,8 +773,8 @@ export default function ServicesPage() {
                         type="text"
                         placeholder="e.g. APP-123-XY"
                         value={plateNumber}
-                        onChange={e => setPlateNumber(e.target.value.toUpperCase())}
-                        className={ui.input}
+                        onChange={e => { setPlateNumber(formatPlate(e.target.value)); setGaragePick(''); }}
+                        className={cx(ui.input, 'font-mono uppercase')}
                       />
                     </div>
                     <div>
@@ -751,12 +784,16 @@ export default function ServicesPage() {
                       <input
                         id="srv-chassis"
                         type="text"
-                        maxLength={20}
+                        maxLength={17}
                         placeholder="17 characters"
                         value={chassisNumber}
-                        onChange={e => setChassisNumber(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                        className={ui.input}
+                        onChange={e => setChassisNumber(e.target.value.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '').slice(0, 17))}
+                        className={cx(ui.input, 'font-mono uppercase')}
+                        aria-describedby="srv-chassis-hint"
                       />
+                      {chassisNumber && chassisNumber.length !== 17 && (
+                        <p id="srv-chassis-hint" className={ui.hint}>{chassisNumber.length}/17 characters (letters I, O and Q are never used in a VIN)</p>
+                      )}
                     </div>
                   </div>
 
@@ -775,33 +812,14 @@ export default function ServicesPage() {
                     </div>
                   )}
 
-                  {/* Delivery / State */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={ui.label} htmlFor="srv-state">State *</label>
-                      <select
-                        id="srv-state"
-                        value={state}
-                        onChange={e => setState(e.target.value)}
-                        className={ui.select}
-                      >
-                        {NIGERIAN_STATES.map(st => (
-                          <option key={st} value={st}>{st}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={ui.label} htmlFor="srv-lga">LGA / Area</label>
-                      <input
-                        id="srv-lga"
-                        type="text"
-                        placeholder="e.g. Ikeja, Lekki"
-                        value={lga}
-                        onChange={e => setLga(e.target.value)}
-                        className={ui.input}
-                      />
-                    </div>
-                  </div>
+                  {/* Delivery: State → LGA (LGA list follows the state; prices follow the state too) */}
+                  <LocationFields
+                    idPrefix="srv"
+                    value={{ country: 'Nigeria', state, lga }}
+                    onChange={v => { setState(v.state || state); setLga(v.lga); }}
+                    required={{ state: true }}
+                    labels={{ state: 'State', lga: 'LGA' }}
+                  />
 
                   <div>
                     <label className={ui.label} htmlFor="srv-addr">

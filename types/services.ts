@@ -59,6 +59,9 @@ export interface UserVehicle {
   vehicle_model?: string | null;
   vehicle_year?: string | null;
   color?: string | null;
+  /** 20261107: body type from lib/vehicles.ts, and private/commercial use */
+  vehicle_type?: string | null;
+  vehicle_usage?: 'private' | 'commercial' | null;
   insurance_type?: 'third_party' | 'comprehensive' | 'none';
   insurance_expiry?: string | null;
   license_expiry?: string | null;

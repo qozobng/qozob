@@ -23,6 +23,7 @@ import { formatMoney, currencyLabel } from '@/lib/currency';
 import { flagEmoji, loadRegions, loadRewardPrograms } from '@/lib/regions';
 import { downloadXlsx } from '@/lib/xlsx';
 import { isMissingFunction } from '@/lib/fetchAll';
+import { isoCountries, isoCurrencies, AREA_LABELS } from '@/lib/isoLists';
 
 const supabase = createClient();
 
@@ -358,7 +359,7 @@ function RegionForm({ initial, onClose, onSaved }: { initial: Partial<RegionRow>
   const [code, setCode] = useState(initial.country_code || '');
   const [name, setName] = useState(initial.name || '');
   const [cur, setCur] = useState(initial.default_currency || '');
-  const [extra, setExtra] = useState((initial.currencies || []).join(', '));
+  const [extras, setExtras] = useState<string[]>(initial.currencies || []);
   const [aliases, setAliases] = useState((initial.aliases || []).join(', '));
   const [min, setMin] = useState(initial.price_min != null ? String(initial.price_min) : '');
   const [max, setMax] = useState(initial.price_max != null ? String(initial.price_max) : '');
@@ -366,17 +367,22 @@ function RegionForm({ initial, onClose, onSaved }: { initial: Partial<RegionRow>
   const [area, setArea] = useState(initial.area_label || 'District');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Pick-lists from the browser's ISO data (falls back to typing if unavailable)
+  const countries = useMemo(() => isoCountries(), []);
+  const currencies = useMemo(() => isoCurrencies(), []);
+  const currencyName = (c: string) => currencies.find(x => x.code === c)?.name ?? c;
+  const areaOptions = AREA_LABELS.includes(area) ? AREA_LABELS : [area, ...AREA_LABELS];
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!/^[A-Za-z]{2}$/.test(code.trim())) return setError('Use the 2-letter country code (for example GH).');
-    if (!/^[A-Za-z]{3}$/.test(cur.trim())) return setError('Use the 3-letter currency code (for example GHS).');
+    if (!/^[A-Za-z]{2}$/.test(code.trim())) return setError('Choose the country.');
+    if (!/^[A-Za-z]{3}$/.test(cur.trim())) return setError('Choose the main currency.');
     if ((min.trim() === '') !== (max.trim() === '')) return setError('Enter both the lowest and highest usual price, or leave both empty.');
     setBusy(true);
     const { data, error: err } = await supabase.rpc('admin_upsert_region', {
       p_code: code.trim(), p_name: name.trim(), p_default_currency: cur.trim(),
-      p_currencies: extra.split(/[,\s]+/).map(s => s.trim()).filter(Boolean),
+      p_currencies: extras.filter(c => c !== cur),
       p_aliases: aliases.split(',').map(s => s.trim()).filter(Boolean),
       p_price_min: num(min), p_price_max: num(max), p_is_open: open, p_area_label: area.trim() || 'District',
     });
@@ -394,25 +400,50 @@ function RegionForm({ initial, onClose, onSaved }: { initial: Partial<RegionRow>
     <Modal title={isNew ? 'Add a country' : `Edit ${initial.name}`} onClose={onClose}>
       <form onSubmit={save} className="mt-5 space-y-4">
         <div className="grid grid-cols-3 gap-3">
-          <div>
-            <label htmlFor="rg-code" className={ui.label}>Code</label>
-            <input id="rg-code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} maxLength={2} disabled={!isNew} className={cx(ui.input, 'uppercase')} placeholder="GH" required />
+          <div className="col-span-3 sm:col-span-1">
+            <label htmlFor="rg-code" className={ui.label}>Country</label>
+            {countries.length > 0 ? (
+              <select id="rg-code" value={code} disabled={!isNew} required className={ui.select}
+                onChange={e => { const c = countries.find(x => x.code === e.target.value); setCode(e.target.value); if (c) setName(c.name); }}>
+                <option value="" disabled>Choose…</option>
+                {code && !countries.some(c => c.code === code) && <option value={code}>{code}</option>}
+                {countries.map(c => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}
+              </select>
+            ) : (
+              <input id="rg-code" value={code} onChange={e => setCode(e.target.value.toUpperCase().replace(/[^A-Z]/g, ''))} maxLength={2} disabled={!isNew} className={cx(ui.input, 'uppercase')} placeholder="GH" required />
+            )}
           </div>
-          <div className="col-span-2">
-            <label htmlFor="rg-name" className={ui.label}>Country name</label>
-            <input id="rg-name" value={name} onChange={e => setName(e.target.value)} className={ui.input} placeholder="Ghana" required />
+          <div className="col-span-3 sm:col-span-2">
+            <label htmlFor="rg-name" className={ui.label}>Name shown on Qozob</label>
+            <input id="rg-name" value={name} onChange={e => setName(e.target.value)} className={ui.input} placeholder="Ghana" required maxLength={60} />
+            <p className={ui.hint}>Filled in from the country; adjust if needed (e.g. &quot;The Gambia&quot;).</p>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="rg-cur" className={ui.label}>Main currency</label>
-            <input id="rg-cur" value={cur} onChange={e => setCur(e.target.value.toUpperCase())} maxLength={3} className={cx(ui.input, 'uppercase')} placeholder="GHS" required />
-            <p className={ui.hint}>3-letter ISO code.</p>
+            <select id="rg-cur" value={cur} onChange={e => { setCur(e.target.value); setExtras(x => x.filter(c => c !== e.target.value)); }} className={ui.select} required>
+              <option value="" disabled>Choose…</option>
+              {cur && !currencies.some(c => c.code === cur) && <option value={cur}>{cur}</option>}
+              {currencies.map(c => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
+            </select>
           </div>
           <div>
             <label htmlFor="rg-extra" className={ui.label}>Extra currencies</label>
-            <input id="rg-extra" value={extra} onChange={e => setExtra(e.target.value.toUpperCase())} className={cx(ui.input, 'uppercase')} placeholder="USD" />
-            <p className={ui.hint}>Owners may switch to these.</p>
+            <select id="rg-extra" value="" onChange={e => { const v = e.target.value; if (v && v !== cur) setExtras(x => (x.includes(v) ? x : [...x, v])); }} className={ui.select}>
+              <option value="">Add a currency…</option>
+              {currencies.filter(c => c.code !== cur && !extras.includes(c.code)).map(c => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
+            </select>
+            {extras.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {extras.map(c => (
+                  <button key={c} type="button" onClick={() => setExtras(x => x.filter(y => y !== c))} title={`Remove ${currencyName(c)}`}
+                    className="inline-flex items-center gap-1 rounded-full border border-line bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-fg hover:border-danger-line hover:text-danger">
+                    {c} <X className="w-3 h-3" aria-hidden />
+                  </button>
+                ))}
+              </div>
+            ) : <p className={ui.hint}>Owners may switch to these.</p>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -429,7 +460,9 @@ function RegionForm({ initial, onClose, onSaved }: { initial: Partial<RegionRow>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="rg-area" className={ui.label}>Local areas are called</label>
-            <input id="rg-area" value={area} onChange={e => setArea(e.target.value)} className={ui.input} placeholder="District" />
+            <select id="rg-area" value={area} onChange={e => setArea(e.target.value)} className={ui.select}>
+              {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
           </div>
           <div>
             <label htmlFor="rg-alias" className={ui.label}>Other spellings</label>

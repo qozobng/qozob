@@ -3,15 +3,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Car, Plus, Calendar, ShieldCheck, Radio, AlertTriangle,
-  CheckCircle2, Trash2, Edit2, Loader2, ArrowRight, Clock,
-  FileText, Sparkles
+  Car, Plus, Radio, AlertTriangle,
+  CheckCircle2, Trash2, Loader2, ArrowRight, Clock, Sparkles
 } from 'lucide-react';
 
 import { createClient } from '@/utils/supabase/client';
 import { UserVehicle } from '@/types/services';
 import { fetchUserVehicles, saveUserVehicle, deleteUserVehicle } from '@/lib/services';
 import { cx, ui } from '@/lib/ui';
+import { VehicleFields, EMPTY_VEHICLE, type VehicleValue } from '@/components/forms/VehicleFields';
+import { formatPlate, vehicleTypeLabel } from '@/lib/vehicles';
 
 function daysUntil(dateString?: string | null): number | null {
   if (!dateString) return null;
@@ -58,13 +59,11 @@ export function MyGarage({ user }: { user: any }) {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Form State
+  // Form State (pick-lists: type → make → model, year, colour)
   const [plateNumber, setPlateNumber] = useState('');
-  const [vehicleMake, setVehicleMake] = useState('');
-  const [vehicleModel, setVehicleModel] = useState('');
-  const [vehicleYear, setVehicleYear] = useState('');
-  const [color, setColor] = useState('');
-  const [insuranceType, setInsuranceType] = useState<'third_party' | 'comprehensive'>('third_party');
+  const [vehicle, setVehicle] = useState<VehicleValue>(EMPTY_VEHICLE);
+  const [usage, setUsage] = useState<'private' | 'commercial'>('private');
+  const [insuranceType, setInsuranceType] = useState<'third_party' | 'comprehensive' | 'none'>('third_party');
   const [insuranceExpiry, setInsuranceExpiry] = useState('');
   const [licenseExpiry, setLicenseExpiry] = useState('');
   const [roadworthinessExpiry, setRoadworthinessExpiry] = useState('');
@@ -88,6 +87,10 @@ export function MyGarage({ user }: { user: any }) {
       setErrorMsg('Please enter a vehicle plate number.');
       return;
     }
+    if (!vehicle.make.trim()) {
+      setErrorMsg('Please choose the make of the vehicle.');
+      return;
+    }
 
     setSaving(true);
     setErrorMsg(null);
@@ -95,10 +98,12 @@ export function MyGarage({ user }: { user: any }) {
     const { error } = await saveUserVehicle(supabase, {
       user_id: user.id,
       plate_number: plateNumber,
-      vehicle_make: vehicleMake || null,
-      vehicle_model: vehicleModel || null,
-      vehicle_year: vehicleYear || null,
-      color: color || null,
+      vehicle_make: vehicle.make.trim() || null,
+      vehicle_model: vehicle.model.trim() || null,
+      vehicle_year: vehicle.year || null,
+      color: vehicle.colour || null,
+      vehicle_type: vehicle.type || null,
+      vehicle_usage: usage,
       insurance_type: insuranceType,
       insurance_expiry: insuranceExpiry || null,
       license_expiry: licenseExpiry || null,
@@ -114,10 +119,9 @@ export function MyGarage({ user }: { user: any }) {
       setShowAddModal(false);
       // Reset form
       setPlateNumber('');
-      setVehicleMake('');
-      setVehicleModel('');
-      setVehicleYear('');
-      setColor('');
+      setVehicle(EMPTY_VEHICLE);
+      setUsage('private');
+      setInsuranceType('third_party');
       setInsuranceExpiry('');
       setLicenseExpiry('');
       setRoadworthinessExpiry('');
@@ -199,6 +203,11 @@ export function MyGarage({ user }: { user: any }) {
                       <p className="text-sm font-bold text-fg mt-1.5">
                         {v.vehicle_make || ''} {v.vehicle_model || ''} {v.vehicle_year ? `(${v.vehicle_year})` : ''}
                       </p>
+                      {(v.vehicle_type || v.color || v.vehicle_usage === 'commercial') && (
+                        <p className="text-[11px] text-fg-muted mt-0.5">
+                          {[vehicleTypeLabel(v.vehicle_type), v.color, v.vehicle_usage === 'commercial' ? 'Commercial' : null].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -231,7 +240,7 @@ export function MyGarage({ user }: { user: any }) {
                         </span>
                       ) : (
                         <Link
-                          href="/services"
+                          href={`/services?tab=tracker&vehicle=${encodeURIComponent(v.id)}`}
                           className="inline-flex items-center gap-1 text-xs font-bold text-accent hover:underline"
                         >
                           Book 4G Tracker →
@@ -244,7 +253,7 @@ export function MyGarage({ user }: { user: any }) {
                 <div className="pt-2">
                   {hasUrgentExpiry ? (
                     <Link
-                      href="/services"
+                      href={`/services?vehicle=${encodeURIComponent(v.id)}`}
                       className={cx(ui.btn, ui.btnAccent, 'w-full py-2 text-xs font-bold justify-center')}
                     >
                       <Sparkles className="w-3.5 h-3.5 mr-1.5" />
@@ -252,7 +261,7 @@ export function MyGarage({ user }: { user: any }) {
                     </Link>
                   ) : (
                     <Link
-                      href="/services"
+                      href={`/services?vehicle=${encodeURIComponent(v.id)}`}
                       className={cx(ui.btn, 'w-full py-2 text-xs font-semibold justify-center border border-line bg-surface-2 hover:bg-surface-3')}
                     >
                       <span>Order Additional Services</span>
@@ -269,10 +278,10 @@ export function MyGarage({ user }: { user: any }) {
       {/* Add Vehicle Modal */}
       {showAddModal && (
         <div className={cx(ui.overlay, 'z-50')} onClick={() => setShowAddModal(false)}>
-          <div className={cx(ui.modal, 'max-w-lg p-6')} onClick={e => e.stopPropagation()}>
+          <div className={cx(ui.modal, 'max-w-lg p-6 max-h-[92vh] overflow-y-auto')} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Add vehicle">
             <h3 className="text-lg font-bold text-fg mb-1">Add Vehicle to My Garage</h3>
             <p className="text-xs text-fg-muted mb-4">
-              Enter your vehicle details to track expiry dates and unlock 1-click renewal.
+              Pick your vehicle from the lists to track expiry dates and unlock 1-click renewal.
             </p>
 
             {errorMsg && (
@@ -282,54 +291,48 @@ export function MyGarage({ user }: { user: any }) {
             )}
 
             <form onSubmit={handleSaveVehicle} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={ui.label} htmlFor="v-plate">Plate Number *</label>
-                  <input
-                    id="v-plate"
-                    type="text"
-                    required
-                    placeholder="e.g. KSF-123-AA"
-                    value={plateNumber}
-                    onChange={e => setPlateNumber(e.target.value.toUpperCase())}
-                    className={ui.input}
-                  />
-                </div>
-                <div>
-                  <label className={ui.label} htmlFor="v-make">Make</label>
-                  <input
-                    id="v-make"
-                    type="text"
-                    placeholder="e.g. Toyota, Honda"
-                    value={vehicleMake}
-                    onChange={e => setVehicleMake(e.target.value)}
-                    className={ui.input}
-                  />
-                </div>
+              <div>
+                <label className={ui.label} htmlFor="v-plate">Plate Number *</label>
+                <input
+                  id="v-plate"
+                  type="text"
+                  required
+                  placeholder="e.g. KSF-123-AA"
+                  value={plateNumber}
+                  onChange={e => setPlateNumber(formatPlate(e.target.value))}
+                  className={cx(ui.input, 'font-mono uppercase tracking-wide')}
+                  autoComplete="off"
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <VehicleFields
+                idPrefix="v"
+                value={vehicle}
+                onChange={setVehicle}
+                fields={['type', 'make', 'model', 'year', 'colour']}
+                required={['make']}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className={ui.label} htmlFor="v-model">Model</label>
-                  <input
-                    id="v-model"
-                    type="text"
-                    placeholder="e.g. Corolla, Civic"
-                    value={vehicleModel}
-                    onChange={e => setVehicleModel(e.target.value)}
-                    className={ui.input}
-                  />
+                  <span className={ui.label}>Used as</span>
+                  <div className="flex p-1 rounded-xl bg-surface-2 border border-line h-12" role="radiogroup" aria-label="Vehicle use">
+                    {(['private', 'commercial'] as const).map(u => (
+                      <button key={u} type="button" role="radio" aria-checked={usage === u} onClick={() => setUsage(u)}
+                        className={cx('flex-1 rounded-lg text-xs font-bold capitalize transition-colors',
+                          usage === u ? 'bg-primary text-on-primary' : 'text-fg-muted hover:text-fg')}>
+                        {u}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div>
-                  <label className={ui.label} htmlFor="v-year">Year</label>
-                  <input
-                    id="v-year"
-                    type="text"
-                    placeholder="e.g. 2015"
-                    value={vehicleYear}
-                    onChange={e => setVehicleYear(e.target.value)}
-                    className={ui.input}
-                  />
+                  <label className={ui.label} htmlFor="v-ins-type">Insurance cover</label>
+                  <select id="v-ins-type" value={insuranceType} onChange={e => setInsuranceType(e.target.value as typeof insuranceType)} className={ui.select}>
+                    <option value="third_party">Third-party</option>
+                    <option value="comprehensive">Comprehensive</option>
+                    <option value="none">No insurance yet</option>
+                  </select>
                 </div>
               </div>
 

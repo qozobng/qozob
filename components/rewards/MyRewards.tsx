@@ -17,6 +17,9 @@ import { ui, cx } from '@/lib/ui';
 import { ID_TYPES, ID_TYPES_INTL, NIGERIAN_BANKS, REASON_TEXT, money } from '@/lib/rewards';
 import { useRewardSettings } from './hooks';
 import { SITE } from '@/lib/site';
+import { PhoneField } from '@/components/PhoneField';
+import { dialCodeFor, joinPhone } from '@/lib/nigeria';
+import { splitPhone } from '@/lib/profile';
 
 interface Summary {
   coins_month: number; coins_year: number; coins_held: number; coins_total: number;
@@ -217,7 +220,7 @@ export function MyRewards() {
                     {locked ? (
                       <p className={cx(ui.body, 'pt-3 flex items-center gap-2')}><Lock className="w-4 h-4" aria-hidden /> {suspended ? 'Locked while your participation is suspended.' : 'Your ID has been verified. Contact support to change it.'}</p>
                     ) : s.key === 'phone' ? (
-                      <PhoneStep currentPhone={summary.phone} verified={summary.phone_verified} isNg={isNg} onDone={() => { setOpen(null); load(); }} />
+                      <PhoneStep currentPhone={summary.phone} verified={summary.phone_verified} isNg={isNg} countryCode={summary.country_code} onDone={() => { setOpen(null); load(); }} />
                     ) : s.key === 'id' ? (
                       <IdStep pending={idPending} isNg={isNg} onDone={() => { setOpen(null); load(); }} />
                     ) : (
@@ -395,11 +398,12 @@ function Header({ areaWord = 'LGA' }: { areaWord?: string }) {
 }
 
 // ---------------------------------------------------------------- PHONE (SMS OTP via Supabase Auth)
-function PhoneStep({ currentPhone, verified, isNg, onDone }: { currentPhone: string | null; verified: boolean; isNg: boolean; onDone: () => void }) {
+function PhoneStep({ currentPhone, verified, isNg, countryCode, onDone }: { currentPhone: string | null; verified: boolean; isNg: boolean; countryCode?: string | null; onDone: () => void }) {
   const [supabase] = useState(() => createClient());
-  const [phone, setPhone] = useState(currentPhone
-    ? (isNg ? `0${String(currentPhone).replace(/^\+?234/, '')}` : `+${String(currentPhone).replace(/^\+/, '')}`)
-    : '');
+  // Dial-code picker + number (no typing of country codes by hand)
+  const initial = currentPhone ? splitPhone(`+${String(currentPhone).replace(/^\+/, '')}`) : null;
+  const [dial, setDial] = useState(initial?.code ?? (dialCodeFor(countryCode) || '+234'));
+  const [phone, setPhone] = useState(initial?.national ?? '');
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -407,8 +411,9 @@ function PhoneStep({ currentPhone, verified, isNg, onDone }: { currentPhone: str
 
   const send = async () => {
     setError('');
-    const e164 = isNg ? normaliseNgPhone(phone) : normaliseIntlPhone(phone);
-    if (!e164) return setError(isNg ? 'Enter a Nigerian mobile number, for example 0803 123 4567.' : 'Enter your mobile number with the country code, for example +233 24 123 4567.');
+    const joined = joinPhone(dial, phone);
+    const e164 = dial === '+234' ? normaliseNgPhone(joined) : normaliseIntlPhone(joined);
+    if (!e164) return setError(dial === '+234' ? 'Enter a Nigerian mobile number, for example 803 123 4567.' : 'Enter your mobile number without the country code, for example 24 123 4567.');
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ phone: e164 });
     setBusy(false);
@@ -440,7 +445,7 @@ function PhoneStep({ currentPhone, verified, isNg, onDone }: { currentPhone: str
         <>
           <div>
             <label htmlFor="rw-phone" className={ui.label}>Mobile number</label>
-            <input id="rw-phone" type="tel" inputMode="tel" autoComplete="tel" className={ui.input} value={phone} onChange={e => setPhone(e.target.value)} placeholder={isNg ? '0803 123 4567' : '+233 24 123 4567'} />
+            <PhoneField id="rw-phone" code={dial} onCodeChange={setDial} value={phone} onChange={setPhone} placeholder={dial === '+234' ? '803 123 4567' : '24 123 4567'} />
             <p className={ui.hint}>We only use this to confirm it is really you and to contact you about prizes. No marketing SMS.</p>
           </div>
           <button type="button" onClick={send} disabled={busy} className={cx(ui.btn, ui.btnMd, ui.btnPrimary)}>{busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : 'Send code'}</button>

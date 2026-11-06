@@ -27,14 +27,53 @@ export function normaliseState(input: string | null | undefined): NigerianState 
   return NIGERIAN_STATES.find(st => st.toLowerCase() === s) ?? null;
 }
 
-export interface DialCode { code: string; label: string }
+export interface DialCode { code: string; label: string; country: string }
 
+/** Dial codes for every Qozob country (+ US/UK for the diaspora). `label` is shown in the picker. */
 export const DIAL_CODES: DialCode[] = [
-  { code: '+234', label: 'NG' },
-  { code: '+233', label: 'GH' },
-  { code: '+1', label: 'US' },
-  { code: '+44', label: 'UK' },
+  { code: '+234', label: 'NG', country: 'NG' },
+  { code: '+233', label: 'GH', country: 'GH' },
+  { code: '+229', label: 'BJ', country: 'BJ' },
+  { code: '+228', label: 'TG', country: 'TG' },
+  { code: '+225', label: 'CI', country: 'CI' },
+  { code: '+221', label: 'SN', country: 'SN' },
+  { code: '+226', label: 'BF', country: 'BF' },
+  { code: '+223', label: 'ML', country: 'ML' },
+  { code: '+227', label: 'NE', country: 'NE' },
+  { code: '+237', label: 'CM', country: 'CM' },
+  { code: '+235', label: 'TD', country: 'TD' },
+  { code: '+241', label: 'GA', country: 'GA' },
+  { code: '+242', label: 'CG', country: 'CG' },
+  { code: '+243', label: 'CD', country: 'CD' },
+  { code: '+231', label: 'LR', country: 'LR' },
+  { code: '+232', label: 'SL', country: 'SL' },
+  { code: '+220', label: 'GM', country: 'GM' },
+  { code: '+254', label: 'KE', country: 'KE' },
+  { code: '+256', label: 'UG', country: 'UG' },
+  { code: '+255', label: 'TZ', country: 'TZ' },
+  { code: '+250', label: 'RW', country: 'RW' },
+  { code: '+251', label: 'ET', country: 'ET' },
+  { code: '+27', label: 'ZA', country: 'ZA' },
+  { code: '+260', label: 'ZM', country: 'ZM' },
+  { code: '+263', label: 'ZW', country: 'ZW' },
+  { code: '+258', label: 'MZ', country: 'MZ' },
+  { code: '+265', label: 'MW', country: 'MW' },
+  { code: '+267', label: 'BW', country: 'BW' },
+  { code: '+264', label: 'NA', country: 'NA' },
+  { code: '+244', label: 'AO', country: 'AO' },
+  { code: '+20', label: 'EG', country: 'EG' },
+  { code: '+212', label: 'MA', country: 'MA' },
+  { code: '+213', label: 'DZ', country: 'DZ' },
+  { code: '+216', label: 'TN', country: 'TN' },
+  { code: '+1', label: 'US', country: 'US' },
+  { code: '+44', label: 'UK', country: 'GB' },
 ];
+
+/** Dial code for a country code ("GH" → "+233"); null when not listed. */
+export function dialCodeFor(countryCode: string | null | undefined): string | null {
+  if (!countryCode) return null;
+  return DIAL_CODES.find(d => d.country === countryCode.toUpperCase())?.code ?? null;
+}
 
 /**
  * Joins a dial code and a national number into E.164-style text.

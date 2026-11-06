@@ -491,7 +491,16 @@ function CampaignEditor({ initial, subs, setup, onClose, onDone }: {
   }, [onClose]);
 
   const states = useMemo(() => [...new Set(subs.map(s => s.state).filter(Boolean) as string[])].sort(), [subs]);
-  const lgas = useMemo(() => [...new Set(subs.map(s => s.lga).filter(Boolean) as string[])].sort(), [subs]);
+  // LGA audience: pick a state first (optional), then one of the LGAs subscribers actually have there
+  const [audLgaState, setAudLgaState] = useState('');
+  const lgaChoices = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of subs) {
+      if (!s.lga || (audLgaState && s.state !== audLgaState)) continue;
+      counts.set(s.lga, (counts.get(s.lga) || 0) + 1);
+    }
+    return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [subs, audLgaState]);
   const audience: Audience = audType === 'all' ? { type: 'all' } : { type: audType, value: audValue.trim() };
   const recipients = useMemo(() => subs.filter(s => matchesAudience(s, audience)).length, [subs, audType, audValue]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -624,10 +633,22 @@ function CampaignEditor({ initial, subs, setup, onClose, onDone }: {
                 </div>
               )}
               {audType === 'lga' && (
-                <div>
-                  <label className={ui.label} htmlFor="m-lga">LGA</label>
-                  <input id="m-lga" list="m-lga-list" value={audValue} onChange={e => setAudValue(e.target.value)} className={ui.input} placeholder="Type an LGA" />
-                  <datalist id="m-lga-list">{lgas.map(l => <option key={l} value={l} />)}</datalist>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={ui.label} htmlFor="m-lga-state">State</label>
+                    <select id="m-lga-state" value={audLgaState} onChange={e => { setAudLgaState(e.target.value); setAudValue(''); }} className={ui.select}>
+                      <option value="">All states</option>
+                      {states.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={ui.label} htmlFor="m-lga">LGA</label>
+                    <select id="m-lga" value={audValue} onChange={e => setAudValue(e.target.value)} className={ui.select}>
+                      <option value="">Choose an LGA…</option>
+                      {audValue && !lgaChoices.some(l => l.name === audValue) && <option value={audValue}>{audValue}</option>}
+                      {lgaChoices.map(l => <option key={l.name} value={l.name}>{l.name} ({l.count})</option>)}
+                    </select>
+                  </div>
                 </div>
               )}
             </div>

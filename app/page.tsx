@@ -28,7 +28,8 @@ import { SITE } from '@/lib/site';
 import { Wordmark } from '@/components/Wordmark';
 import { AdCarousel } from '@/components/AdCarousel';
 import { JoinPrompt, JoinNudge, type JoinReason } from '@/components/JoinPrompt';
-import { normaliseState } from '@/lib/nigeria';
+import { normaliseState, joinPhone } from '@/lib/nigeria';
+import { PhoneField } from '@/components/PhoneField';
 import { SubscribeForm } from '@/components/SubscribeForm';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { ui, cx } from '@/lib/ui';
@@ -437,14 +438,19 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
   const supabase = createClient();
   const [applicantName, setApplicantName] = useState("");
   const [cacNumber, setCacNumber] = useState("");
+  const [phoneCode, setPhoneCode] = useState("+234");
   const [phone, setPhone] = useState(""); 
   const [cacFile, setCacFile] = useState<File | null>(null);
   const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
   useEscapeKey(onClose);
 
   const handleFinalSubmitClaim = async () => {
+    const fullPhone = joinPhone(phoneCode, phone);
     if (!cacFile || !applicantName || !cacNumber || !phone) {
       return alert("Please fill all required fields (*), including contact phone, and upload CAC document.");
+    }
+    if (fullPhone.replace(/\D/g, '').length < phoneCode.replace(/\D/g, '').length + 7) {
+      return alert("Please enter a valid contact phone number.");
     }
     setIsSubmittingClaim(true);
     try {
@@ -472,7 +478,7 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
         applicant_role: "Pending Owner", 
         business_reg_number: cacNumber, 
         official_email: user.email,
-        phone_number: phone, 
+        phone_number: fullPhone, 
         document_url: fileName, 
         status: 'Pending Review',
         lat: station.lat,
@@ -520,15 +526,7 @@ function ClaimStationModal({ station, onClose, onSaved }: { station: Station, on
             <label htmlFor="claim-phone" className={ui.label}>
               Contact phone <span className="text-danger" aria-hidden>*</span>
             </label>
-            <input 
-              id="claim-phone"
-              type="tel" 
-              autoComplete="tel"
-              value={phone} 
-              onChange={(e) => setPhone(e.target.value)} 
-              className={ui.input} 
-              placeholder="08012345678" 
-            />
+            <PhoneField id="claim-phone" code={phoneCode} onCodeChange={setPhoneCode} value={phone} onChange={setPhone} required placeholder="801 234 5678" />
           </div>
           
           <div>

@@ -79,52 +79,35 @@ export async function saveUserVehicle(
 ): Promise<{ data: UserVehicle | null; error: string | null }> {
   try {
     const cleanPlate = payload.plate_number.toUpperCase().replace(/\s+/g, '').trim();
-    if (payload.id) {
-      const { data, error } = await supabase
-        .from('user_vehicles')
-        .update({
-          plate_number: cleanPlate,
-          vehicle_make: payload.vehicle_make || null,
-          vehicle_model: payload.vehicle_model || null,
-          vehicle_year: payload.vehicle_year || null,
-          color: payload.color || null,
-          insurance_type: payload.insurance_type || 'third_party',
-          insurance_expiry: payload.insurance_expiry || null,
-          license_expiry: payload.license_expiry || null,
-          roadworthiness_expiry: payload.roadworthiness_expiry || null,
-          has_tracker: Boolean(payload.has_tracker),
-          notes: payload.notes || null,
-        })
-        .eq('id', payload.id)
-        .eq('user_id', payload.user_id)
-        .select('*')
-        .single();
+    const fields: Record<string, unknown> = {
+      plate_number: cleanPlate,
+      vehicle_make: payload.vehicle_make || null,
+      vehicle_model: payload.vehicle_model || null,
+      vehicle_year: payload.vehicle_year || null,
+      color: payload.color || null,
+      insurance_type: payload.insurance_type || 'third_party',
+      insurance_expiry: payload.insurance_expiry || null,
+      license_expiry: payload.license_expiry || null,
+      roadworthiness_expiry: payload.roadworthiness_expiry || null,
+      has_tracker: Boolean(payload.has_tracker),
+      notes: payload.notes || null,
+    };
+    // Added in 20261107: only sent when given, and dropped if that update isn't installed yet
+    if (payload.vehicle_type !== undefined) fields.vehicle_type = payload.vehicle_type || null;
+    if (payload.vehicle_usage !== undefined) fields.vehicle_usage = payload.vehicle_usage || 'private';
 
-      if (error) return { data: null, error: error.message };
-      return { data, error: null };
-    } else {
-      const { data, error } = await supabase
-        .from('user_vehicles')
-        .insert({
-          user_id: payload.user_id,
-          plate_number: cleanPlate,
-          vehicle_make: payload.vehicle_make || null,
-          vehicle_model: payload.vehicle_model || null,
-          vehicle_year: payload.vehicle_year || null,
-          color: payload.color || null,
-          insurance_type: payload.insurance_type || 'third_party',
-          insurance_expiry: payload.insurance_expiry || null,
-          license_expiry: payload.license_expiry || null,
-          roadworthiness_expiry: payload.roadworthiness_expiry || null,
-          has_tracker: Boolean(payload.has_tracker),
-          notes: payload.notes || null,
-        })
-        .select('*')
-        .single();
+    const run = (f: Record<string, unknown>) => (payload.id
+      ? supabase.from('user_vehicles').update(f).eq('id', payload.id).eq('user_id', payload.user_id).select('*').single()
+      : supabase.from('user_vehicles').insert({ user_id: payload.user_id, ...f }).select('*').single());
 
-      if (error) return { data: null, error: error.message };
-      return { data, error: null };
+    let { data, error } = await run(fields);
+    if (error && /vehicle_(type|usage)/.test(error.message) && /column|schema cache/i.test(error.message)) {
+      const { vehicle_type: _t, vehicle_usage: _u, ...older } = fields;
+      void _t; void _u;
+      ({ data, error } = await run(older));
     }
+    if (error) return { data: null, error: error.message };
+    return { data, error: null };
   } catch (err: any) {
     return { data: null, error: err.message || 'Error saving vehicle' };
   }

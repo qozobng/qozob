@@ -7,10 +7,10 @@ import type { User } from '@supabase/supabase-js';
 import { AlertTriangle, CheckCircle2, Clock, LogOut, UserRound, X } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { getRole } from '@/lib/roles';
-import { NIGERIAN_STATES, joinPhone, normaliseState, stateLabel } from '@/lib/nigeria';
+import { dialCodeFor, joinPhone, normaliseState } from '@/lib/nigeria';
 import { PROFILE_GRACE_DAYS, formatCountdown, profileStatus, splitPhone, suggestedNames } from '@/lib/profile';
 import { PhoneField } from '@/components/PhoneField';
-import { loadRegions, NIGERIA_FALLBACK, type Region } from '@/lib/regions';
+import { LocationFields } from '@/components/forms/LocationFields';
 import { ui, cx } from '@/lib/ui';
 
 // =========================================================================
@@ -212,8 +212,6 @@ function ProfileForm({ user, blocked, onSaved, onClose }: {
   const names = suggestedNames(user);
   const initialPhone = splitPhone(meta.full_phone || user.phone);
   // Country decides prize programme, currency shown and payout rules (Nigeria by default)
-  const [regions, setRegions] = useState<Record<string, Region>>({ NG: NIGERIA_FALLBACK });
-  useEffect(() => { loadRegions(createClient()).then(setRegions); }, []);
   const [country, setCountry] = useState(String(meta.country || 'Nigeria'));
   const inNigeria = country.toLowerCase() === 'nigeria';
 
@@ -222,6 +220,7 @@ function ProfileForm({ user, blocked, onSaved, onClose }: {
   const [code, setCode] = useState(initialPhone.code);
   const [phone, setPhone] = useState(initialPhone.national);
   const [state, setState] = useState<string>(String(meta.country || 'Nigeria').toLowerCase() === 'nigeria' ? (normaliseState(meta.state) ?? '') : String(meta.state || ''));
+  const [lga, setLga] = useState<string>(String(meta.lga || ''));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -245,6 +244,7 @@ function ProfileForm({ user, blocked, onSaved, onClose }: {
         full_name: `${f} ${l}`,
         full_phone: fullPhone,
         state: state.trim(),
+        lga: lga.trim() || null,
         country,
         profile_completed_at: new Date().toISOString(),
       },
@@ -301,29 +301,16 @@ function ProfileForm({ user, blocked, onSaved, onClose }: {
         <PhoneField id="qz-pf-phone" code={code} onCodeChange={setCode} value={phone} onChange={setPhone} required />
       </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <div>
-          <label htmlFor="qz-pf-country" className={ui.label}>Country</label>
-          <select id="qz-pf-country" value={country} onChange={e => { setCountry(e.target.value); setState(''); }} className={ui.select}>
-            {/* Keep a free-typed country from sign-up selectable even if it isn't a Qozob region yet */}
-            {!Object.values(regions).some(r => r.name === country) && <option value={country}>{country}</option>}
-            {Object.values(regions)
-              .sort((a, b) => (a.country_code === 'NG' ? -1 : b.country_code === 'NG' ? 1 : a.name.localeCompare(b.name)))
-              .map(r => <option key={r.country_code} value={r.name}>{r.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="qz-pf-state" className={ui.label}>{inNigeria ? 'State' : 'Region / state'}</label>
-          {inNigeria ? (
-            <select id="qz-pf-state" required value={state} onChange={e => setState(e.target.value)} className={ui.select}>
-              <option value="" disabled>Choose your state</option>
-              {NIGERIAN_STATES.map(s => <option key={s} value={s}>{stateLabel(s)}</option>)}
-            </select>
-          ) : (
-            <input id="qz-pf-state" required autoComplete="address-level1" value={state} onChange={e => setState(e.target.value)} className={ui.input} maxLength={60} />
-          )}
-        </div>
-      </div>
+      <LocationFields
+        idPrefix="qz-pf"
+        className="mt-3 grid-cols-2 sm:grid-cols-2"
+        value={{ country, state, lga }}
+        onChange={v => { setCountry(v.country); setState(v.state); setLga(v.lga); }}
+        showCountry
+        showLga
+        required={{ country: true, state: true }}
+        onCountryChange={cc => { const d = dialCodeFor(cc); if (d && !phone.trim()) setCode(d); }}
+      />
 
       {error && (
         <div className={cx(ui.alertError, 'mt-4')} role="alert">

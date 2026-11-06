@@ -8,8 +8,10 @@ import {
 
 import { createClient } from '@/utils/supabase/client';
 import posthog from 'posthog-js';
-import { FuelLog, FuelType, FuelLogType } from '@/types/services';
-import { fetchUserFuelLogs, saveFuelLog, deleteFuelLog } from '@/lib/services';
+import { FuelLog, FuelType, FuelLogType, type UserVehicle } from '@/types/services';
+import { fetchUserFuelLogs, saveFuelLog, deleteFuelLog, fetchUserVehicles } from '@/lib/services';
+import { BRAND_LABELS } from '@/lib/brands';
+import { OTHER } from '@/lib/vehicles';
 import { cx, ui } from '@/lib/ui';
 import { currencySymbol, DEFAULT_CURRENCY } from '@/lib/currency';
 import { loadRegions, countryCodeFromName } from '@/lib/regions';
@@ -40,6 +42,14 @@ export function FuelLogbook({ user }: { user: any }) {
   const [litresBought, setLitresBought] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [stationName, setStationName] = useState('');
+  // Pick-lists: station brand + optional area; vehicle from My Garage
+  const [stationBrand, setStationBrand] = useState('');
+  const [garage, setGarage] = useState<UserVehicle[]>([]);
+  const [vehicleId, setVehicleId] = useState('');
+  useEffect(() => {
+    if (!user?.id) return;
+    fetchUserVehicles(supabase, user.id).then(setGarage);
+  }, [supabase, user?.id]);
   const [odometerKm, setOdometerKm] = useState('');
   const [engineHours, setEngineHours] = useState('');
   const [loggedAt, setLoggedAt] = useState(new Date().toISOString().split('T')[0]);
@@ -116,15 +126,22 @@ export function FuelLogbook({ user }: { user: any }) {
     setSaving(true);
     setErrorMsg(null);
 
+    const garageCar = logType === 'vehicle' ? garage.find(g => g.id === vehicleId) : undefined;
+    const carLabel = garageCar
+      ? [[garageCar.vehicle_make, garageCar.vehicle_model].filter(Boolean).join(' '), garageCar.plate_number].filter(Boolean).join(' · ')
+      : '';
+    const station = [stationBrand, stationName.trim()].filter(Boolean).join(' · ');
+
     const { error } = await saveFuelLog(supabase, {
       user_id: user.id,
+      vehicle_id: garageCar?.id ?? null,
       log_type: logType,
-      label: label.trim() || (logType === 'vehicle' ? 'Vehicle' : 'Generator'),
+      label: carLabel || label.trim() || (logType === 'vehicle' ? 'Vehicle' : 'Generator'),
       fuel_type: fuelType,
       price_per_litre: p,
       litres_bought: l,
       total_amount: tot,
-      station_name: stationName.trim() || null,
+      station_name: station || null,
       odometer_km: odometerKm ? parseFloat(odometerKm) : null,
       engine_hours: engineHours ? parseFloat(engineHours) : null,
       notes: notes.trim() || null,
@@ -147,6 +164,7 @@ export function FuelLogbook({ user }: { user: any }) {
       setLitresBought('');
       setTotalAmount('');
       setStationName('');
+      setStationBrand('');
       setOdometerKm('');
       setEngineHours('');
       setNotes('');
@@ -387,16 +405,28 @@ export function FuelLogbook({ user }: { user: any }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={ui.label} htmlFor="fl-label">
-                    {logType === 'vehicle' ? 'Vehicle Name / Plate' : 'Generator Description'}
+                    {logType === 'vehicle' ? 'Vehicle' : 'Generator Description'}
                   </label>
-                  <input
-                    id="fl-label"
-                    type="text"
-                    placeholder={logType === 'vehicle' ? 'e.g. Corolla / KSF-123' : 'e.g. 20kVA Lister'}
-                    value={label}
-                    onChange={e => setLabel(e.target.value)}
-                    className={ui.input}
-                  />
+                  {logType === 'vehicle' && garage.length > 0 && (
+                    <select id="fl-vehicle" value={vehicleId} onChange={e => setVehicleId(e.target.value)} className={cx(ui.select, vehicleId === OTHER && 'mb-2')} aria-label="Vehicle from My Garage">
+                      <option value="">Choose from My Garage</option>
+                      {garage.map(g => (
+                        <option key={g.id} value={g.id}>{[g.vehicle_make, g.vehicle_model].filter(Boolean).join(' ') || 'Vehicle'} · {g.plate_number}</option>
+                      ))}
+                      <option value={OTHER}>Another vehicle…</option>
+                    </select>
+                  )}
+                  {(logType !== 'vehicle' || garage.length === 0 || vehicleId === OTHER) && (
+                    <input
+                      id="fl-label"
+                      type="text"
+                      maxLength={60}
+                      placeholder={logType === 'vehicle' ? 'e.g. Corolla / KSF-123' : 'e.g. 20kVA Lister'}
+                      value={label}
+                      onChange={e => setLabel(e.target.value)}
+                      className={ui.input}
+                    />
+                  )}
                 </div>
                 <div>
                   <label className={ui.label} htmlFor="fl-fuel">Fuel Type</label>
@@ -460,23 +490,22 @@ export function FuelLogbook({ user }: { user: any }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={ui.label} htmlFor="fl-station">Station Name / Brand</label>
+                  <label className={ui.label} htmlFor="fl-brand">Station brand</label>
+                  <select id="fl-brand" value={stationBrand} onChange={e => setStationBrand(e.target.value)} className={ui.select}>
+                    <option value="">Choose brand</option>
+                    {BRAND_LABELS.map(b => <option key={b} value={b}>{b}</option>)}
+                    <option value="Independent">Independent / other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={ui.label} htmlFor="fl-station">Area / branch <span className="font-normal text-fg-subtle">(optional)</span></label>
                   <input
                     id="fl-station"
                     type="text"
-                    placeholder="e.g. TotalEnergies Lekki"
+                    maxLength={60}
+                    placeholder="e.g. Lekki Phase 1"
                     value={stationName}
                     onChange={e => setStationName(e.target.value)}
-                    className={ui.input}
-                  />
-                </div>
-                <div>
-                  <label className={ui.label} htmlFor="fl-date">Date</label>
-                  <input
-                    id="fl-date"
-                    type="date"
-                    value={loggedAt}
-                    onChange={e => setLoggedAt(e.target.value)}
                     className={ui.input}
                   />
                 </div>
@@ -484,12 +513,24 @@ export function FuelLogbook({ user }: { user: any }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className={ui.label} htmlFor="fl-date">Date</label>
+                  <input
+                    id="fl-date"
+                    type="date"
+                    max={new Date().toISOString().split('T')[0]}
+                    value={loggedAt}
+                    onChange={e => setLoggedAt(e.target.value)}
+                    className={ui.input}
+                  />
+                </div>
+                <div>
                   <label className={ui.label} htmlFor="fl-odo">
                     {logType === 'vehicle' ? 'Odometer Reading (km)' : 'Engine Run Hours'}
                   </label>
                   <input
                     id="fl-odo"
                     type="number"
+                    min={0}
                     step="any"
                     placeholder={logType === 'vehicle' ? 'e.g. 125400' : 'e.g. 450'}
                     value={logType === 'vehicle' ? odometerKm : engineHours}
@@ -497,17 +538,18 @@ export function FuelLogbook({ user }: { user: any }) {
                     className={ui.input}
                   />
                 </div>
-                <div>
-                  <label className={ui.label} htmlFor="fl-notes">Notes (Optional)</label>
-                  <input
-                    id="fl-notes"
-                    type="text"
-                    placeholder="e.g. Full tank, AC on"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    className={ui.input}
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label className={ui.label} htmlFor="fl-notes">Notes (Optional)</label>
+                <input
+                  id="fl-notes"
+                  type="text"
+                  placeholder="e.g. Full tank, AC on"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  className={ui.input}
+                />
               </div>
 
               <div className="pt-4 flex gap-2">
